@@ -4,6 +4,7 @@ import Link from 'next/link';
 import {
   HomeIcon,
   UserGroupIcon,
+  UserIcon,
   DocumentTextIcon,
   ChartBarIcon,
   Cog6ToothIcon,
@@ -63,6 +64,7 @@ export default function Layout({ children, title }: LayoutProps) {
         return [
           ...baseItems,
           { name: 'Empresas', href: '/admin/companies', icon: UserGroupIcon },
+          { name: 'Usuarios', href: '/admin/users', icon: UserIcon },
           { name: 'Sistema', href: '/admin/system', icon: Cog6ToothIcon },
           { name: 'Reportes', href: '/admin/reports', icon: ChartBarIcon },
         ];
