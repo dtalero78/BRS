@@ -7,6 +7,9 @@ require('dotenv').config();
 
 const app = express();
 
+// Trust proxy for rate limiting (required for codespaces)
+app.set('trust proxy', true);
+
 // Security middleware
 app.use(helmet());
 
@@ -20,7 +23,11 @@ app.use('/api/', limiter);
 
 // CORS configuration
 const corsOptions = {
-  origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+  origin: [
+    process.env.FRONTEND_URL || 'http://localhost:3000',
+    'https://automatic-fiesta-v4x7g75pq7wfw999-3000.app.github.dev',
+    /^https:\/\/.*\.app\.github\.dev$/
+  ],
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
   allowedHeaders: ['Content-Type', 'Authorization'],
   credentials: true
@@ -63,13 +70,63 @@ try {
   console.error('❌ Error loading system routes:', error.message);
 }
 
-// Temporarily disable other routes to identify the problematic one
+// Load additional routes
+try {
+  app.use('/api/companies', require('./routes/companies'));
+  console.log('✅ Companies routes loaded');
+} catch (error) {
+  console.error('❌ Error loading companies routes:', error.message);
+}
+
+try {
+  app.use('/api/users', require('./routes/users'));
+  console.log('✅ Users routes loaded');
+} catch (error) {
+  console.error('❌ Error loading users routes:', error.message);
+}
+
+// Load evaluation routes
+try {
+  app.use('/api/evaluations', require('./routes/evaluations'));
+  console.log('✅ Evaluations routes loaded');
+} catch (error) {
+  console.error('❌ Error loading evaluations routes:', error.message);
+}
+
+// Load participants routes
+try {
+  app.use('/api/participants', require('./routes/participants'));
+  console.log('✅ Participants routes loaded');
+} catch (error) {
+  console.error('❌ Error loading participants routes:', error.message);
+}
+
+// Load questionnaires routes
+try {
+  app.use('/api/questionnaires', require('./routes/questionnaires'));
+  console.log('✅ Questionnaires routes loaded');
+} catch (error) {
+  console.error('❌ Error loading questionnaires routes:', error.message);
+}
+
+// Load responses routes
+try {
+  app.use('/api/responses', require('./routes/responses'));
+  console.log('✅ Responses routes loaded');
+} catch (error) {
+  console.error('❌ Error loading responses routes:', error.message);
+}
+
+// Load participant access routes (no auth required)
+try {
+  app.use('/api/participant-access', require('./routes/participant-access'));
+  console.log('✅ Participant access routes loaded');
+} catch (error) {
+  console.error('❌ Error loading participant access routes:', error.message);
+}
+
+// Temporarily disable other routes until needed
 /*
-app.use('/api/companies', require('./routes/companies'));
-app.use('/api/evaluations', require('./routes/evaluations'));
-app.use('/api/participants', require('./routes/participants'));
-app.use('/api/questionnaires', require('./routes/questionnaires'));
-app.use('/api/responses', require('./routes/responses'));
 app.use('/api/results', require('./routes/results'));
 app.use('/api/reports', require('./routes/reports'));
 */

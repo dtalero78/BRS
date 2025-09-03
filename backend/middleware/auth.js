@@ -27,6 +27,7 @@ const auth = async (req, res, next) => {
     req.user = {
       userId: decoded.userId,
       companyId: decoded.companyId,
+      company_id: decoded.companyId,
       role: decoded.role
     };
 

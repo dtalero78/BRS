@@ -30,6 +30,9 @@ router.get('/:type', auth, async (req, res) => {
     let questionnaire = null;
 
     switch (type) {
+      case 'ficha-datos':
+        questionnaire = data.cuestionarios.ficha_datos_generales;
+        break;
       case 'forma-a':
         questionnaire = data.cuestionarios.forma_a_intralaboral;
         break;
@@ -54,10 +57,12 @@ router.get('/:type', auth, async (req, res) => {
       type,
       questionnaire: {
         nombre: questionnaire.nombre,
+        descripcion: questionnaire.descripcion,
         total_preguntas: questionnaire.total_preguntas,
         instrucciones: questionnaire.instrucciones,
         opciones_respuesta: questionnaire.opciones_respuesta,
-        secciones: questionnaire.secciones || questionnaire.preguntas
+        secciones: questionnaire.secciones || questionnaire.preguntas,
+        campos: questionnaire.campos // For demographic form
       },
       opciones_respuesta: data.opciones_respuesta
     });

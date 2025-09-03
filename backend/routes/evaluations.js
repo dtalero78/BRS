@@ -158,9 +158,9 @@ router.post('/', auth, authorize('admin', 'evaluator'), async (req, res) => {
     await db('audit_logs').insert({
       user_id: req.user.userId,
       action: 'create_evaluation',
-      entity_type: 'evaluation',
-      entity_id: evaluation.id,
-      details: { name, startDate, endDate }
+      table_name: 'evaluations',
+      record_id: evaluation.id,
+      new_values: { name, startDate, endDate }
     });
 
     res.status(201).json({
@@ -216,9 +216,10 @@ router.put('/:id', auth, authorize('admin', 'evaluator'), async (req, res) => {
     await db('audit_logs').insert({
       user_id: req.user.userId,
       action: 'update_evaluation',
-      entity_type: 'evaluation',
-      entity_id: id,
-      details: updateData
+      table_name: 'evaluations',
+      record_id: id,
+      old_values: existingEvaluation,
+      new_values: updateData
     });
 
     res.json({
@@ -276,9 +277,9 @@ router.delete('/:id', auth, authorize('admin'), async (req, res) => {
     await db('audit_logs').insert({
       user_id: req.user.userId,
       action: 'delete_evaluation',
-      entity_type: 'evaluation',
-      entity_id: id,
-      details: { name: evaluation.name }
+      table_name: 'evaluations',
+      record_id: id,
+      old_values: { name: evaluation.name }
     });
 
     res.json({ message: 'Evaluación eliminada exitosamente' });
