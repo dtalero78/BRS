@@ -85,10 +85,30 @@ export default function EvaluatorParticipants() {
     fetchEvaluations();
   }, []);
 
+  // Efecto para refetch cuando cambian los filtros
+  useEffect(() => {
+    fetchParticipants();
+  }, [statusFilter, evaluationFilter]);
+
   const fetchParticipants = async () => {
     try {
       const token = localStorage.getItem('token');
-      const response = await fetch('/api/participants', {
+      
+      // Construir parámetros de query
+      const queryParams = new URLSearchParams();
+      
+      if (statusFilter !== 'all') {
+        queryParams.append('status', statusFilter);
+      }
+      
+      if (evaluationFilter !== 'all') {
+        queryParams.append('evaluationId', evaluationFilter);
+      }
+
+      const queryString = queryParams.toString();
+      const url = `/api/participants${queryString ? `?${queryString}` : ''}`;
+      
+      const response = await fetch(url, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -296,18 +316,18 @@ export default function EvaluatorParticipants() {
     );
   };
 
+  // Filtrar solo por búsqueda local y tipo de formulario (los otros se filtran en el backend)
   const filteredParticipants = participants.filter(participant => {
-    const matchesSearch = participant.firstName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    const matchesSearch = searchTerm === '' || 
+                         participant.firstName.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          participant.lastName.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          participant.documentNumber.includes(searchTerm) ||
                          participant.department.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          participant.position.toLowerCase().includes(searchTerm.toLowerCase());
     
-    const matchesStatus = statusFilter === 'all' || participant.status === statusFilter;
-    const matchesEvaluation = evaluationFilter === 'all' || participant.evaluationId === evaluationFilter;
     const matchesFormType = formTypeFilter === 'all' || participant.formType === formTypeFilter;
     
-    return matchesSearch && matchesStatus && matchesEvaluation && matchesFormType;
+    return matchesSearch && matchesFormType;
   });
 
   if (loading) {
@@ -379,7 +399,7 @@ export default function EvaluatorParticipants() {
                       Pendientes
                     </dt>
                     <dd className="text-lg font-medium text-gray-900">
-                      {participants?.filter(p => p.status === 'pending')?.length || 0}
+                      {participants?.filter(p => p.status === 'pending' || p.status === 'in_progress')?.length || 0}
                     </dd>
                   </dl>
                 </div>
@@ -451,7 +471,7 @@ export default function EvaluatorParticipants() {
                 className="block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
               >
                 <option value="all">Todos los estados</option>
-                <option value="pending">Pendiente</option>
+                <option value="assigned">Asignado</option>
                 <option value="in_progress">En Progreso</option>
                 <option value="completed">Completado</option>
               </select>

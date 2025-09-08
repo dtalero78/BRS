@@ -144,7 +144,9 @@ router.get('/:token/questionnaire/:type', async (req, res) => {
         total_preguntas: questionnaire.total_preguntas,
         instrucciones: questionnaire.instrucciones,
         opciones_respuesta: questionnaire.opciones_respuesta,
-        secciones: questionnaire.secciones || questionnaire.preguntas,
+        preguntas: questionnaire.preguntas || (questionnaire.secciones ? 
+          Object.values(questionnaire.secciones).flatMap(s => s.preguntas || []) : []),
+        secciones: questionnaire.secciones,
         campos: questionnaire.campos, // For demographic form
         malestares: questionnaire.malestares // For stress questionnaire
       },

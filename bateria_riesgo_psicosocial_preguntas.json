@@ -221,7 +221,171 @@
       "total_preguntas": 97,
       "instrucciones": "Este cuestionario de factores psicosociales busca conocer su opinión sobre algunos aspectos de su trabajo. Le agradecemos que usted se sirva contestar las siguientes preguntas de forma absolutamente sincera. Las respuestas que usted dé al cuestionario no son ni buenas ni malas, lo importante es que reflejen su manera de pensar sobre su trabajo.",
       "opciones_respuesta": ["Siempre", "Casi siempre", "Algunas veces", "Casi nunca", "Nunca"],
-      "observacion": "Esta forma se aplica a trabajadores con cargos auxiliares y operarios. Las preguntas son similares a la Forma A pero adaptadas y reducidas en número."
+      "observacion": "Esta forma se aplica a trabajadores con cargos auxiliares y operarios",
+      "secciones": {
+        "condiciones_ambientales": {
+          "descripcion": "Las siguientes preguntas están relacionadas con las condiciones ambientales del(los) sitio(s) o lugar(es) donde habitualmente realiza su trabajo.",
+          "preguntas": [
+            {"numero": 1, "texto": "El ruido en el lugar donde trabajo es molesto"},
+            {"numero": 2, "texto": "En el lugar donde trabajo hace mucho frío"},
+            {"numero": 3, "texto": "En el lugar donde trabajo hace mucho calor"},
+            {"numero": 4, "texto": "El aire en el lugar donde trabajo es fresco y agradable"},
+            {"numero": 5, "texto": "La luz del sitio donde trabajo es agradable"},
+            {"numero": 6, "texto": "El espacio donde trabajo es cómodo"},
+            {"numero": 7, "texto": "En mi trabajo me preocupa estar expuesto a sustancias químicas que afecten mi salud"},
+            {"numero": 8, "texto": "Mi trabajo me exige hacer mucho esfuerzo físico"},
+            {"numero": 9, "texto": "Los equipos o herramientas con los que trabajo son cómodos"},
+            {"numero": 10, "texto": "En mi trabajo me preocupa estar expuesto a microbios, animales o plantas que afecten mi salud"},
+            {"numero": 11, "texto": "Me preocupa accidentarme en mi trabajo"},
+            {"numero": 12, "texto": "El lugar donde trabajo es limpio y ordenado"}
+          ]
+        },
+        "demandas_cuantitativas": {
+          "descripcion": "Para responder a las siguientes preguntas piense en la cantidad de trabajo que usted tiene a cargo.",
+          "preguntas": [
+            {"numero": 13, "texto": "Por la cantidad de trabajo que tengo debo quedarme tiempo adicional"},
+            {"numero": 14, "texto": "Me alcanza el tiempo de trabajo para tener al día mis deberes"},
+            {"numero": 15, "texto": "Por la cantidad de trabajo que tengo debo trabajar sin parar"}
+          ]
+        },
+        "demandas_carga_mental": {
+          "descripcion": "Las siguientes preguntas están relacionadas con el esfuerzo mental que le exige su trabajo.",
+          "preguntas": [
+            {"numero": 16, "texto": "Mi trabajo me exige hacer mucho esfuerzo mental"},
+            {"numero": 17, "texto": "Mi trabajo me exige estar muy concentrado"},
+            {"numero": 18, "texto": "Mi trabajo me exige memorizar mucha información"},
+            {"numero": 19, "texto": "En mi trabajo tengo que hacer cálculos matemáticos"},
+            {"numero": 20, "texto": "Mi trabajo requiere que me fije en pequeños detalles"}
+          ]
+        },
+        "jornada_trabajo": {
+          "descripcion": "Las siguientes preguntas están relacionadas con la jornada de trabajo.",
+          "preguntas": [
+            {"numero": 21, "texto": "Trabajo en horario de noche"},
+            {"numero": 22, "texto": "En mi trabajo es posible tomar pausas para descansar"},
+            {"numero": 23, "texto": "Mi trabajo me exige laborar en días de descanso, festivos o fines de semana"},
+            {"numero": 24, "texto": "En mi trabajo puedo tomar fines de semana o días de descanso al mes"},
+            {"numero": 25, "texto": "Cuando estoy en casa sigo pensando en el trabajo"},
+            {"numero": 26, "texto": "Discuto con mi familia o amigos por causa de mi trabajo"},
+            {"numero": 27, "texto": "Debo atender asuntos de trabajo cuando estoy en casa"},
+            {"numero": 28, "texto": "Por mi trabajo el tiempo que paso con mi familia y amigos es muy poco"}
+          ]
+        },
+        "control_autonomia": {
+          "descripcion": "Las siguientes preguntas están relacionadas con las decisiones y el control que le permite su trabajo.",
+          "preguntas": [
+            {"numero": 29, "texto": "En mi trabajo puedo hacer cosas nuevas"},
+            {"numero": 30, "texto": "Mi trabajo me permite desarrollar mis habilidades"},
+            {"numero": 31, "texto": "Mi trabajo me permite aplicar mis conocimientos"},
+            {"numero": 32, "texto": "Mi trabajo me permite aprender nuevas cosas"},
+            {"numero": 33, "texto": "Puedo tomar pausas cuando las necesito"},
+            {"numero": 34, "texto": "Puedo decidir cuánto trabajo hago en el día"},
+            {"numero": 35, "texto": "Puedo decidir la velocidad a la que trabajo"},
+            {"numero": 36, "texto": "Puedo cambiar el orden de las actividades en mi trabajo"},
+            {"numero": 37, "texto": "Puedo parar un momento mi trabajo para atender algún asunto personal"}
+          ]
+        },
+        "manejo_cambio": {
+          "descripcion": "Las siguientes preguntas están relacionadas con cualquier tipo de cambio que ocurra en su trabajo.",
+          "preguntas": [
+            {"numero": 38, "texto": "Me explican claramente los cambios que ocurren en mi trabajo"},
+            {"numero": 39, "texto": "Puedo dar sugerencias sobre los cambios que ocurren en mi trabajo"},
+            {"numero": 40, "texto": "Cuando se presentan cambios en mi trabajo se tienen en cuenta mis ideas y sugerencias"}
+          ]
+        },
+        "claridad_rol": {
+          "descripcion": "Las siguientes preguntas están relacionadas con la información que la empresa le ha dado sobre su trabajo.",
+          "preguntas": [
+            {"numero": 41, "texto": "Me informan con claridad cuáles son mis funciones"},
+            {"numero": 42, "texto": "Me informan cuáles son las decisiones que puedo tomar en mi trabajo"},
+            {"numero": 43, "texto": "Me explican claramente los resultados que debo lograr en mi trabajo"},
+            {"numero": 44, "texto": "Me explican claramente los objetivos de mi trabajo"},
+            {"numero": 45, "texto": "Me informan claramente con quien puedo resolver los asuntos de trabajo"}
+          ]
+        },
+        "capacitacion": {
+          "descripcion": "Las siguientes preguntas están relacionadas con la formación y capacitación que la empresa le facilita para hacer su trabajo.",
+          "preguntas": [
+            {"numero": 46, "texto": "La empresa me permite asistir a capacitaciones relacionadas con mi trabajo"},
+            {"numero": 47, "texto": "Recibo capacitación útil para hacer mi trabajo"},
+            {"numero": 48, "texto": "Recibo capacitación que me ayuda a hacer mejor mi trabajo"}
+          ]
+        },
+        "caracteristicas_liderazgo": {
+          "descripcion": "Las siguientes preguntas están relacionadas con el o los jefes con quien tenga más contacto.",
+          "preguntas": [
+            {"numero": 49, "texto": "Mi jefe ayuda a organizar mejor el trabajo"},
+            {"numero": 50, "texto": "Mi jefe tiene en cuenta mis puntos de vista y opiniones"},
+            {"numero": 51, "texto": "Mi jefe me anima para hacer mejor mi trabajo"},
+            {"numero": 52, "texto": "Mi jefe distribuye las tareas de forma que me facilita el trabajo"},
+            {"numero": 53, "texto": "Mi jefe me comunica a tiempo la información relacionada con el trabajo"},
+            {"numero": 54, "texto": "La orientación que me da mi jefe me ayuda a hacer mejor el trabajo"},
+            {"numero": 55, "texto": "Mi jefe me ayuda a progresar en el trabajo"},
+            {"numero": 56, "texto": "Mi jefe me ayuda a sentirme bien en el trabajo"},
+            {"numero": 57, "texto": "Mi jefe ayuda a solucionar los problemas que se presentan en el trabajo"},
+            {"numero": 58, "texto": "Mi jefe me trata con respeto"},
+            {"numero": 59, "texto": "Siento que puedo confiar en mi jefe"},
+            {"numero": 60, "texto": "Mi jefe me escucha cuando tengo problemas de trabajo"},
+            {"numero": 61, "texto": "Mi jefe me brinda su apoyo cuando lo necesito"}
+          ]
+        },
+        "relaciones_sociales": {
+          "descripcion": "Las siguientes preguntas indagan sobre las relaciones con otras personas y el apoyo entre las personas de su trabajo.",
+          "preguntas": [
+            {"numero": 62, "texto": "Me agrada el ambiente de mi grupo de trabajo"},
+            {"numero": 63, "texto": "En mi grupo de trabajo me tratan de forma respetuosa"},
+            {"numero": 64, "texto": "Siento que puedo confiar en mis compañeros de trabajo"},
+            {"numero": 65, "texto": "Me siento a gusto con mis compañeros de trabajo"},
+            {"numero": 66, "texto": "En mi grupo de trabajo algunas personas me maltratan"},
+            {"numero": 67, "texto": "Entre compañeros solucionamos los problemas de forma respetuosa"},
+            {"numero": 68, "texto": "Mi grupo de trabajo es muy unido"},
+            {"numero": 69, "texto": "Cuando tenemos que realizar trabajo de grupo los compañeros colaboran"},
+            {"numero": 70, "texto": "Es fácil poner de acuerdo al grupo para hacer el trabajo"},
+            {"numero": 71, "texto": "Mis compañeros de trabajo me ayudan cuando tengo dificultades"},
+            {"numero": 72, "texto": "En mi trabajo las personas nos apoyamos unos a otros"},
+            {"numero": 73, "texto": "Algunos compañeros de trabajo me escuchan cuando tengo problemas"}
+          ]
+        },
+        "retroalimentacion_desempeno": {
+          "descripcion": "Las siguientes preguntas están relacionadas con la información que usted recibe sobre su rendimiento en el trabajo.",
+          "preguntas": [
+            {"numero": 74, "texto": "Me informan sobre lo que hago bien en mi trabajo"},
+            {"numero": 75, "texto": "Me informan sobre lo que debo mejorar en mi trabajo"},
+            {"numero": 76, "texto": "La información que recibo sobre mi rendimiento en el trabajo es clara"},
+            {"numero": 77, "texto": "La forma como evalúan mi trabajo en la empresa me ayuda a mejorar"},
+            {"numero": 78, "texto": "Me informan a tiempo sobre lo que debo mejorar en el trabajo"}
+          ]
+        },
+        "recompensas": {
+          "descripcion": "Las siguientes preguntas están relacionadas con la satisfacción, reconocimiento y la seguridad que le ofrece su trabajo.",
+          "preguntas": [
+            {"numero": 79, "texto": "En la empresa me pagan a tiempo mi salario"},
+            {"numero": 80, "texto": "El pago que recibo es el que me ofreció la empresa"},
+            {"numero": 81, "texto": "El pago que recibo es el que merezco por el trabajo que realizo"},
+            {"numero": 82, "texto": "En mi trabajo tengo posibilidades de progresar"},
+            {"numero": 83, "texto": "Las personas que hacen bien el trabajo pueden progresar en la empresa"},
+            {"numero": 84, "texto": "La empresa se preocupa por el bienestar de los trabajadores"},
+            {"numero": 85, "texto": "Mi trabajo en la empresa es estable"},
+            {"numero": 86, "texto": "El trabajo que hago me hace sentir bien"},
+            {"numero": 87, "texto": "Siento orgullo de trabajar en esta empresa"},
+            {"numero": 88, "texto": "Hablo bien de la empresa con otras personas"}
+          ]
+        },
+        "atencion_clientes": {
+          "descripcion": "Las siguientes preguntas están relacionadas con la atención a clientes y usuarios. En mi trabajo debo brindar servicio a clientes o usuarios: Si/No. Si su respuesta fue SI por favor responda las siguientes preguntas. Si su respuesta fue NO pase a las preguntas de la siguiente sección: FICHA DE DATOS GENERALES.",
+          "preguntas": [
+            {"numero": 89, "texto": "Atiendo clientes o usuarios muy enojados"},
+            {"numero": 90, "texto": "Atiendo clientes o usuarios muy preocupados"},
+            {"numero": 91, "texto": "Atiendo clientes o usuarios muy tristes"},
+            {"numero": 92, "texto": "Mi trabajo me exige atender personas muy enfermas"},
+            {"numero": 93, "texto": "Mi trabajo me exige atender personas muy necesitadas de ayuda"},
+            {"numero": 94, "texto": "Atiendo clientes o usuarios que me maltratan"},
+            {"numero": 95, "texto": "Mi trabajo me exige atender situaciones de violencia"},
+            {"numero": 96, "texto": "Mi trabajo me exige atender situaciones muy tristes o dolorosas"},
+            {"numero": 97, "texto": "Puedo expresar tristeza o enojo frente a las personas que atiendo"}
+          ]
+        }
+      }
     },
     "extralaboral": {
       "nombre": "Cuestionario de Factores Psicosociales Extralaborales",

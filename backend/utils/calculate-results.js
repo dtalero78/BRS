@@ -356,7 +356,8 @@ async function calculateIntralaboralResults(questionnaireType, responses) {
     // Sum up responses for this dimension
     dimensionData.questions.forEach(questionNumber => {
       if (responseMap[questionNumber] !== undefined) {
-        rawScore += responseMap[questionNumber];
+        const responseValue = responseMap[questionNumber];
+        rawScore += responseValue;
         answeredQuestions++;
       }
     });
@@ -525,7 +526,7 @@ async function calculateStressResults(questionnaireType, responses) {
     const riskLevel = getRiskLevel(transformedScore, dimensionBaremos);
     
     results.push({
-      questionnaireType,
+      questionnaireType: 'estres',  // Always use 'estres' for consistency
       dimension: dimensionName,
       domain: 'estres',
       rawScore,
@@ -555,7 +556,8 @@ async function calculateResults(questionnaireType, responses) {
       return await calculateExtralaboralResults(questionnaireType, responses);
     
     case 'stress':
-      return await calculateStressResults(questionnaireType, responses);
+    case 'estres':  // Support both Spanish and English naming
+      return await calculateStressResults('estres', responses);  // Use 'estres' for database consistency
     
     default:
       throw new Error(`Tipo de cuestionario no soportado: ${questionnaireType}`);

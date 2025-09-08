@@ -9,6 +9,9 @@ interface Question {
   texto?: string;
   dimension?: string;
   dominio?: string;
+  tipo?: string;
+  opciones?: string[];
+  subcampos?: any[];
 }
 
 interface QuestionnaireSection {
@@ -261,7 +264,8 @@ const ParticipantEvaluationPage = () => {
 
   const handleResponseChange = (questionNumber: number | string, value: number | string) => {
     const key = `q_${questionNumber}`;
-    const newResponses = { ...responses, [key]: value };
+    const numericValue = typeof value === 'string' ? parseInt(value, 10) : value;
+    const newResponses = { ...responses, [key]: numericValue };
     setResponses(newResponses);
 
     // Update progress
@@ -420,7 +424,8 @@ const ParticipantEvaluationPage = () => {
     
     // Handle demographic form (campos)
     if (campos && Array.isArray(campos)) {
-      return campos.map((campo: any) => ({
+      return campos.map((campo: any, index: number) => ({
+        id: campo.numero || index + 1,
         numero: campo.numero,
         texto: campo.campo,
         tipo: campo.tipo,
@@ -431,7 +436,8 @@ const ParticipantEvaluationPage = () => {
     
     // Handle stress questionnaire (malestares)
     if (malestares && Array.isArray(malestares)) {
-      return malestares.map((malestar: any) => ({
+      return malestares.map((malestar: any, index: number) => ({
+        id: malestar.numero || index + 1,
         numero: malestar.numero,
         texto: malestar.texto,
         pregunta: malestar.texto

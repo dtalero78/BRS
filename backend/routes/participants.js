@@ -162,9 +162,12 @@ router.get('/', auth, async (req, res) => {
     const { page = 1, limit = 50, status, evaluationId } = req.query;
     const offset = (page - 1) * limit;
 
+    // Determinar el tipo de JOIN basado en los filtros
+    const joinType = (status || evaluationId) ? 'join' : 'leftJoin';
+    
     let query = db('participants')
-      .leftJoin('participant_evaluations as pe', 'participants.id', 'pe.participant_id')
-      .leftJoin('evaluations', 'pe.evaluation_id', 'evaluations.id')
+      [joinType]('participant_evaluations as pe', 'participants.id', 'pe.participant_id')
+      [joinType]('evaluations', 'pe.evaluation_id', 'evaluations.id')
       .where('participants.company_id', req.user.companyId)
       .orderBy('participants.created_at', 'desc');
 
@@ -189,10 +192,10 @@ router.get('/', auth, async (req, res) => {
         'pe.access_token'
       );
 
-    // Get total count
+    // Get total count usando el mismo tipo de JOIN
     let countQuery = db('participants')
-      .leftJoin('participant_evaluations as pe', 'participants.id', 'pe.participant_id')
-      .leftJoin('evaluations', 'pe.evaluation_id', 'evaluations.id')
+      [joinType]('participant_evaluations as pe', 'participants.id', 'pe.participant_id')
+      [joinType]('evaluations', 'pe.evaluation_id', 'evaluations.id')
       .where('participants.company_id', req.user.companyId)
       .count('* as count');
     
@@ -206,49 +209,103 @@ router.get('/', auth, async (req, res) => {
 
     const [{ count }] = await countQuery;
 
-    res.json({
-      participants: participants.map(p => {
-        let demographicData = {};
-        try {
-          demographicData = typeof p.demographic_data === 'string' 
-            ? JSON.parse(p.demographic_data) 
-            : (p.demographic_data || {});
-        } catch (e) {
-          demographicData = {};
-        }
+    // Calcular progreso real para cada participante
+    const participantsWithProgress = await Promise.all(participants.map(async (p) => {
+      let demographicData = {};
+      try {
+        demographicData = typeof p.demographic_data === 'string' 
+          ? JSON.parse(p.demographic_data) 
+          : (p.demographic_data || {});
+      } catch (e) {
+        demographicData = {};
+      }
 
-        return {
-          id: p.id,
-          email: p.email,
-          firstName: demographicData.firstName || 'N/A',
-          lastName: demographicData.lastName || 'N/A',
-          documentType: demographicData.documentType || 'N/A',
-          documentNumber: demographicData.documentNumber || 'N/A',
-          birthYear: demographicData.birthYear || 0,
-          gender: demographicData.gender || 'N/A',
-          maritalStatus: demographicData.maritalStatus || 'N/A',
-          educationLevel: demographicData.educationLevel || 'N/A',
-          department: demographicData.department || 'N/A',
-          position: demographicData.position || 'N/A',
-          contractType: demographicData.contractType || 'N/A',
-          employmentType: demographicData.employmentType || 'N/A',
-          tenureMonths: demographicData.tenureMonths || 0,
-          salaryRange: demographicData.salaryRange || 'N/A',
-          workHoursPerDay: demographicData.workHoursPerDay || 8,
-          workDaysPerWeek: demographicData.workDaysPerWeek || 5,
-          formType: demographicData.formType || 'A',
-          evaluationId: p.evaluation_id,
-          evaluationName: p.evaluation_name,
-          status: p.evaluation_status || 'pending',
-          completionPercentage: 0,
-          startedAt: p.assigned_at,
-          completedAt: p.completed_at,
-          createdAt: p.created_at,
-          updatedAt: p.updated_at,
-          accessToken: p.access_token,
-          evaluationUrl: p.access_token ? `${process.env.FRONTEND_URL || 'http://localhost:3000'}/participant/evaluation/${p.access_token}` : null
-        };
-      }),
+      // Calcular progreso real basado en cuestionarios completados
+      let completionPercentage = 0;
+      
+      if (p.evaluation_id) {
+        // Obtener el participant_evaluation_id
+        const participantEvaluation = await db('participant_evaluations')
+          .where({
+            participant_id: p.id,
+            evaluation_id: p.evaluation_id
+          })
+          .first();
+
+        if (participantEvaluation) {
+          // Obtener respuestas completadas
+          const responses = await db('responses')
+            .where('participant_evaluation_id', participantEvaluation.id)
+            .select('questionnaire_type');
+
+          const formType = demographicData.formType || 'A';
+          const requiredQuestionnaires = {
+            'A': ['ficha_datos', 'intralaboral_a', 'extralaboral', 'estres'],
+            'B': ['ficha_datos', 'intralaboral_b', 'extralaboral', 'estres']
+          };
+
+          const totalQuestionsByType = {
+            'ficha_datos': 18,
+            'intralaboral_a': 123,
+            'intralaboral_b': 97,
+            'extralaboral': 31,
+            'estres': 31
+          };
+
+          const requiredTypes = requiredQuestionnaires[formType];
+          const completedTypes = responses.map(r => r.questionnaire_type);
+          
+          let totalCompleted = 0;
+          let totalRequired = 0;
+
+          requiredTypes.forEach(type => {
+            if (completedTypes.includes(type)) {
+              totalCompleted += totalQuestionsByType[type];
+            }
+            totalRequired += totalQuestionsByType[type];
+          });
+
+          completionPercentage = totalRequired > 0 
+            ? Math.round((totalCompleted / totalRequired) * 100) 
+            : 0;
+        }
+      }
+
+      return {
+        id: p.id,
+        email: p.email,
+        firstName: demographicData.firstName || 'N/A',
+        lastName: demographicData.lastName || 'N/A',
+        documentType: demographicData.documentType || 'N/A',
+        documentNumber: demographicData.documentNumber || 'N/A',
+        birthYear: demographicData.birthYear || 0,
+        gender: demographicData.gender || 'N/A',
+        maritalStatus: demographicData.maritalStatus || 'N/A',
+        educationLevel: demographicData.educationLevel || 'N/A',
+        department: demographicData.department || 'N/A',
+        position: demographicData.position || 'N/A',
+        contractType: demographicData.contractType || 'N/A',
+        employmentType: demographicData.employmentType || 'N/A',
+        tenureMonths: demographicData.tenureMonths || 0,
+        salaryRange: demographicData.salaryRange || 'N/A',
+        workHoursPerDay: demographicData.workHoursPerDay || 8,
+        workDaysPerWeek: demographicData.workDaysPerWeek || 5,
+        formType: demographicData.formType || 'A',
+        evaluationId: p.evaluation_id,
+        evaluationName: p.evaluation_name,
+        status: p.evaluation_status || 'pending',
+        completionPercentage: completionPercentage,
+        startedAt: p.assigned_at,
+        completedAt: p.completed_at,
+        createdAt: p.created_at,
+        updatedAt: p.updated_at,
+        accessToken: p.access_token,
+        evaluationUrl: p.access_token ? `${process.env.FRONTEND_URL || 'http://localhost:3000'}/participant/evaluation/${p.access_token}` : null
+      };
+    }));
+
+    res.json({
+      participants: participantsWithProgress,
       pagination: {
         page: parseInt(page),
         limit: parseInt(limit),
@@ -281,8 +338,9 @@ router.get('/evaluation/:evaluationId', auth, async (req, res) => {
     }
 
     let query = db('participants')
-      .where('evaluation_id', evaluationId)
-      .orderBy('created_at', 'desc');
+      .join('participant_evaluations', 'participants.id', 'participant_evaluations.participant_id')
+      .where('participant_evaluations.evaluation_id', evaluationId)
+      .orderBy('participants.created_at', 'desc');
 
     if (status) {
       query = query.where('status', status);
@@ -291,35 +349,91 @@ router.get('/evaluation/:evaluationId', auth, async (req, res) => {
     const participants = await query
       .limit(limit)
       .offset(offset)
-      .select('*');
+      .select('participants.*', 'participant_evaluations.status', 'participant_evaluations.assigned_at', 'participant_evaluations.completed_at', 'participant_evaluations.access_token', 'participant_evaluations.id as pe_id');
+
+    // Get completed questionnaires and results for each participant
+    const participantIds = participants.map(p => p.pe_id);
+    
+    const responses = await db('responses')
+      .whereIn('participant_evaluation_id', participantIds)
+      .select('participant_evaluation_id', 'questionnaire_type', 'completed_at');
+
+    const results = await db('results')
+      .whereIn('participant_evaluation_id', participantIds)
+      .select('participant_evaluation_id', 'questionnaire_type');
+
+    // Group responses and results by participant_evaluation_id
+    const responsesByParticipant = {};
+    const resultsByParticipant = {};
+    
+    responses.forEach(response => {
+      if (!responsesByParticipant[response.participant_evaluation_id]) {
+        responsesByParticipant[response.participant_evaluation_id] = [];
+      }
+      responsesByParticipant[response.participant_evaluation_id].push(response.questionnaire_type);
+    });
+
+    results.forEach(result => {
+      if (!resultsByParticipant[result.participant_evaluation_id]) {
+        resultsByParticipant[result.participant_evaluation_id] = [];
+      }
+      resultsByParticipant[result.participant_evaluation_id].push(result.questionnaire_type);
+    });
 
     // Get total count
     const totalQuery = db('participants')
-      .where('evaluation_id', evaluationId)
+      .join('participant_evaluations', 'participants.id', 'participant_evaluations.participant_id')
+      .where('participant_evaluations.evaluation_id', evaluationId)
       .count('* as count');
     
     if (status) {
-      totalQuery.where('status', status);
+      totalQuery.where('participant_evaluations.status', status);
     }
 
     const [{ count }] = await totalQuery;
 
     res.json({
-      participants: participants.map(p => ({
-        id: p.id,
-        firstName: p.first_name,
-        lastName: p.last_name,
-        documentType: p.document_type,
-        documentNumber: p.document_number,
-        department: p.department,
-        position: p.position,
-        formType: p.form_type,
-        status: p.status,
-        completionPercentage: p.completion_percentage,
-        startedAt: p.started_at,
-        completedAt: p.completed_at,
-        createdAt: p.created_at
-      })),
+      participants: participants.map(p => {
+        // Parse demographic data
+        let demographicData = {};
+        try {
+          demographicData = typeof p.demographic_data === 'string'
+            ? JSON.parse(p.demographic_data)
+            : (p.demographic_data || {});
+        } catch (e) {
+          demographicData = {};
+        }
+
+        const completedQuestionnaires = responsesByParticipant[p.pe_id] || [];
+        const hasResults = Boolean(resultsByParticipant[p.pe_id] && resultsByParticipant[p.pe_id].length > 0);
+
+        // Temporary debug log for Daniel Talero
+        if (p.id === 4) {
+          console.log(`DEBUG - Daniel Talero (ID: ${p.id}, PE: ${p.pe_id}):`);
+          console.log(`  completed_questionnaires:`, completedQuestionnaires);
+          console.log(`  hasResults:`, hasResults);
+        }
+
+        return {
+          id: p.id,
+          firstName: demographicData.firstName || 'N/A',
+          lastName: demographicData.lastName || 'N/A',
+          documentType: demographicData.documentType || 'N/A',
+          documentNumber: demographicData.documentNumber || 'N/A',
+          department: demographicData.department || 'N/A',
+          position: demographicData.position || 'N/A',
+          formType: demographicData.formType || 'A',
+          status: p.status || 'assigned',
+          completed_questionnaires: completedQuestionnaires,
+          hasResults: hasResults,
+          completionPercentage: 0,
+          startedAt: p.assigned_at,
+          completedAt: p.completed_at,
+          createdAt: p.created_at,
+          accessToken: p.access_token,
+          evaluationUrl: p.access_token ? `${process.env.FRONTEND_URL || 'http://localhost:3000'}/participant/evaluation/${p.access_token}` : null
+        };
+      }),
       pagination: {
         page: parseInt(page),
         limit: parseInt(limit),
@@ -340,40 +454,51 @@ router.get('/:id', auth, async (req, res) => {
     const { id } = req.params;
 
     const participant = await db('participants')
-      .join('evaluations', 'participants.evaluation_id', 'evaluations.id')
+      .leftJoin('participant_evaluations as pe', 'participants.id', 'pe.participant_id')
+      .leftJoin('evaluations', 'pe.evaluation_id', 'evaluations.id')
       .where('participants.id', id)
-      .where('evaluations.company_id', req.user.companyId)
-      .select('participants.*', 'evaluations.name as evaluation_name')
+      .where('participants.company_id', req.user.companyId)
+      .select('participants.*', 'evaluations.name as evaluation_name', 'pe.evaluation_id', 'pe.status as evaluation_status', 'pe.assigned_at', 'pe.completed_at')
       .first();
 
     if (!participant) {
       return res.status(404).json({ error: 'Participante no encontrado' });
     }
 
+    // Parse demographic data
+    let demographicData = {};
+    try {
+      demographicData = typeof participant.demographic_data === 'string'
+        ? JSON.parse(participant.demographic_data)
+        : (participant.demographic_data || {});
+    } catch (e) {
+      demographicData = {};
+    }
+
     res.json({
       id: participant.id,
       evaluationId: participant.evaluation_id,
       evaluationName: participant.evaluation_name,
-      firstName: participant.first_name,
-      lastName: participant.last_name,
-      documentType: participant.document_type,
-      documentNumber: participant.document_number,
-      birthYear: participant.birth_year,
-      gender: participant.gender,
-      maritalStatus: participant.marital_status,
-      educationLevel: participant.education_level,
-      department: participant.department,
-      position: participant.position,
-      contractType: participant.contract_type,
-      employmentType: participant.employment_type,
-      tenureMonths: participant.tenure_months,
-      salaryRange: participant.salary_range,
-      workHoursPerDay: participant.work_hours_per_day,
-      workDaysPerWeek: participant.work_days_per_week,
-      formType: participant.form_type,
-      status: participant.status,
-      completionPercentage: participant.completion_percentage,
-      startedAt: participant.started_at,
+      firstName: demographicData.firstName || 'N/A',
+      lastName: demographicData.lastName || 'N/A',
+      documentType: demographicData.documentType || 'N/A',
+      documentNumber: demographicData.documentNumber || 'N/A',
+      birthYear: demographicData.birthYear || 0,
+      gender: demographicData.gender || 'N/A',
+      maritalStatus: demographicData.maritalStatus || 'N/A',
+      educationLevel: demographicData.educationLevel || 'N/A',
+      department: demographicData.department || 'N/A',
+      position: demographicData.position || 'N/A',
+      contractType: demographicData.contractType || 'N/A',
+      employmentType: demographicData.employmentType || 'N/A',
+      tenureMonths: demographicData.tenureMonths || 0,
+      salaryRange: demographicData.salaryRange || 'N/A',
+      workHoursPerDay: demographicData.workHoursPerDay || 8,
+      workDaysPerWeek: demographicData.workDaysPerWeek || 5,
+      formType: demographicData.formType || 'A',
+      status: participant.evaluation_status || 'assigned',
+      completionPercentage: 0,
+      startedAt: participant.assigned_at,
       completedAt: participant.completed_at,
       createdAt: participant.created_at,
       updatedAt: participant.updated_at
@@ -392,9 +517,8 @@ router.put('/:id', auth, authorize('admin', 'evaluator'), async (req, res) => {
 
     // Check if participant exists and belongs to company
     const existingParticipant = await db('participants')
-      .join('evaluations', 'participants.evaluation_id', 'evaluations.id')
       .where('participants.id', id)
-      .where('evaluations.company_id', req.user.companyId)
+      .where('participants.company_id', req.user.companyId)
       .select('participants.*')
       .first();
 
@@ -402,27 +526,41 @@ router.put('/:id', auth, authorize('admin', 'evaluator'), async (req, res) => {
       return res.status(404).json({ error: 'Participante no encontrado' });
     }
 
-    const updateData = {};
+    // Parse existing demographic data
+    let demographicData = {};
+    try {
+      demographicData = typeof existingParticipant.demographic_data === 'string'
+        ? JSON.parse(existingParticipant.demographic_data)
+        : (existingParticipant.demographic_data || {});
+    } catch (e) {
+      demographicData = {};
+    }
+
+    // Update demographic data with new values
     const allowedFields = [
       'firstName', 'lastName', 'department', 'position', 'contractType',
       'employmentType', 'tenureMonths', 'salaryRange', 'workHoursPerDay',
-      'workDaysPerWeek', 'formType'
+      'workDaysPerWeek', 'formType', 'gender', 'maritalStatus', 'educationLevel'
     ];
 
+    let hasChanges = false;
     allowedFields.forEach(field => {
       if (req.body[field] !== undefined) {
-        const dbField = field.replace(/([A-Z])/g, '_$1').toLowerCase();
-        updateData[dbField] = req.body[field];
+        demographicData[field] = req.body[field];
+        hasChanges = true;
       }
     });
 
-    if (Object.keys(updateData).length === 0) {
+    if (!hasChanges) {
       return res.status(400).json({ error: 'No hay datos para actualizar' });
     }
 
     const [participant] = await db('participants')
       .where('id', id)
-      .update(updateData)
+      .update({
+        demographic_data: JSON.stringify(demographicData),
+        updated_at: new Date()
+      })
       .returning('*');
 
     // Log update
@@ -431,18 +569,16 @@ router.put('/:id', auth, authorize('admin', 'evaluator'), async (req, res) => {
       action: 'update_participant',
       entity_type: 'participant',
       entity_id: id,
-      details: updateData
+      details: { updatedFields: Object.keys(req.body) }
     });
 
     res.json({
       id: participant.id,
-      firstName: participant.first_name,
-      lastName: participant.last_name,
-      department: participant.department,
-      position: participant.position,
-      formType: participant.form_type,
-      status: participant.status,
-      completionPercentage: participant.completion_percentage,
+      firstName: demographicData.firstName || 'N/A',
+      lastName: demographicData.lastName || 'N/A',
+      department: demographicData.department || 'N/A',
+      position: demographicData.position || 'N/A',
+      formType: demographicData.formType || 'A',
       updatedAt: participant.updated_at
     });
 
@@ -459,37 +595,48 @@ router.delete('/:id', auth, authorize('admin'), async (req, res) => {
 
     // Check if participant exists and belongs to company
     const participant = await db('participants')
-      .join('evaluations', 'participants.evaluation_id', 'evaluations.id')
+      .leftJoin('participant_evaluations as pe', 'participants.id', 'pe.participant_id')
       .where('participants.id', id)
-      .where('evaluations.company_id', req.user.companyId)
-      .select('participants.*')
+      .where('participants.company_id', req.user.companyId)
+      .select('participants.*', 'pe.evaluation_id', 'pe.status as evaluation_status')
       .first();
 
     if (!participant) {
       return res.status(404).json({ error: 'Participante no encontrado' });
     }
 
+    // Parse demographic data for logging
+    let demographicData = {};
+    try {
+      demographicData = typeof participant.demographic_data === 'string'
+        ? JSON.parse(participant.demographic_data)
+        : (participant.demographic_data || {});
+    } catch (e) {
+      demographicData = {};
+    }
+
     await db.transaction(async (trx) => {
-      // Delete responses first
-      await trx('responses').where('participant_id', id).del();
+      // Delete responses first (using participant_evaluation_id)
+      await trx('responses')
+        .whereIn('participant_evaluation_id', 
+          trx('participant_evaluations')
+            .select('id')
+            .where('participant_id', id)
+        ).del();
       
-      // Delete results
-      await trx('results').where('participant_id', id).del();
+      // Delete results (using participant_evaluation_id)
+      await trx('results')
+        .whereIn('participant_evaluation_id', 
+          trx('participant_evaluations')
+            .select('id')
+            .where('participant_id', id)
+        ).del();
+        
+      // Delete participant_evaluations
+      await trx('participant_evaluations').where('participant_id', id).del();
       
       // Delete participant
       await trx('participants').where('id', id).del();
-      
-      // Update evaluation participants count
-      await trx('evaluations')
-        .where('id', participant.evaluation_id)
-        .decrement('total_participants', 1);
-        
-      // If participant was completed, also decrement completed count
-      if (participant.status === 'completed') {
-        await trx('evaluations')
-          .where('id', participant.evaluation_id)
-          .decrement('completed_participants', 1);
-      }
     });
 
     // Log deletion
@@ -499,7 +646,7 @@ router.delete('/:id', auth, authorize('admin'), async (req, res) => {
       entity_type: 'participant',
       entity_id: id,
       details: {
-        name: `${participant.first_name} ${participant.last_name}`,
+        name: `${demographicData.firstName || 'N/A'} ${demographicData.lastName || 'N/A'}`,
         evaluationId: participant.evaluation_id
       }
     });

@@ -290,4 +290,78 @@ router.delete('/:id', auth, authorize('admin'), async (req, res) => {
   }
 });
 
+// Get dashboard statistics for evaluator
+router.get('/dashboard', auth, async (req, res) => {
+  try {
+    const companyId = req.user.companyId;
+
+    // Get evaluation statistics
+    const evaluationStats = await db('evaluations')
+      .where('company_id', companyId)
+      .select(
+        db.raw('COUNT(*) as total_evaluations'),
+        db.raw("COUNT(CASE WHEN status = 'active' THEN 1 END) as active_evaluations")
+      )
+      .first();
+
+    // Get participant statistics
+    const participantStats = await db('participants')
+      .join('evaluations', 'participants.evaluation_id', 'evaluations.id')
+      .where('evaluations.company_id', companyId)
+      .select(
+        db.raw('COUNT(DISTINCT participants.id) as total_participants'),
+        db.raw('COUNT(DISTINCT CASE WHEN participants.completed_at IS NOT NULL THEN participants.id END) as completed_participants')
+      )
+      .first();
+
+    // Get response statistics
+    const responseStats = await db('responses')
+      .join('participants', 'responses.participant_id', 'participants.id')
+      .join('evaluations', 'participants.evaluation_id', 'evaluations.id')
+      .where('evaluations.company_id', companyId)
+      .select(
+        db.raw('COUNT(*) as total_responses'),
+        db.raw('COUNT(DISTINCT responses.participant_id) as participants_with_responses')
+      )
+      .first();
+
+    // Calculate average completion rate
+    const totalParticipants = parseInt(participantStats.total_participants) || 1;
+    const completedParticipants = parseInt(participantStats.completed_participants) || 0;
+    const averageCompletion = Math.round((completedParticipants / totalParticipants) * 100);
+
+    // Get recent activity (last 10 participant completions)
+    const recentActivity = await db('participants')
+      .join('evaluations', 'participants.evaluation_id', 'evaluations.id')
+      .where('evaluations.company_id', companyId)
+      .whereNotNull('participants.completed_at')
+      .select(
+        'participants.first_name',
+        'participants.last_name',
+        'evaluations.name as evaluation_name',
+        'participants.completed_at'
+      )
+      .orderBy('participants.completed_at', 'desc')
+      .limit(10);
+
+    const stats = {
+      totalEvaluations: parseInt(evaluationStats.total_evaluations) || 0,
+      activeEvaluations: parseInt(evaluationStats.active_evaluations) || 0,
+      totalParticipants: parseInt(participantStats.total_participants) || 0,
+      completedAssessments: parseInt(participantStats.completed_participants) || 0,
+      pendingAssessments: totalParticipants - completedParticipants,
+      averageCompletion: averageCompletion
+    };
+
+    res.json({
+      stats,
+      recentActivity
+    });
+
+  } catch (error) {
+    console.error('Dashboard error:', error);
+    res.status(500).json({ error: 'Error interno del servidor' });
+  }
+});
+
 module.exports = router;

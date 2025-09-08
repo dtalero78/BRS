@@ -9,6 +9,22 @@ import {
   ExclamationTriangleIcon
 } from '@heroicons/react/24/outline';
 
+// Dynamic API URL detection
+const getApiUrl = (): string => {
+  if (process.env.NEXT_PUBLIC_API_URL) {
+    return process.env.NEXT_PUBLIC_API_URL;
+  }
+  
+  if (typeof window !== 'undefined') {
+    const hostname = window.location.hostname;
+    if (hostname.includes('github.dev')) {
+      return `https://${hostname.replace('-3000', '-5000')}`;
+    }
+  }
+  
+  return 'http://localhost:5000';
+};
+
 interface DashboardStats {
   totalEvaluations: number;
   activeEvaluations: number;
@@ -37,7 +53,9 @@ export default function EvaluatorDashboard() {
   const fetchDashboardData = async () => {
     try {
       const token = localStorage.getItem('token');
-      const response = await fetch('/api/evaluator/dashboard', {
+      const apiUrl = getApiUrl();
+      console.log('Dashboard API URL:', apiUrl);
+      const response = await fetch(`${apiUrl}/api/evaluator/dashboard`, {
         headers: {
           'Authorization': `Bearer ${token}`,
         },
@@ -163,10 +181,20 @@ export default function EvaluatorDashboard() {
                   <span className="font-medium">Gestionar Participantes</span>
                 </div>
               </button>
-              <button className="w-full text-left p-3 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors">
+              <button 
+                onClick={() => window.location.href = '/evaluator/results-dashboard'}
+                className="w-full text-left p-3 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors">
                 <div className="flex items-center">
                   <ChartBarIcon className="h-5 w-5 text-purple-600 mr-3" />
-                  <span className="font-medium">Ver Resultados</span>
+                  <span className="font-medium">Ver Dashboard de Resultados</span>
+                </div>
+              </button>
+              <button 
+                onClick={() => window.location.href = '/evaluator/organizational-dashboard'}
+                className="w-full text-left p-3 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors">
+                <div className="flex items-center">
+                  <ChartBarIcon className="h-5 w-5 text-indigo-600 mr-3" />
+                  <span className="font-medium">Dashboard Organizacional</span>
                 </div>
               </button>
             </div>

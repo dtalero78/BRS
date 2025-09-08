@@ -24,90 +24,103 @@ router.post('/', auth, async (req, res) => {
 
     const { participantId, questionnaireType, responses } = req.body;
 
-    // Check if participant exists and belongs to company
-    const participant = await db('participants')
-      .join('evaluations', 'participants.evaluation_id', 'evaluations.id')
+    // Check if participant exists and belongs to company, get participant_evaluation_id
+    const participantEvaluation = await db('participants')
+      .leftJoin('participant_evaluations as pe', 'participants.id', 'pe.participant_id')
+      .leftJoin('evaluations', 'pe.evaluation_id', 'evaluations.id')
       .where('participants.id', participantId)
-      .where('evaluations.company_id', req.user.companyId)
-      .select('participants.*')
+      .where('participants.company_id', req.user.companyId)
+      .select('participants.*', 'pe.id as pe_id', 'evaluations.name as evaluation_name')
       .first();
 
-    if (!participant) {
+    if (!participantEvaluation) {
       return res.status(404).json({ error: 'Participante no encontrado' });
     }
 
+    if (!participantEvaluation.pe_id) {
+      return res.status(400).json({ error: 'Participante no asignado a evaluación' });
+    }
+
     await db.transaction(async (trx) => {
+      // Convert responses to the format expected by calculate-results.js
+      const responseMap = {};
+      responses.forEach(response => {
+        responseMap[response.questionNumber] = response.responseValue;
+      });
+
       // Delete existing responses for this questionnaire type
       await trx('responses')
-        .where('participant_id', participantId)
+        .where('participant_evaluation_id', participantEvaluation.pe_id)
         .where('questionnaire_type', questionnaireType)
         .del();
 
-      // Insert new responses
-      const responseData = responses.map(response => ({
-        participant_id: participantId,
+      // Insert new responses as JSON
+      await trx('responses').insert({
+        participant_evaluation_id: participantEvaluation.pe_id,
         questionnaire_type: questionnaireType,
-        question_number: response.questionNumber,
-        response_value: response.responseValue,
-        dimension: response.dimension || null,
-        domain: response.domain || null
-      }));
+        responses: JSON.stringify(responseMap),
+        completed_at: new Date()
+      });
 
-      await trx('responses').insert(responseData);
+      // Update participant progress - get demographic data to determine form type
+      let demographicData = {};
+      try {
+        demographicData = typeof participantEvaluation.demographic_data === 'string'
+          ? JSON.parse(participantEvaluation.demographic_data)
+          : (participantEvaluation.demographic_data || {});
+      } catch (e) {
+        demographicData = {};
+      }
 
-      // Update participant progress
+      const formType = demographicData.formType || 'A';
+
       const totalQuestionsByType = {
         'intralaboral_a': 123,
         'intralaboral_b': 97,
         'extralaboral': 31,
-        'stress': 31
+        'estres': 31
       };
 
       const completedQuestionnaires = await trx('responses')
-        .where('participant_id', participantId)
-        .groupBy('questionnaire_type')
-        .select('questionnaire_type', trx.raw('COUNT(*) as count'));
+        .where('participant_evaluation_id', participantEvaluation.pe_id)
+        .select('questionnaire_type');
 
       let totalCompleted = 0;
       let totalRequired = 0;
+      const completedTypes = completedQuestionnaires.map(q => q.questionnaire_type);
 
       // Determine required questionnaires based on form type
-      const requiredQuestionnaires = participant.form_type === 'A' 
-        ? ['intralaboral_a', 'extralaboral', 'stress']
-        : ['intralaboral_b', 'extralaboral', 'stress'];
+      const requiredQuestionnaires = formType === 'A' 
+        ? ['intralaboral_a', 'extralaboral', 'estres']
+        : ['intralaboral_b', 'extralaboral', 'estres'];
 
       requiredQuestionnaires.forEach(type => {
-        const completed = completedQuestionnaires.find(q => q.questionnaire_type === type);
-        totalCompleted += completed ? parseInt(completed.count) : 0;
+        if (completedTypes.includes(type)) {
+          totalCompleted += totalQuestionsByType[type];
+        }
         totalRequired += totalQuestionsByType[type];
       });
 
       const completionPercentage = Math.round((totalCompleted / totalRequired) * 100);
-      const isCompleted = completionPercentage === 100;
 
-      // Update participant status
-      const updateData = {
-        completion_percentage: completionPercentage
-      };
-
-      if (participant.status === 'pending' && totalCompleted > 0) {
+      // Update participant_evaluation status
+      const updateData = {};
+      
+      if (participantEvaluation.status === 'assigned' && completedTypes.length > 0) {
         updateData.status = 'in_progress';
-        updateData.started_at = new Date();
       }
 
-      if (isCompleted && participant.status !== 'completed') {
+      if (completionPercentage === 100 && participantEvaluation.status !== 'completed') {
         updateData.status = 'completed';
         updateData.completed_at = new Date();
-        
-        // Update evaluation completed participants count
-        await trx('evaluations')
-          .where('id', participant.evaluation_id)
-          .increment('completed_participants', 1);
       }
 
-      await trx('participants')
-        .where('id', participantId)
-        .update(updateData);
+      if (Object.keys(updateData).length > 0) {
+        updateData.updated_at = new Date();
+        await trx('participant_evaluations')
+          .where('id', participantEvaluation.pe_id)
+          .update(updateData);
+      }
     });
 
     // Log response saving
@@ -139,19 +152,24 @@ router.get('/participant/:participantId', auth, async (req, res) => {
     const { participantId } = req.params;
     const { questionnaireType } = req.query;
 
-    // Check if participant exists and belongs to company
-    const participant = await db('participants')
-      .join('evaluations', 'participants.evaluation_id', 'evaluations.id')
+    // Check if participant exists and belongs to company, get participant_evaluation_id
+    const participantEvaluation = await db('participants')
+      .leftJoin('participant_evaluations as pe', 'participants.id', 'pe.participant_id')
+      .leftJoin('evaluations', 'pe.evaluation_id', 'evaluations.id')
       .where('participants.id', participantId)
-      .where('evaluations.company_id', req.user.companyId)
-      .select('participants.*')
+      .where('participants.company_id', req.user.companyId)
+      .select('participants.*', 'pe.id as pe_id', 'evaluations.name as evaluation_name')
       .first();
 
-    if (!participant) {
+    if (!participantEvaluation) {
       return res.status(404).json({ error: 'Participante no encontrado' });
     }
 
-    let query = db('responses').where('participant_id', participantId);
+    if (!participantEvaluation.pe_id) {
+      return res.status(400).json({ error: 'Participante no asignado a evaluación' });
+    }
+
+    let query = db('responses').where('participant_evaluation_id', participantEvaluation.pe_id);
 
     if (questionnaireType) {
       query = query.where('questionnaire_type', questionnaireType);
@@ -159,28 +177,36 @@ router.get('/participant/:participantId', auth, async (req, res) => {
 
     const responses = await query
       .orderBy('questionnaire_type')
-      .orderBy('question_number')
       .select('*');
 
-    // Group responses by questionnaire type
-    const groupedResponses = responses.reduce((acc, response) => {
-      if (!acc[response.questionnaire_type]) {
-        acc[response.questionnaire_type] = [];
+    // Parse JSON responses and convert to individual question format
+    const groupedResponses = {};
+    let totalResponses = 0;
+
+    responses.forEach(response => {
+      try {
+        const responseData = typeof response.responses === 'string' 
+          ? JSON.parse(response.responses)
+          : (response.responses || {});
+        
+        const questionResponses = Object.entries(responseData).map(([questionNumber, responseValue]) => ({
+          questionNumber: parseInt(questionNumber),
+          responseValue: responseValue,
+          createdAt: response.created_at
+        }));
+
+        groupedResponses[response.questionnaire_type] = questionResponses;
+        totalResponses += questionResponses.length;
+      } catch (e) {
+        console.error('Error parsing response JSON:', e);
+        groupedResponses[response.questionnaire_type] = [];
       }
-      acc[response.questionnaire_type].push({
-        questionNumber: response.question_number,
-        responseValue: response.response_value,
-        dimension: response.dimension,
-        domain: response.domain,
-        createdAt: response.created_at
-      });
-      return acc;
-    }, {});
+    });
 
     res.json({
       participantId,
       responses: groupedResponses,
-      totalResponses: responses.length
+      totalResponses
     });
 
   } catch (error) {

@@ -23,14 +23,36 @@ app.use('/api/', limiter);
 
 // CORS configuration
 const corsOptions = {
-  origin: [
-    process.env.FRONTEND_URL || 'http://localhost:3000',
-    'https://automatic-fiesta-v4x7g75pq7wfw999-3000.app.github.dev',
-    /^https:\/\/.*\.app\.github\.dev$/
-  ],
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
-  credentials: true
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    
+    const allowedOrigins = [
+      'http://localhost:3000',
+      'http://localhost:3001',
+      'https://automatic-fiesta-v4x7g75pq7wfw999-3000.app.github.dev',
+      'https://automatic-fiesta-v4x7g75pq7wfw999-3001.app.github.dev'
+    ];
+    
+    // Allow any GitHub Codespaces domain
+    if (origin.includes('.app.github.dev')) {
+      console.log('CORS allowing origin:', origin);
+      return callback(null, true);
+    }
+    
+    if (allowedOrigins.indexOf(origin) !== -1) {
+      console.log('CORS allowing origin:', origin);
+      callback(null, true);
+    } else {
+      console.log('CORS blocked origin:', origin);
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Origin', 'Accept'],
+  credentials: true,
+  optionsSuccessStatus: 200,
+  preflightContinue: false
 };
 app.use(cors(corsOptions));
 
@@ -93,6 +115,71 @@ try {
   console.error('❌ Error loading evaluations routes:', error.message);
 }
 
+// Add evaluator dashboard endpoint
+app.get('/api/evaluator/dashboard', require('./middleware/auth').auth, async (req, res) => {
+  try {
+    const db = require('./config/database');
+    const companyId = req.user.companyId;
+
+    // Get evaluation statistics
+    const evaluationStats = await db('evaluations')
+      .where('company_id', companyId)
+      .select(
+        db.raw('COUNT(*) as total_evaluations'),
+        db.raw("COUNT(CASE WHEN status = 'active' THEN 1 END) as active_evaluations")
+      )
+      .first();
+
+    // Get participant statistics
+    const participantStats = await db('participants')
+      .join('participant_evaluations', 'participants.id', 'participant_evaluations.participant_id')
+      .join('evaluations', 'participant_evaluations.evaluation_id', 'evaluations.id')
+      .where('evaluations.company_id', companyId)
+      .select(
+        db.raw('COUNT(DISTINCT participants.id) as total_participants'),
+        db.raw('COUNT(DISTINCT CASE WHEN participant_evaluations.completed_at IS NOT NULL THEN participants.id END) as completed_participants')
+      )
+      .first();
+
+    // Calculate average completion rate
+    const totalParticipants = parseInt(participantStats.total_participants) || 1;
+    const completedParticipants = parseInt(participantStats.completed_participants) || 0;
+    const averageCompletion = Math.round((completedParticipants / totalParticipants) * 100);
+
+    // Get recent activity (last 10 participant completions)
+    const recentActivity = await db('participant_evaluations')
+      .join('participants', 'participant_evaluations.participant_id', 'participants.id')
+      .join('evaluations', 'participant_evaluations.evaluation_id', 'evaluations.id')
+      .where('evaluations.company_id', companyId)
+      .whereNotNull('participant_evaluations.completed_at')
+      .select(
+        'participants.email',
+        'evaluations.name as evaluation_name',
+        'participant_evaluations.completed_at'
+      )
+      .orderBy('participant_evaluations.completed_at', 'desc')
+      .limit(10);
+
+    const stats = {
+      totalEvaluations: parseInt(evaluationStats.total_evaluations) || 0,
+      activeEvaluations: parseInt(evaluationStats.active_evaluations) || 0,
+      totalParticipants: parseInt(participantStats.total_participants) || 0,
+      completedAssessments: parseInt(participantStats.completed_participants) || 0,
+      pendingAssessments: totalParticipants - completedParticipants,
+      averageCompletion: averageCompletion
+    };
+
+    res.json({
+      stats,
+      recentActivity
+    });
+
+  } catch (error) {
+    console.error('Dashboard error:', error);
+    res.status(500).json({ error: 'Error interno del servidor' });
+  }
+});
+
 // Load participants routes
 try {
   app.use('/api/participants', require('./routes/participants'));
@@ -125,11 +212,11 @@ try {
   console.error('❌ Error loading participant access routes:', error.message);
 }
 
-// Temporarily disable other routes until needed
-/*
+// Results and reports routes
 app.use('/api/results', require('./routes/results'));
 app.use('/api/reports', require('./routes/reports'));
-*/
+console.log('✅ Results routes loaded');
+console.log('✅ Reports routes loaded');
 
 // Serve static files (uploads, reports)
 app.use('/uploads', express.static('uploads'));
