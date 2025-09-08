@@ -127,7 +127,6 @@ export default function UsersPage() {
         setEditingUser(null);
         setFormData({
           email: '',
-          name: '',
           password: '',
           role: 'evaluator',
           company_id: ''
@@ -257,7 +256,6 @@ export default function UsersPage() {
               setEditingUser(null);
               setFormData({
                 email: '',
-                name: '',
                 password: '',
                 role: 'evaluator',
                 company_id: ''
