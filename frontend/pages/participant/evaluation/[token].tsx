@@ -24,6 +24,8 @@ interface QuestionnaireData {
     instrucciones?: string;
     secciones?: { [key: string]: QuestionnaireSection } | Question[];
     preguntas?: Question[];
+    campos?: any[];
+    malestares?: any[];
   };
   opciones_respuesta: {
     escala_principal: string[];
