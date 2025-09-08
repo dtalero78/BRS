@@ -1,0 +1,39 @@
+name: brs-app
+services:
+  - name: backend
+    source_dir: /backend
+    github:
+      repo: dtalero78/BRS
+      branch: main
+    run_command: npm start
+    build_command: npm install
+    environment_slug: node-js
+    instance_count: 1
+    instance_size_slug: basic-xxs
+    envs:
+    - key: NODE_ENV
+      value: production
+    - key: PORT
+      value: "8080"
+    http_port: 8080
+    
+  - name: frontend
+    source_dir: /frontend
+    github:
+      repo: dtalero78/BRS
+      branch: main
+    run_command: npm start
+    build_command: |
+      npm install
+      npm run build
+    environment_slug: node-js
+    instance_count: 1
+    instance_size_slug: basic-xxs
+    envs:
+    - key: NODE_ENV
+      value: production
+    - key: NEXT_PUBLIC_API_URL
+      value: ${backend.PUBLIC_URL}
+    http_port: 3000
+    routes:
+    - path: /

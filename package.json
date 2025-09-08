@@ -7,8 +7,9 @@
     "dev": "concurrently \"npm run server\" \"npm run client\"",
     "server": "cd backend && npm run dev",
     "client": "cd frontend && npm run dev",
-    "build": "cd frontend && npm run build",
+    "build": "npm run setup && cd frontend && npm run build",
     "start": "cd backend && npm start",
+    "postinstall": "npm run setup",
     "test": "npm run test:backend && npm run test:frontend",
     "test:backend": "cd backend && npm test",
     "test:frontend": "cd frontend && npm test",
@@ -27,6 +28,10 @@
   ],
   "author": "BRS Development Team",
   "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=8.0.0"
+  },
   "devDependencies": {
     "concurrently": "^8.2.2"
   },

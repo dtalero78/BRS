@@ -1,10 +1,1 @@
-{
-  "/_app": "pages/_app.js",
-  "/_error": "pages/_error.js",
-  "/_document": "pages/_document.js",
-  "/auth/login": "pages/auth/login.js",
-  "/admin/companies": "pages/admin/companies.js",
-  "/admin/dashboard": "pages/admin/dashboard.js",
-  "/admin/users": "pages/admin/users.js",
-  "/": "pages/index.js"
-}
+{"/_app":"pages/_app.js","/_error":"pages/_error.js","/admin/companies":"pages/admin/companies.html","/admin/dashboard":"pages/admin/dashboard.html","/admin/users":"pages/admin/users.html","/auth/login":"pages/auth/login.html","/evaluator/dashboard":"pages/evaluator/dashboard.html","/evaluator/evaluations":"pages/evaluator/evaluations.html","/evaluator/organizational-dashboard":"pages/evaluator/organizational-dashboard.html","/evaluator/participants":"pages/evaluator/participants.html","/evaluator/reports":"pages/evaluator/reports.html","/evaluator/results-dashboard/[participantId]":"pages/evaluator/results-dashboard/[participantId].html","/evaluator/results-dashboard":"pages/evaluator/results-dashboard.html","/evaluator/results":"pages/evaluator/results.html","/evaluator/results/[participantId]":"pages/evaluator/results/[participantId].html","/evaluator/results/dashboard/[participantId]":"pages/evaluator/results/dashboard/[participantId].html","/":"pages/index.html","/participant/evaluation/[token]":"pages/participant/evaluation/[token].html","/participant/questionnaires":"pages/participant/questionnaires.html","/participant/questionnaires/[id]":"pages/participant/questionnaires/[id].html","/_document":"pages/_document.js","/404":"pages/404.html"}
