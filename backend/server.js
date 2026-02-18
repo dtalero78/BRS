@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
+const path = require('path');
 const rateLimit = require('express-rate-limit');
 require('dotenv').config();
 
@@ -21,40 +22,13 @@ const limiter = rateLimit({
 });
 app.use('/api/', limiter);
 
-// CORS configuration
-const corsOptions = {
-  origin: function (origin, callback) {
-    // Allow requests with no origin (like mobile apps or curl requests)
-    if (!origin) return callback(null, true);
-    
-    const allowedOrigins = [
-      'http://localhost:3000',
-      'http://localhost:3001',
-      'https://automatic-fiesta-v4x7g75pq7wfw999-3000.app.github.dev',
-      'https://automatic-fiesta-v4x7g75pq7wfw999-3001.app.github.dev'
-    ];
-    
-    // Allow any GitHub Codespaces domain
-    if (origin.includes('.app.github.dev')) {
-      console.log('CORS allowing origin:', origin);
-      return callback(null, true);
-    }
-    
-    if (allowedOrigins.indexOf(origin) !== -1) {
-      console.log('CORS allowing origin:', origin);
-      callback(null, true);
-    } else {
-      console.log('CORS blocked origin:', origin);
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
+// CORS configuration - allow same origin and common dev origins
+app.use(cors({
+  origin: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Origin', 'Accept'],
   credentials: true,
-  optionsSuccessStatus: 200,
-  preflightContinue: false
-};
-app.use(cors(corsOptions));
+}));
 
 // Body parsing middleware
 app.use(express.json({ limit: '10mb' }));
@@ -221,6 +195,10 @@ console.log('✅ Reports routes loaded');
 // Serve static files (uploads, reports)
 app.use('/uploads', express.static('uploads'));
 
+// Serve frontend static files (built by Next.js export)
+const frontendPath = path.join(__dirname, '..', 'frontend', 'out');
+app.use(express.static(frontendPath));
+
 // Error handling middleware
 app.use((err, req, res, next) => {
   console.error('Error:', err);
@@ -259,8 +237,32 @@ app.use((err, req, res, next) => {
   });
 });
 
-// 404 handler
+// SPA fallback - serve frontend for non-API routes
+const fs = require('fs');
 app.use('*', (req, res) => {
+  // If it's an API route that wasn't matched, return 404 JSON
+  if (req.originalUrl.startsWith('/api/')) {
+    return res.status(404).json({ error: 'Endpoint no encontrado' });
+  }
+
+  // Try to serve the specific HTML file for the route
+  const urlPath = req.originalUrl.replace(/\/$/, '') || '/index';
+  const htmlFile = path.join(frontendPath, urlPath + '.html');
+  const indexFile = path.join(frontendPath, urlPath, 'index.html');
+
+  if (fs.existsSync(indexFile)) {
+    return res.sendFile(indexFile);
+  }
+  if (fs.existsSync(htmlFile)) {
+    return res.sendFile(htmlFile);
+  }
+
+  // Fallback to index.html for client-side routing
+  const fallback = path.join(frontendPath, 'index.html');
+  if (fs.existsSync(fallback)) {
+    return res.sendFile(fallback);
+  }
+
   res.status(404).json({ error: 'Endpoint no encontrado' });
 });
 

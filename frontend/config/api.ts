@@ -1,29 +1,20 @@
-// API Configuration - Dynamic URL detection
+// API Configuration
+// In production, frontend is served by the same backend, so use relative URLs.
+// In development, point to the local backend server.
 const getApiUrl = (): string => {
-  // Check if we have an explicit environment variable
   if (process.env.NEXT_PUBLIC_API_URL) {
     return process.env.NEXT_PUBLIC_API_URL;
   }
-  
-  // Client-side detection for GitHub Codespaces
+
+  // In the browser, use same origin (relative)
   if (typeof window !== 'undefined') {
-    const hostname = window.location.hostname;
-    if (hostname.includes('github.dev') || hostname.includes('githubusercontent.dev')) {
-      // Extract the codespace identifier and construct backend URL
-      const codespaceParts = hostname.match(/([^.]+)\.app\.github\.dev/);
-      if (codespaceParts) {
-        return `https://${codespaceParts[1].replace('-3000', '-5000')}.app.github.dev`;
-      }
-    }
+    return '';
   }
-  
-  // Default to localhost
+
   return 'http://localhost:5000';
 };
 
 export const API_URL = getApiUrl();
-
-console.log('API_URL configured as:', API_URL);
 
 // API Endpoints
 export const API_ENDPOINTS = {
