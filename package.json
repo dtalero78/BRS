@@ -7,15 +7,12 @@
     "dev": "concurrently \"npm run server\" \"npm run client\"",
     "server": "cd backend && npm run dev",
     "client": "cd frontend && npm run dev",
-    "build": "npm run setup && cd frontend && npm run build",
+    "build": "cd backend && npm install && cd ../frontend && npm install && npm run build",
     "start": "cd backend && npm start",
-    "postinstall": "if [ -z \"$SKIP_POSTINSTALL\" ]; then npm run setup; fi",
     "test": "npm run test:backend && npm run test:frontend",
     "test:backend": "cd backend && npm test",
     "test:frontend": "cd frontend && npm test",
-    "setup": "npm run setup:backend && npm run setup:frontend",
-    "setup:backend": "cd backend && npm install",
-    "setup:frontend": "cd frontend && npm install",
+    "setup": "cd backend && npm install && cd ../frontend && npm install",
     "db:migrate": "cd backend && npm run db:migrate",
     "db:seed": "cd backend && npm run db:seed"
   },
@@ -34,9 +31,5 @@
   },
   "devDependencies": {
     "concurrently": "^8.2.2"
-  },
-  "workspaces": [
-    "frontend",
-    "backend"
-  ]
+  }
 }
