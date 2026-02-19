@@ -51,7 +51,7 @@ interface EvaluationData {
 
 const ParticipantEvaluationPage = () => {
   const router = useRouter();
-  const { token } = router.query;
+  const [token, setToken] = useState<string | null>(null);
   const [participant, setParticipant] = useState<ParticipantData | null>(null);
   const [evaluation, setEvaluation] = useState<EvaluationData | null>(null);
   const [availableQuestionnaires, setAvailableQuestionnaires] = useState<any[]>([]);
@@ -70,8 +70,22 @@ const ParticipantEvaluationPage = () => {
   // Questions per page for pagination (changed to 1 for individual display)
   const QUESTIONS_PER_PAGE = 1;
 
+  // Extract token from URL path (works with static export where router.query is empty)
   useEffect(() => {
-    if (token && typeof token === 'string') {
+    const pathToken = router.query.token as string | undefined;
+    if (pathToken) {
+      setToken(pathToken);
+    } else if (typeof window !== 'undefined') {
+      const pathParts = window.location.pathname.split('/');
+      const evalIndex = pathParts.indexOf('evaluation');
+      if (evalIndex !== -1 && pathParts[evalIndex + 1]) {
+        setToken(pathParts[evalIndex + 1].replace(/\/$/, ''));
+      }
+    }
+  }, [router.query.token]);
+
+  useEffect(() => {
+    if (token) {
       validateTokenAndLoadData(token);
     }
   }, [token]);

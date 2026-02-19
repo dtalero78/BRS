@@ -3,21 +3,7 @@ import Layout from '../../components/Layout';
 import ReportGenerator from '../../components/ReportGenerator';
 import { FileText, Calendar, Users, TrendingUp } from 'lucide-react';
 
-// Dynamic API URL detection
-const getApiUrl = (): string => {
-  if (process.env.NEXT_PUBLIC_API_URL) {
-    return process.env.NEXT_PUBLIC_API_URL;
-  }
-  
-  if (typeof window !== 'undefined') {
-    const hostname = window.location.hostname;
-    if (hostname.includes('github.dev')) {
-      return `https://${hostname.replace('-3000', '-5000')}`;
-    }
-  }
-  
-  return 'http://localhost:5000';
-};
+import { API_URL } from '../../config/api';
 
 interface Evaluation {
   id: string;
@@ -53,7 +39,7 @@ export default function ReportsPage() {
   const fetchData = async () => {
     try {
       const token = localStorage.getItem('token');
-      const apiUrl = getApiUrl();
+      const apiUrl = API_URL;
 
       // Fetch evaluations
       const evaluationsResponse = await fetch(`${apiUrl}/api/evaluations`, {

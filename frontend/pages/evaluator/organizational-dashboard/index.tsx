@@ -35,21 +35,7 @@ import {
   AreaChart
 } from 'recharts';
 
-// Dynamic API URL detection
-const getApiUrl = (): string => {
-  if (process.env.NEXT_PUBLIC_API_URL) {
-    return process.env.NEXT_PUBLIC_API_URL;
-  }
-  
-  if (typeof window !== 'undefined') {
-    const hostname = window.location.hostname;
-    if (hostname.includes('github.dev')) {
-      return `https://${hostname.replace('-3000', '-5000')}`;
-    }
-  }
-  
-  return 'http://localhost:5000';
-};
+import { API_URL } from '../../../config/api';
 
 interface OrganizationalMetrics {
   totalParticipants: number;
@@ -129,7 +115,7 @@ export default function OrganizationalDashboard() {
       const token = localStorage.getItem('token');
       
       // Fetch evaluations
-      const evaluationsResponse = await axios.get(`${getApiUrl()}/api/evaluations`, {
+      const evaluationsResponse = await axios.get(`${API_URL}/api/evaluations`, {
         headers: { Authorization: `Bearer ${token}` }
       });
 
@@ -143,7 +129,7 @@ export default function OrganizationalDashboard() {
           try {
             // Get evaluation results
             const resultsResponse = await axios.get(
-              `${getApiUrl()}/api/results/evaluation/${evaluation.id}`,
+              `${API_URL}/api/results/evaluation/${evaluation.id}`,
               { headers: { Authorization: `Bearer ${token}` } }
             );
 
@@ -223,7 +209,7 @@ export default function OrganizationalDashboard() {
       
       // Get detailed results for the selected evaluation
       const resultsResponse = await axios.get(
-        `${getApiUrl()}/api/results/evaluation/${evaluationId}`,
+        `${API_URL}/api/results/evaluation/${evaluationId}`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
 

@@ -258,7 +258,18 @@ app.use('*', (req, res) => {
     return res.sendFile(htmlFile);
   }
 
-  // Fallback to index.html for client-side routing
+  // For dynamic routes (e.g. /participant/evaluation/TOKEN),
+  // try parent directory index.html files walking up the path
+  const segments = urlPath.split('/').filter(Boolean);
+  for (let i = segments.length - 1; i >= 1; i--) {
+    const parentPath = '/' + segments.slice(0, i).join('/');
+    const parentIndex = path.join(frontendPath, parentPath, 'index.html');
+    if (fs.existsSync(parentIndex)) {
+      return res.sendFile(parentIndex);
+    }
+  }
+
+  // Final fallback to root index.html
   const fallback = path.join(frontendPath, 'index.html');
   if (fs.existsSync(fallback)) {
     return res.sendFile(fallback);

@@ -4,6 +4,14 @@ const Joi = require('joi');
 const { auth, authorize } = require('../middleware/auth');
 const db = require('../config/database');
 
+// Helper to get the base URL for participant evaluation links
+function getBaseUrl(req) {
+  if (process.env.FRONTEND_URL) return process.env.FRONTEND_URL;
+  const protocol = req.get('x-forwarded-proto') || req.protocol;
+  const host = req.get('x-forwarded-host') || req.get('host');
+  return `${protocol}://${host}`;
+}
+
 // Validation schema for creating participant
 const createParticipantSchema = Joi.object({
   evaluationId: Joi.alternatives().try(Joi.number().integer(), Joi.string()).required(),
@@ -147,7 +155,7 @@ router.post('/', auth, authorize('admin', 'evaluator'), async (req, res) => {
       completionPercentage: 0,
       createdAt: participant.created_at,
       accessToken: accessToken,
-      evaluationUrl: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/participant/evaluation/${accessToken}`
+      evaluationUrl: `${getBaseUrl(req)}/participant/evaluation/${accessToken}`
     });
 
   } catch (error) {
@@ -300,7 +308,7 @@ router.get('/', auth, async (req, res) => {
         createdAt: p.created_at,
         updatedAt: p.updated_at,
         accessToken: p.access_token,
-        evaluationUrl: p.access_token ? `${process.env.FRONTEND_URL || 'http://localhost:3000'}/participant/evaluation/${p.access_token}` : null
+        evaluationUrl: p.access_token ? `${getBaseUrl(req)}/participant/evaluation/${p.access_token}` : null
       };
     }));
 
@@ -431,7 +439,7 @@ router.get('/evaluation/:evaluationId', auth, async (req, res) => {
           completedAt: p.completed_at,
           createdAt: p.created_at,
           accessToken: p.access_token,
-          evaluationUrl: p.access_token ? `${process.env.FRONTEND_URL || 'http://localhost:3000'}/participant/evaluation/${p.access_token}` : null
+          evaluationUrl: p.access_token ? `${getBaseUrl(req)}/participant/evaluation/${p.access_token}` : null
         };
       }),
       pagination: {
@@ -709,7 +717,7 @@ router.post('/:id/generate-token', auth, authorize('admin', 'evaluator'), async 
     res.json({
       success: true,
       accessToken: accessToken,
-      evaluationUrl: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/participant/evaluation/${accessToken}`,
+      evaluationUrl: `${getBaseUrl(req)}/participant/evaluation/${accessToken}`,
       expiresAt: tokenExpiresAt
     });
 

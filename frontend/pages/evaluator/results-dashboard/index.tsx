@@ -14,21 +14,7 @@ import {
   Calendar
 } from 'lucide-react';
 
-// Dynamic API URL detection
-const getApiUrl = (): string => {
-  if (process.env.NEXT_PUBLIC_API_URL) {
-    return process.env.NEXT_PUBLIC_API_URL;
-  }
-  
-  if (typeof window !== 'undefined') {
-    const hostname = window.location.hostname;
-    if (hostname.includes('github.dev')) {
-      return `https://${hostname.replace('-3000', '-5000')}`;
-    }
-  }
-  
-  return 'http://localhost:5000';
-};
+import { API_URL } from '../../../config/api';
 
 interface Participant {
   id: number;
@@ -71,7 +57,7 @@ export default function ResultsDashboard() {
   const fetchEvaluations = async () => {
     try {
       const token = localStorage.getItem('token');
-      const response = await axios.get(`${getApiUrl()}/api/evaluations`, {
+      const response = await axios.get(`${API_URL}/api/evaluations`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       
@@ -84,7 +70,7 @@ export default function ResultsDashboard() {
           try {
             // Get participants data to get real counts
             const participantsRes = await axios.get(
-              `${getApiUrl()}/api/participants/evaluation/${evaluation.id}`,
+              `${API_URL}/api/participants/evaluation/${evaluation.id}`,
               { headers: { Authorization: `Bearer ${token}` } }
             );
             
@@ -97,7 +83,7 @@ export default function ResultsDashboard() {
 
             // Get results data
             const resultsRes = await axios.get(
-              `${getApiUrl()}/api/results/evaluation/${evaluation.id}`,
+              `${API_URL}/api/results/evaluation/${evaluation.id}`,
               { headers: { Authorization: `Bearer ${token}` } }
             );
             
@@ -137,7 +123,7 @@ export default function ResultsDashboard() {
     try {
       const token = localStorage.getItem('token');
       const response = await axios.get(
-        `${getApiUrl()}/api/participants/evaluation/${evaluationId}`,
+        `${API_URL}/api/participants/evaluation/${evaluationId}`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
       
@@ -151,7 +137,7 @@ export default function ResultsDashboard() {
         participantsArray.map(async (participant: any) => {
           try {
             const resultsRes = await axios.get(
-              `${getApiUrl()}/api/results/participant/${participant.id}`,
+              `${API_URL}/api/results/participant/${participant.id}`,
               { headers: { Authorization: `Bearer ${token}` } }
             );
             
@@ -209,7 +195,7 @@ export default function ResultsDashboard() {
       const token = localStorage.getItem('token');
       
       await axios.post(
-        `${getApiUrl()}/api/results/calculate/${participantId}`,
+        `${API_URL}/api/results/calculate/${participantId}`,
         {},
         { headers: { Authorization: `Bearer ${token}` } }
       );

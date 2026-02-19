@@ -9,21 +9,7 @@ import {
   ExclamationTriangleIcon
 } from '@heroicons/react/24/outline';
 
-// Dynamic API URL detection
-const getApiUrl = (): string => {
-  if (process.env.NEXT_PUBLIC_API_URL) {
-    return process.env.NEXT_PUBLIC_API_URL;
-  }
-  
-  if (typeof window !== 'undefined') {
-    const hostname = window.location.hostname;
-    if (hostname.includes('github.dev')) {
-      return `https://${hostname.replace('-3000', '-5000')}`;
-    }
-  }
-  
-  return 'http://localhost:5000';
-};
+import { API_URL } from '../../config/api';
 
 interface DashboardStats {
   totalEvaluations: number;
@@ -53,9 +39,7 @@ export default function EvaluatorDashboard() {
   const fetchDashboardData = async () => {
     try {
       const token = localStorage.getItem('token');
-      const apiUrl = getApiUrl();
-      console.log('Dashboard API URL:', apiUrl);
-      const response = await fetch(`${apiUrl}/api/evaluator/dashboard`, {
+      const response = await fetch(`${API_URL}/api/evaluator/dashboard`, {
         headers: {
           'Authorization': `Bearer ${token}`,
         },
