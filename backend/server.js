@@ -240,33 +240,55 @@ app.use((err, req, res, next) => {
 
 // SPA fallback - serve frontend for non-API routes
 const fs = require('fs');
+
+// Resolve a URL path to a file, supporting Next.js [param] dynamic directories
+function resolveNextFile(basePath, urlPath) {
+  const segments = urlPath.split('/').filter(Boolean);
+
+  // Try exact match first
+  const exactIndex = path.join(basePath, urlPath, 'index.html');
+  if (fs.existsSync(exactIndex)) return exactIndex;
+  const exactHtml = path.join(basePath, urlPath + '.html');
+  if (fs.existsSync(exactHtml)) return exactHtml;
+
+  // Try replacing each segment with a [param] wildcard directory
+  let currentDir = basePath;
+  for (let i = 0; i < segments.length; i++) {
+    const exactDir = path.join(currentDir, segments[i]);
+    if (fs.existsSync(exactDir)) {
+      currentDir = exactDir;
+    } else {
+      // Look for a [param] directory in currentDir
+      try {
+        const entries = fs.readdirSync(currentDir);
+        const dynamicDir = entries.find(e => e.startsWith('[') && e.endsWith(']'));
+        if (dynamicDir) {
+          currentDir = path.join(currentDir, dynamicDir);
+        } else {
+          return null;
+        }
+      } catch {
+        return null;
+      }
+    }
+  }
+
+  const resolved = path.join(currentDir, 'index.html');
+  return fs.existsSync(resolved) ? resolved : null;
+}
+
 app.use('*', (req, res) => {
   // If it's an API route that wasn't matched, return 404 JSON
   if (req.originalUrl.startsWith('/api/')) {
     return res.status(404).json({ error: 'Endpoint no encontrado' });
   }
 
-  // Try to serve the specific HTML file for the route
   const urlPath = req.originalUrl.replace(/\/$/, '') || '/index';
-  const htmlFile = path.join(frontendPath, urlPath + '.html');
-  const indexFile = path.join(frontendPath, urlPath, 'index.html');
 
-  if (fs.existsSync(indexFile)) {
-    return res.sendFile(indexFile);
-  }
-  if (fs.existsSync(htmlFile)) {
-    return res.sendFile(htmlFile);
-  }
-
-  // For dynamic routes (e.g. /participant/evaluation/TOKEN),
-  // try parent directory index.html files walking up the path
-  const segments = urlPath.split('/').filter(Boolean);
-  for (let i = segments.length - 1; i >= 1; i--) {
-    const parentPath = '/' + segments.slice(0, i).join('/');
-    const parentIndex = path.join(frontendPath, parentPath, 'index.html');
-    if (fs.existsSync(parentIndex)) {
-      return res.sendFile(parentIndex);
-    }
+  // Try to resolve the file (supports Next.js [param] directories)
+  const resolved = resolveNextFile(frontendPath, urlPath);
+  if (resolved) {
+    return res.sendFile(resolved);
   }
 
   // Final fallback to root index.html
