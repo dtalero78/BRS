@@ -71,7 +71,7 @@ const ParticipantEvaluationPage = () => {
   const [availableQuestionnaires, setAvailableQuestionnaires] = useState<any[]>([]);
   const [currentQuestionnaire, setCurrentQuestionnaire] = useState<QuestionnaireData | null>(null);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
-  const [responses, setResponses] = useState<{[key: string]: number}>({});
+  const [responses, setResponses] = useState<{[key: string]: number | string}>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -292,8 +292,11 @@ const ParticipantEvaluationPage = () => {
 
   const handleResponseChange = (questionNumber: number | string, value: number | string) => {
     const key = `q_${questionNumber}`;
-    const numericValue = typeof value === 'string' ? parseInt(value, 10) : value;
-    const newResponses = { ...responses, [key]: numericValue };
+    // Only convert to number if the value is actually numeric
+    const parsedValue = typeof value === 'string' && value !== '' && !isNaN(Number(value))
+      ? parseInt(value, 10)
+      : value;
+    const newResponses = { ...responses, [key]: parsedValue };
     setResponses(newResponses);
 
     // Update progress
