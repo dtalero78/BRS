@@ -62,7 +62,7 @@ router.post('/individual', auth, async (req, res) => {
       : (participant.demographic_data || {});
 
     // Generate PDF
-    const doc = new PDFDocument({ size: 'A4', margin: 50 });
+    const doc = new PDFDocument({ size: 'A4', margin: 50, bufferPages: true });
 
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename=Reporte_BRS_Individual_${Date.now()}.pdf`);
@@ -132,7 +132,7 @@ router.post('/organizational', auth, async (req, res) => {
     const stats = aggregateOrganizationalStats(allResults);
 
     // Generate PDF
-    const doc = new PDFDocument({ size: 'A4', margin: 50 });
+    const doc = new PDFDocument({ size: 'A4', margin: 50, bufferPages: true });
 
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename=Reporte_BRS_Organizacional_${Date.now()}.pdf`);
