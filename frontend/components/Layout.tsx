@@ -11,6 +11,9 @@ import {
   ArrowRightOnRectangleIcon,
   Bars3Icon,
   XMarkIcon,
+  ClipboardDocumentListIcon,
+  BuildingOfficeIcon,
+  DocumentChartBarIcon,
 } from '@heroicons/react/24/outline';
 
 interface LayoutProps {
@@ -63,17 +66,18 @@ export default function Layout({ children, title }: LayoutProps) {
       case 'admin':
         return [
           ...baseItems,
-          { name: 'Empresas', href: '/admin/companies', icon: UserGroupIcon },
+          { name: 'Empresas', href: '/admin/companies', icon: BuildingOfficeIcon },
           { name: 'Usuarios', href: '/admin/users', icon: UserIcon },
-          { name: 'Sistema', href: '/admin/system', icon: Cog6ToothIcon },
-          { name: 'Reportes', href: '/admin/reports', icon: ChartBarIcon },
         ];
       case 'evaluator':
         return [
           ...baseItems,
           { name: 'Evaluaciones', href: '/evaluator/evaluations', icon: DocumentTextIcon },
           { name: 'Participantes', href: '/evaluator/participants', icon: UserGroupIcon },
-          { name: 'Resultados', href: '/evaluator/results', icon: ChartBarIcon },
+          { name: 'Resultados', href: '/evaluator/results', icon: ClipboardDocumentListIcon },
+          { name: 'Dashboard Resultados', href: '/evaluator/results-dashboard', icon: ChartBarIcon },
+          { name: 'Dashboard Organizacional', href: '/evaluator/organizational-dashboard', icon: BuildingOfficeIcon },
+          { name: 'Reportes', href: '/evaluator/reports', icon: DocumentChartBarIcon },
         ];
       case 'participant':
         return [
@@ -122,7 +126,7 @@ export default function Layout({ children, title }: LayoutProps) {
 
         <nav className="flex-1 px-4 py-6 space-y-2">
           {navigationItems.map((item) => {
-            const isActive = router.pathname === item.href;
+            const isActive = router.pathname === item.href || router.asPath.startsWith(item.href + '/');
             return (
               <Link
                 key={item.name}

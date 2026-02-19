@@ -153,13 +153,17 @@ export default function EvaluatorDashboard() {
               Acciones Rápidas
             </h3>
             <div className="space-y-3">
-              <button className="w-full text-left p-3 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors">
+              <button
+                onClick={() => window.location.href = '/evaluator/evaluations'}
+                className="w-full text-left p-3 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors">
                 <div className="flex items-center">
                   <DocumentTextIcon className="h-5 w-5 text-blue-600 mr-3" />
                   <span className="font-medium">Crear Nueva Evaluación</span>
                 </div>
               </button>
-              <button className="w-full text-left p-3 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors">
+              <button
+                onClick={() => window.location.href = '/evaluator/participants'}
+                className="w-full text-left p-3 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors">
                 <div className="flex items-center">
                   <UserGroupIcon className="h-5 w-5 text-green-600 mr-3" />
                   <span className="font-medium">Gestionar Participantes</span>

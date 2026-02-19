@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
-import Link from 'next/link';
 import { ChartBarIcon, UserGroupIcon, DocumentTextIcon, Cog6ToothIcon } from '@heroicons/react/24/outline';
 
 export default function HomePage() {
@@ -9,11 +8,18 @@ export default function HomePage() {
 
   useEffect(() => {
     const token = localStorage.getItem('token');
-    if (token) {
-      // Verify token and get user info
-      // This would normally be done with a proper auth hook
+    const userData = localStorage.getItem('user');
+    if (token && userData) {
+      try {
+        const parsed = JSON.parse(userData);
+        if (parsed.role) {
+          router.push(`/${parsed.role}/dashboard`);
+        }
+      } catch (e) {
+        // Invalid user data, stay on landing
+      }
     }
-  }, []);
+  }, [router]);
 
   const handleLogin = () => {
     router.push('/auth/login');
@@ -67,9 +73,6 @@ export default function HomePage() {
             >
               Iniciar Sesión
             </button>
-            <Link href="/auth/register" className="btn-secondary text-lg px-8 py-3">
-              Registrar Empresa
-            </Link>
           </div>
 
           <div className="text-sm text-gray-500">
