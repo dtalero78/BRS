@@ -1,6 +1,20 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, ReactNode } from 'react';
 import { useRouter } from 'next/router';
-import Layout from '../../../components/Layout';
+
+// Simple wrapper for participant pages (no auth required)
+function ParticipantLayout({ children }: { children: ReactNode }) {
+  return (
+    <div className="min-h-screen bg-gray-50">
+      <header className="bg-white shadow-sm border-b border-gray-200">
+        <div className="max-w-7xl mx-auto px-4 py-3 flex items-center">
+          <span className="text-xl font-bold text-blue-700">BRS Digital</span>
+          <span className="ml-3 text-sm text-gray-500">Evaluación de Riesgo Psicosocial</span>
+        </div>
+      </header>
+      <main>{children}</main>
+    </div>
+  );
+}
 
 interface Question {
   id: number;
@@ -633,17 +647,17 @@ const ParticipantEvaluationPage = () => {
 
   if (loading) {
     return (
-      <Layout>
+      <ParticipantLayout>
         <div className="flex items-center justify-center min-h-screen">
           <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
         </div>
-      </Layout>
+      </ParticipantLayout>
     );
   }
 
   if (error) {
     return (
-      <Layout>
+      <ParticipantLayout>
         <div className="max-w-2xl mx-auto mt-8">
           <div className="bg-red-50 border border-red-200 rounded-lg p-6">
             <h2 className="text-lg font-medium text-red-800 mb-2">Error</h2>
@@ -658,25 +672,25 @@ const ParticipantEvaluationPage = () => {
             </div>
           </div>
         </div>
-      </Layout>
+      </ParticipantLayout>
     );
   }
 
   if (!participant) {
     return (
-      <Layout>
+      <ParticipantLayout>
         <div className="max-w-2xl mx-auto mt-8">
           <div className="bg-red-50 border border-red-200 rounded-lg p-6">
             <h2 className="text-lg font-medium text-red-800 mb-2">Error</h2>
             <p className="text-red-600">No se encontraron datos del participante.</p>
           </div>
         </div>
-      </Layout>
+      </ParticipantLayout>
     );
   }
 
   return (
-    <Layout>
+    <ParticipantLayout>
       <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 py-4">
         <div className="max-w-4xl mx-auto px-6">
         {!currentQuestionnaire ? (
@@ -1030,7 +1044,7 @@ const ParticipantEvaluationPage = () => {
         )}
         </div>
       </div>
-    </Layout>
+    </ParticipantLayout>
   );
 };
 
