@@ -1,28 +1,29 @@
 const express = require('express');
 const router = express.Router();
 const PDFDocument = require('pdfkit');
-const fs = require('fs');
-const path = require('path');
 const db = require('../config/database');
 const { auth } = require('../middleware/auth');
-const calculateResults = require('../utils/calculate-results');
 
-// Generar reporte individual en PDF
+// ============================================================
+// INDIVIDUAL REPORT - PDF for a single participant
+// ============================================================
 router.post('/individual', auth, async (req, res) => {
   try {
-    const { participantEvaluationId, includeCharts = true, language = 'es' } = req.body;
+    const { participantEvaluationId } = req.body;
 
-    // Obtener datos del participante y resultados
+    if (!participantEvaluationId) {
+      return res.status(400).json({ error: 'participantEvaluationId es requerido' });
+    }
+
+    // Get participant + evaluation + company data
     const participant = await db('participant_evaluations as pe')
       .join('participants as p', 'pe.participant_id', 'p.id')
       .join('evaluations as e', 'pe.evaluation_id', 'e.id')
       .join('companies as c', 'e.company_id', 'c.id')
       .where('pe.id', participantEvaluationId)
-      .where('e.company_id', req.user.company_id)
+      .where('e.company_id', req.user.companyId)
       .select(
-        'pe.id',
-        'pe.evaluation_id', 
-        'pe.participant_id',
+        'pe.id as pe_id',
         'pe.status',
         'pe.completed_at',
         'p.email',
@@ -33,522 +34,583 @@ router.post('/individual', auth, async (req, res) => {
         'c.nit as company_nit'
       )
       .first();
-    
+
     if (!participant) {
       return res.status(404).json({ error: 'Participante no encontrado' });
     }
 
-    // Obtener todas las respuestas y calcular resultados
-    const responses = await db('responses')
+    // Get pre-calculated results from DB
+    const resultRows = await db('results')
       .where('participant_evaluation_id', participantEvaluationId)
-      .select('questionnaire_type', 'responses', 'completed_at');
+      .orderBy('questionnaire_type')
+      .select('*');
 
-    // Calcular resultados para cada cuestionario
-    const allResults = {};
-    for (const response of responses) {
-      try {
-        const results = await calculateResults({
-          questionnaire_type: response.questionnaire_type,
-          responses: response.responses,
-          demographic_data: participant.demographic_data
-        });
-        allResults[response.questionnaire_type] = results;
-      } catch (error) {
-        console.error(`Error calculating results for ${response.questionnaire_type}:`, error);
-      }
+    if (resultRows.length === 0) {
+      return res.status(400).json({ error: 'No hay resultados calculados. Primero calcule los resultados del participante.' });
     }
 
-    // Generar PDF
+    // Parse results
+    const resultsByType = {};
+    resultRows.forEach(row => {
+      const parsed = typeof row.results === 'string' ? JSON.parse(row.results) : (row.results || []);
+      resultsByType[row.questionnaire_type] = parsed;
+    });
+
+    // Parse demographic data
+    const demo = typeof participant.demographic_data === 'string'
+      ? JSON.parse(participant.demographic_data)
+      : (participant.demographic_data || {});
+
+    // Generate PDF
     const doc = new PDFDocument({ size: 'A4', margin: 50 });
-    const fileName = `reporte_individual_${participantEvaluationId}_${Date.now()}.pdf`;
-    const filePath = path.join(__dirname, '../temp', fileName);
 
-    // Asegurar que el directorio temp existe
-    const tempDir = path.join(__dirname, '../temp');
-    if (!fs.existsSync(tempDir)) {
-      fs.mkdirSync(tempDir, { recursive: true });
-    }
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename=Reporte_BRS_Individual_${Date.now()}.pdf`);
+    doc.pipe(res);
 
-    const stream = fs.createWriteStream(filePath);
-    doc.pipe(stream);
-
-    // Generar contenido del PDF
-    await generateIndividualReport(doc, participant, allResults, includeCharts);
+    generateIndividualPDF(doc, {
+      participant,
+      demo,
+      resultsByType,
+    });
 
     doc.end();
 
-    // Esperar a que el archivo se complete
-    stream.on('finish', () => {
-      res.download(filePath, `Reporte_BRS_${participant.email}_${new Date().toISOString().split('T')[0]}.pdf`, (err) => {
-        if (err) {
-          console.error('Error downloading file:', err);
-          res.status(500).json({ error: 'Error al descargar el archivo' });
-        }
-        // Limpiar archivo temporal después de la descarga
-        setTimeout(() => {
-          if (fs.existsSync(filePath)) {
-            fs.unlinkSync(filePath);
-          }
-        }, 60000); // Eliminar después de 1 minuto
-      });
-    });
-
   } catch (error) {
     console.error('Error generating individual report:', error);
-    res.status(500).json({ error: 'Error interno del servidor' });
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'Error interno del servidor' });
+    }
   }
 });
 
-// Generar reporte organizacional en PDF
+// ============================================================
+// ORGANIZATIONAL REPORT - PDF for an entire evaluation
+// ============================================================
 router.post('/organizational', auth, async (req, res) => {
   try {
-    const { evaluationId, includeCharts = true, includeIndividualSummaries = false } = req.body;
+    const { evaluationId } = req.body;
 
-    // Obtener datos de la evaluación
+    if (!evaluationId) {
+      return res.status(400).json({ error: 'evaluationId es requerido' });
+    }
+
+    // Get evaluation + company data
     const evaluation = await db('evaluations as e')
       .join('companies as c', 'e.company_id', 'c.id')
       .where('e.id', evaluationId)
-      .where('e.company_id', req.user.company_id)
+      .where('e.company_id', req.user.companyId)
       .select(
-        'e.id',
-        'e.name',
-        'e.description', 
-        'e.start_date',
-        'e.end_date',
-        'e.status',
-        'c.name as company_name',
-        'c.nit as company_nit',
-        'c.contact_email',
-        'c.contact_phone'
+        'e.id', 'e.name', 'e.description', 'e.start_date', 'e.end_date', 'e.status',
+        'c.name as company_name', 'c.nit as company_nit'
       )
       .first();
-    
+
     if (!evaluation) {
       return res.status(404).json({ error: 'Evaluación no encontrada' });
     }
 
-    // Obtener todos los participantes y sus resultados
-    const participants = await db('participant_evaluations as pe')
+    // Get all results for all participants in this evaluation
+    const allResults = await db('results')
+      .join('participant_evaluations as pe', 'results.participant_evaluation_id', 'pe.id')
       .join('participants as p', 'pe.participant_id', 'p.id')
       .where('pe.evaluation_id', evaluationId)
-      .where('pe.status', 'completed')
-      .select(
-        'pe.id as participant_evaluation_id',
-        'pe.status',
-        'pe.completed_at',
-        'p.email',
-        'p.demographic_data'
-      );
+      .select('results.*', 'p.demographic_data', 'p.email');
 
-    // Calcular estadísticas organizacionales
-    const organizationalStats = await calculateOrganizationalStats(participants);
+    const totalParticipants = await db('participant_evaluations')
+      .where('evaluation_id', evaluationId)
+      .count('id as count')
+      .first();
 
-    // Generar PDF
+    const completedParticipants = await db('participant_evaluations')
+      .where('evaluation_id', evaluationId)
+      .where('status', 'completed')
+      .count('id as count')
+      .first();
+
+    // Aggregate stats
+    const stats = aggregateOrganizationalStats(allResults);
+
+    // Generate PDF
     const doc = new PDFDocument({ size: 'A4', margin: 50 });
-    const fileName = `reporte_organizacional_${evaluationId}_${Date.now()}.pdf`;
-    const filePath = path.join(__dirname, '../temp', fileName);
 
-    // Asegurar que el directorio temp existe
-    const tempDir = path.join(__dirname, '../temp');
-    if (!fs.existsSync(tempDir)) {
-      fs.mkdirSync(tempDir, { recursive: true });
-    }
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename=Reporte_BRS_Organizacional_${Date.now()}.pdf`);
+    doc.pipe(res);
 
-    const stream = fs.createWriteStream(filePath);
-    doc.pipe(stream);
-
-    // Generar contenido del PDF
-    await generateOrganizationalReport(doc, evaluation, organizationalStats, participants, includeCharts, includeIndividualSummaries);
+    generateOrganizationalPDF(doc, {
+      evaluation,
+      stats,
+      totalParticipants: parseInt(totalParticipants.count),
+      completedParticipants: parseInt(completedParticipants.count),
+    });
 
     doc.end();
 
-    // Esperar a que el archivo se complete
-    stream.on('finish', () => {
-      res.download(filePath, `Reporte_Organizacional_BRS_${evaluation.name}_${new Date().toISOString().split('T')[0]}.pdf`, (err) => {
-        if (err) {
-          console.error('Error downloading file:', err);
-          res.status(500).json({ error: 'Error al descargar el archivo' });
-        }
-        // Limpiar archivo temporal después de la descarga
-        setTimeout(() => {
-          if (fs.existsSync(filePath)) {
-            fs.unlinkSync(filePath);
-          }
-        }, 60000); // Eliminar después de 1 minuto
-      });
-    });
-
   } catch (error) {
     console.error('Error generating organizational report:', error);
-    res.status(500).json({ error: 'Error interno del servidor' });
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'Error interno del servidor' });
+    }
   }
 });
 
-// Download report - TODO: Implement with PostgreSQL
-// router.get('/download/:reportId', verifyToken, async (req, res) => {
-//   try {
-//     const { reportId } = req.params;
-//     res.status(501).json({ error: 'Funcionalidad pendiente de implementar' });
-//   } catch (error) {
-//     console.error('Download report error:', error);
-//     res.status(500).json({ error: 'Error interno del servidor' });
-//   }
-// });
+// ============================================================
+// PDF GENERATION HELPERS
+// ============================================================
 
-// Get reports list - TODO: Implement with PostgreSQL  
-// router.get('/', verifyToken, async (req, res) => {
-//   try {
-//     const { evaluationId, type, page = 1, limit = 10 } = req.query;
-//     res.status(501).json({ error: 'Funcionalidad pendiente de implementar' });
-//   } catch (error) {
-//     console.error('Get reports error:', error);
-//     res.status(500).json({ error: 'Error interno del servidor' });
-//   }
-// });
+const RISK_COLORS = {
+  'sin_riesgo': '#10B981',
+  'riesgo_bajo': '#3B82F6',
+  'riesgo_medio': '#EAB308',
+  'riesgo_alto': '#F97316',
+  'riesgo_muy_alto': '#EF4444'
+};
 
-// Función para generar reporte individual
-async function generateIndividualReport(doc, participant, results, includeCharts) {
-  const pageHeight = doc.page.height;
-  const margin = 50;
-  let currentY = margin;
+const RISK_LABELS = {
+  'sin_riesgo': 'Sin Riesgo',
+  'riesgo_bajo': 'Riesgo Bajo',
+  'riesgo_medio': 'Riesgo Medio',
+  'riesgo_alto': 'Riesgo Alto',
+  'riesgo_muy_alto': 'Riesgo Muy Alto'
+};
 
-  // Header con logo y título
-  doc.fontSize(24).text('REPORTE INDIVIDUAL BRS', margin, currentY, { align: 'center' });
-  currentY += 50;
-  
-  doc.fontSize(18).text('Batería de Riesgo Psicosocial', margin, currentY, { align: 'center' });
-  currentY += 30;
+const QUESTIONNAIRE_TITLES = {
+  'intralaboral_a': 'Cuestionario Intralaboral - Forma A',
+  'intralaboral_b': 'Cuestionario Intralaboral - Forma B',
+  'extralaboral': 'Cuestionario de Factores Extralaborales',
+  'estres': 'Cuestionario de Síntomas de Estrés'
+};
 
-  doc.fontSize(12).text('Ministerio de la Protección Social - República de Colombia', margin, currentY, { align: 'center' });
-  currentY += 50;
+function formatDimensionName(dim) {
+  return dim
+    .replace(/_total$/, ' (Total Dominio)')
+    .split('_')
+    .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
+}
 
-  // Información del participante
-  doc.fontSize(16).text('INFORMACIÓN DEL PARTICIPANTE', margin, currentY);
-  currentY += 25;
-
-  const demographicData = participant.demographic_data || {};
-  
-  doc.fontSize(12);
-  doc.text(`Email: ${participant.email}`, margin, currentY);
-  currentY += 20;
-  
-  doc.text(`Empresa: ${participant.company_name}`, margin, currentY);
-  currentY += 20;
-  
-  doc.text(`Evaluación: ${participant.evaluation_name}`, margin, currentY);
-  currentY += 20;
-  
-  doc.text(`Fecha de Evaluación: ${participant.completed_at ? new Date(participant.completed_at).toLocaleDateString('es-ES') : 'N/A'}`, margin, currentY);
-  currentY += 20;
-
-  if (demographicData.edad) {
-    doc.text(`Edad: ${demographicData.edad} años`, margin, currentY);
-    currentY += 20;
+function ensureSpace(doc, needed) {
+  if (doc.y > doc.page.height - doc.page.margins.bottom - needed) {
+    doc.addPage();
   }
+}
 
-  if (demographicData.sexo) {
-    doc.text(`Sexo: ${demographicData.sexo}`, margin, currentY);
-    currentY += 20;
-  }
+function drawHorizontalLine(doc) {
+  const x = doc.page.margins.left;
+  const w = doc.page.width - doc.page.margins.left - doc.page.margins.right;
+  doc.moveTo(x, doc.y).lineTo(x + w, doc.y).strokeColor('#E5E7EB').stroke();
+  doc.moveDown(0.5);
+}
 
-  if (demographicData.cargo) {
-    doc.text(`Cargo: ${demographicData.cargo}`, margin, currentY);
-    currentY += 20;
-  }
+function drawRiskBar(doc, x, y, width, score, riskLevel) {
+  const barHeight = 10;
+  // Background
+  doc.rect(x, y, width, barHeight).fillColor('#E5E7EB').fill();
+  // Filled portion
+  const fillWidth = (score / 100) * width;
+  doc.rect(x, y, fillWidth, barHeight).fillColor(RISK_COLORS[riskLevel] || '#6B7280').fill();
+}
 
-  currentY += 30;
+// ============================================================
+// INDIVIDUAL PDF
+// ============================================================
+function generateIndividualPDF(doc, { participant, demo, resultsByType }) {
+  const m = doc.page.margins.left;
+  const pageW = doc.page.width - m * 2;
 
-  // Resultados por cuestionario
-  doc.fontSize(16).text('RESULTADOS DE EVALUACIÓN', margin, currentY);
-  currentY += 25;
+  // ---- COVER PAGE ----
+  doc.moveDown(4);
+  doc.fontSize(28).fillColor('#1E40AF').text('REPORTE INDIVIDUAL', { align: 'center' });
+  doc.moveDown(0.5);
+  doc.fontSize(18).fillColor('#4B5563').text('Batería de Riesgo Psicosocial', { align: 'center' });
+  doc.moveDown(0.3);
+  doc.fontSize(11).fillColor('#6B7280').text('Ministerio de la Protección Social - República de Colombia', { align: 'center' });
 
-  for (const [questionnaireType, questionnaireResults] of Object.entries(results)) {
-    if (currentY > pageHeight - 200) {
-      doc.addPage();
-      currentY = margin;
-    }
+  doc.moveDown(3);
+  drawHorizontalLine(doc);
+  doc.moveDown(1);
 
-    const title = getQuestionnaireTitle(questionnaireType);
-    doc.fontSize(14).text(title.toUpperCase(), margin, currentY);
-    currentY += 20;
+  // Participant info box
+  doc.fontSize(14).fillColor('#1F2937').text('DATOS DEL PARTICIPANTE');
+  doc.moveDown(0.5);
+  doc.fontSize(11).fillColor('#374151');
 
-    // Nivel de riesgo general
-    const generalRisk = questionnaireResults.general_risk_level || 'sin_riesgo';
-    const generalScore = questionnaireResults.general_score || 0;
-    
-    doc.fontSize(12);
-    doc.fillColor(getRiskColor(generalRisk));
-    doc.text(`Nivel de Riesgo General: ${formatRiskLevel(generalRisk)} (${generalScore.toFixed(1)}%)`, margin, currentY);
-    doc.fillColor('black');
-    currentY += 25;
+  const infoLines = [
+    ['Nombre', `${demo.firstName || ''} ${demo.lastName || ''}`.trim() || demo.nombre || participant.email],
+    ['Empresa', participant.company_name],
+    ['Evaluación', participant.evaluation_name],
+    ['Fecha', participant.completed_at ? new Date(participant.completed_at).toLocaleDateString('es-CO') : 'N/A'],
+  ];
+  if (demo.cargo || demo.position) infoLines.push(['Cargo', demo.cargo || demo.position]);
+  if (demo.departamento || demo.department) infoLines.push(['Departamento', demo.departamento || demo.department]);
+  if (demo.edad || demo.age) infoLines.push(['Edad', `${demo.edad || demo.age} años`]);
+  if (demo.sexo || demo.gender) infoLines.push(['Sexo', demo.sexo || demo.gender]);
 
-    // Resultados por dominio
-    if (questionnaireResults.domains) {
-      doc.text('Resultados por Dominio:', margin, currentY);
-      currentY += 15;
+  infoLines.forEach(([label, value]) => {
+    doc.font('Helvetica-Bold').text(`${label}: `, { continued: true });
+    doc.font('Helvetica').text(value || 'N/A');
+  });
 
-      for (const [domain, domainData] of Object.entries(questionnaireResults.domains)) {
-        doc.fontSize(10);
-        const domainScore = domainData.score || 0;
-        const domainRisk = domainData.risk_level || 'sin_riesgo';
-        
-        doc.fillColor(getRiskColor(domainRisk));
-        doc.text(`• ${formatDomainName(domain)}: ${formatRiskLevel(domainRisk)} (${domainScore.toFixed(1)}%)`, margin + 20, currentY);
-        doc.fillColor('black');
-        currentY += 12;
+  // ---- RESULTS PAGES ----
+  for (const [qType, dimensions] of Object.entries(resultsByType)) {
+    doc.addPage();
+    const title = QUESTIONNAIRE_TITLES[qType] || qType;
+    doc.fontSize(16).fillColor('#1E40AF').text(title.toUpperCase());
+    doc.moveDown(0.3);
+    drawHorizontalLine(doc);
+    doc.moveDown(0.5);
+
+    // Separate dimensions and domain totals
+    const dimResults = dimensions.filter(d => !d.dimension.endsWith('_total'));
+    const domainResults = dimensions.filter(d => d.dimension.endsWith('_total'));
+
+    // Risk summary for this questionnaire
+    const riskCounts = { sin_riesgo: 0, riesgo_bajo: 0, riesgo_medio: 0, riesgo_alto: 0, riesgo_muy_alto: 0 };
+    dimResults.forEach(d => { if (riskCounts[d.riskLevel] !== undefined) riskCounts[d.riskLevel]++; });
+
+    doc.fontSize(12).fillColor('#1F2937').text('Resumen de Niveles de Riesgo:');
+    doc.moveDown(0.3);
+    doc.fontSize(10).fillColor('#374151');
+    Object.entries(riskCounts).forEach(([level, count]) => {
+      if (count > 0) {
+        doc.fillColor(RISK_COLORS[level]).text(`  ● ${RISK_LABELS[level]}: ${count} dimensiones`, { continued: false });
       }
+    });
+    doc.fillColor('#374151');
+    doc.moveDown(1);
+
+    // Domain totals (if any)
+    if (domainResults.length > 0) {
+      doc.fontSize(12).fillColor('#1F2937').text('Resultados por Dominio:');
+      doc.moveDown(0.5);
+
+      domainResults.forEach(d => {
+        ensureSpace(doc, 40);
+        const name = formatDimensionName(d.dimension);
+        const score = d.transformedScore != null ? d.transformedScore.toFixed(1) : '0';
+        const risk = RISK_LABELS[d.riskLevel] || d.riskLevel;
+
+        doc.fontSize(10).fillColor('#1F2937').font('Helvetica-Bold').text(name);
+        doc.font('Helvetica').fillColor(RISK_COLORS[d.riskLevel] || '#6B7280')
+          .text(`  Puntaje: ${score}%  |  ${risk}`);
+
+        drawRiskBar(doc, m, doc.y + 2, pageW * 0.6, parseFloat(score), d.riskLevel);
+        doc.moveDown(1.5);
+      });
+
+      doc.moveDown(0.5);
     }
 
-    currentY += 20;
+    // Dimension detail table
+    doc.fontSize(12).fillColor('#1F2937').text('Detalle por Dimensión:');
+    doc.moveDown(0.5);
+
+    // Table header
+    const colX = [m, m + 200, m + 290, m + 370];
+    doc.fontSize(9).font('Helvetica-Bold').fillColor('#6B7280');
+    doc.text('Dimensión', colX[0], doc.y);
+    doc.text('Puntaje', colX[1], doc.y - doc.currentLineHeight());
+    doc.text('Percentil', colX[2], doc.y - doc.currentLineHeight());
+    doc.text('Nivel de Riesgo', colX[3], doc.y - doc.currentLineHeight());
+    doc.moveDown(0.5);
+    drawHorizontalLine(doc);
+
+    dimResults.forEach(d => {
+      ensureSpace(doc, 20);
+      const y = doc.y;
+      const score = d.transformedScore != null ? d.transformedScore.toFixed(1) + '%' : 'N/A';
+      const percentile = d.percentile != null ? d.percentile.toFixed(1) : 'N/A';
+      const risk = RISK_LABELS[d.riskLevel] || d.riskLevel;
+
+      doc.fontSize(8).font('Helvetica').fillColor('#374151');
+      doc.text(formatDimensionName(d.dimension), colX[0], y, { width: 190 });
+      doc.text(score, colX[1], y);
+      doc.text(percentile, colX[2], y);
+      doc.fillColor(RISK_COLORS[d.riskLevel] || '#6B7280').font('Helvetica-Bold');
+      doc.text(risk, colX[3], y);
+      doc.font('Helvetica').fillColor('#374151');
+      doc.moveDown(0.3);
+    });
   }
 
-  // Interpretación y recomendaciones
-  if (currentY > pageHeight - 300) {
-    doc.addPage();
-    currentY = margin;
-  }
+  // ---- INTERPRETATION PAGE ----
+  doc.addPage();
+  doc.fontSize(16).fillColor('#1E40AF').text('INTERPRETACIÓN Y RECOMENDACIONES');
+  doc.moveDown(0.3);
+  drawHorizontalLine(doc);
+  doc.moveDown(1);
 
-  doc.fontSize(16).text('INTERPRETACIÓN Y RECOMENDACIONES', margin, currentY);
-  currentY += 25;
+  doc.fontSize(10).fillColor('#374151').font('Helvetica');
+  doc.text(
+    'Los resultados de esta evaluación de riesgo psicosocial se basan en la metodología oficial ' +
+    'del Ministerio de la Protección Social de Colombia (Resolución 2646 de 2008). Cada cuestionario ' +
+    'evalúa diferentes aspectos del ambiente laboral y extralaboral que pueden impactar la salud ' +
+    'mental y física del trabajador.',
+    { width: pageW, align: 'justify' }
+  );
+  doc.moveDown(1);
 
-  const interpretation = generateInterpretation(results);
-  doc.fontSize(11).text(interpretation, margin, currentY, { width: doc.page.width - 2 * margin, align: 'justify' });
-  currentY += 200;
+  doc.fontSize(12).fillColor('#1F2937').font('Helvetica-Bold').text('Significado de los Niveles de Riesgo:');
+  doc.moveDown(0.5);
+  doc.font('Helvetica').fontSize(9);
 
-  // Footer
-  doc.fontSize(8).fillColor('gray');
-  doc.text('Este reporte ha sido generado automáticamente por el Sistema BRS Digital', margin, doc.page.height - 50, { 
-    width: doc.page.width - 2 * margin, 
-    align: 'center' 
+  const riskDescriptions = [
+    ['Sin Riesgo', '#10B981', 'Las condiciones del ambiente de trabajo no representan riesgo para la salud del trabajador.'],
+    ['Riesgo Bajo', '#3B82F6', 'Las condiciones de riesgo están presentes de forma leve. Se recomienda mantener sistemas de vigilancia.'],
+    ['Riesgo Medio', '#EAB308', 'Las condiciones de riesgo están presentes de forma moderada. Se requieren acciones de intervención a mediano plazo.'],
+    ['Riesgo Alto', '#F97316', 'Las condiciones de riesgo están presentes de forma importante. Se requieren acciones de intervención a corto plazo.'],
+    ['Riesgo Muy Alto', '#EF4444', 'Las condiciones de riesgo están presentes de forma crítica. Se requieren acciones de intervención inmediatas.'],
+  ];
+
+  riskDescriptions.forEach(([label, color, desc]) => {
+    ensureSpace(doc, 30);
+    doc.fillColor(color).font('Helvetica-Bold').text(`● ${label}: `, { continued: true });
+    doc.fillColor('#374151').font('Helvetica').text(desc);
+    doc.moveDown(0.3);
   });
-  doc.text(`Fecha de generación: ${new Date().toLocaleString('es-ES')}`, margin, doc.page.height - 35, { 
-    width: doc.page.width - 2 * margin, 
-    align: 'center' 
-  });
+
+  doc.moveDown(1);
+  doc.fontSize(12).fillColor('#1F2937').font('Helvetica-Bold').text('Recomendaciones Generales:');
+  doc.moveDown(0.5);
+  doc.font('Helvetica').fontSize(9).fillColor('#374151');
+  doc.text(
+    'Es importante implementar programas de vigilancia epidemiológica en salud mental y programas ' +
+    'de intervención basados en los factores de riesgo identificados. Se recomienda realizar ' +
+    'seguimiento periódico y evaluaciones de efectividad de las medidas implementadas.',
+    { width: pageW, align: 'justify' }
+  );
+
+  // Footer on all pages
+  addFooters(doc);
 }
 
-// Función para generar reporte organizacional
-async function generateOrganizationalReport(doc, evaluation, stats, participants, includeCharts, includeIndividualSummaries) {
-  const pageHeight = doc.page.height;
-  const margin = 50;
-  let currentY = margin;
+// ============================================================
+// ORGANIZATIONAL PDF
+// ============================================================
+function generateOrganizationalPDF(doc, { evaluation, stats, totalParticipants, completedParticipants }) {
+  const m = doc.page.margins.left;
+  const pageW = doc.page.width - m * 2;
 
-  // Header
-  doc.fontSize(24).text('REPORTE ORGANIZACIONAL BRS', margin, currentY, { align: 'center' });
-  currentY += 50;
-  
-  doc.fontSize(18).text('Batería de Riesgo Psicosocial', margin, currentY, { align: 'center' });
-  currentY += 30;
+  // ---- COVER ----
+  doc.moveDown(4);
+  doc.fontSize(28).fillColor('#1E40AF').text('REPORTE ORGANIZACIONAL', { align: 'center' });
+  doc.moveDown(0.5);
+  doc.fontSize(18).fillColor('#4B5563').text('Batería de Riesgo Psicosocial', { align: 'center' });
+  doc.moveDown(0.3);
+  doc.fontSize(11).fillColor('#6B7280').text('Ministerio de la Protección Social - República de Colombia', { align: 'center' });
 
-  doc.fontSize(12).text('Ministerio de la Protección Social - República de Colombia', margin, currentY, { align: 'center' });
-  currentY += 50;
+  doc.moveDown(3);
+  drawHorizontalLine(doc);
+  doc.moveDown(1);
 
-  // Información de la empresa
-  doc.fontSize(16).text('INFORMACIÓN DE LA EVALUACIÓN', margin, currentY);
-  currentY += 25;
+  doc.fontSize(14).fillColor('#1F2937').text('INFORMACIÓN DE LA EVALUACIÓN');
+  doc.moveDown(0.5);
+  doc.fontSize(11).fillColor('#374151');
 
-  doc.fontSize(12);
-  doc.text(`Empresa: ${evaluation.company_name}`, margin, currentY);
-  currentY += 20;
-  
-  doc.text(`NIT: ${evaluation.company_nit}`, margin, currentY);
-  currentY += 20;
-  
-  doc.text(`Evaluación: ${evaluation.name}`, margin, currentY);
-  currentY += 20;
-  
-  doc.text(`Descripción: ${evaluation.description || 'N/A'}`, margin, currentY);
-  currentY += 20;
-  
-  doc.text(`Período: ${new Date(evaluation.start_date).toLocaleDateString('es-ES')} - ${new Date(evaluation.end_date).toLocaleDateString('es-ES')}`, margin, currentY);
-  currentY += 20;
-  
-  doc.text(`Participantes Evaluados: ${participants.length}`, margin, currentY);
-  currentY += 40;
+  const infoLines = [
+    ['Empresa', evaluation.company_name],
+    ['NIT', evaluation.company_nit],
+    ['Evaluación', evaluation.name],
+    ['Descripción', evaluation.description || 'N/A'],
+    ['Período', `${fmtDate(evaluation.start_date)} - ${fmtDate(evaluation.end_date)}`],
+    ['Total Participantes', String(totalParticipants)],
+    ['Participantes Completados', String(completedParticipants)],
+    ['Tasa de Completado', totalParticipants > 0 ? `${((completedParticipants / totalParticipants) * 100).toFixed(1)}%` : 'N/A'],
+  ];
 
-  // Estadísticas generales
-  doc.fontSize(16).text('ESTADÍSTICAS GENERALES', margin, currentY);
-  currentY += 25;
+  infoLines.forEach(([label, value]) => {
+    doc.font('Helvetica-Bold').text(`${label}: `, { continued: true });
+    doc.font('Helvetica').text(value || 'N/A');
+  });
 
-  doc.fontSize(12);
+  // ---- RISK DISTRIBUTION ----
+  doc.addPage();
+  doc.fontSize(16).fillColor('#1E40AF').text('DISTRIBUCIÓN DE NIVELES DE RIESGO');
+  doc.moveDown(0.3);
+  drawHorizontalLine(doc);
+  doc.moveDown(1);
+
   if (stats.riskDistribution) {
-    doc.text('Distribución de Niveles de Riesgo:', margin, currentY);
-    currentY += 15;
+    const total = Object.values(stats.riskDistribution).reduce((s, v) => s + v, 0);
 
-    for (const [level, count] of Object.entries(stats.riskDistribution)) {
-      const percentage = participants.length > 0 ? ((count / participants.length) * 100).toFixed(1) : 0;
-      doc.fillColor(getRiskColor(level));
-      doc.text(`• ${formatRiskLevel(level)}: ${count} participantes (${percentage}%)`, margin + 20, currentY);
-      doc.fillColor('black');
-      currentY += 15;
-    }
+    Object.entries(RISK_LABELS).forEach(([key, label]) => {
+      const count = stats.riskDistribution[key] || 0;
+      const pct = total > 0 ? ((count / total) * 100).toFixed(1) : '0';
+
+      doc.fontSize(11).fillColor(RISK_COLORS[key]).font('Helvetica-Bold');
+      doc.text(`${label}: ${count} dimensiones (${pct}%)`);
+
+      // Visual bar
+      drawRiskBar(doc, m, doc.y + 2, pageW * 0.5, parseFloat(pct), key);
+      doc.moveDown(1.2);
+    });
   }
 
-  currentY += 30;
+  // ---- TOP RISK DIMENSIONS ----
+  doc.moveDown(1);
+  doc.fontSize(16).fillColor('#1E40AF').text('DIMENSIONES CON MAYOR RIESGO');
+  doc.moveDown(0.3);
+  drawHorizontalLine(doc);
+  doc.moveDown(0.5);
 
-  // Recomendaciones organizacionales
-  if (currentY > pageHeight - 300) {
-    doc.addPage();
-    currentY = margin;
+  if (stats.dimensionAverages && stats.dimensionAverages.length > 0) {
+    // Sort by average score descending and take top 10
+    const topDimensions = [...stats.dimensionAverages]
+      .filter(d => !d.dimension.endsWith('_total'))
+      .sort((a, b) => b.avgScore - a.avgScore)
+      .slice(0, 10);
+
+    topDimensions.forEach((d, i) => {
+      ensureSpace(doc, 25);
+      doc.fontSize(10).fillColor('#1F2937').font('Helvetica-Bold');
+      doc.text(`${i + 1}. ${formatDimensionName(d.dimension)} (${d.questionnaireType})`);
+      doc.font('Helvetica').fillColor('#6B7280');
+      doc.text(`   Puntaje promedio: ${d.avgScore.toFixed(1)}% | Riesgo predominante: ${RISK_LABELS[d.predominantRisk] || d.predominantRisk}`);
+      doc.moveDown(0.3);
+    });
+  } else {
+    doc.fontSize(10).fillColor('#6B7280').text('No hay datos suficientes para calcular estadísticas.');
   }
 
-  doc.fontSize(16).text('RECOMENDACIONES ORGANIZACIONALES', margin, currentY);
-  currentY += 25;
+  // ---- RECOMMENDATIONS ----
+  doc.addPage();
+  doc.fontSize(16).fillColor('#1E40AF').text('RECOMENDACIONES ORGANIZACIONALES');
+  doc.moveDown(0.3);
+  drawHorizontalLine(doc);
+  doc.moveDown(1);
 
-  const orgRecommendations = generateOrganizationalRecommendations(stats);
-  doc.fontSize(11).text(orgRecommendations, margin, currentY, { width: doc.page.width - 2 * margin, align: 'justify' });
+  const highRiskCount = (stats.riskDistribution?.riesgo_alto || 0) + (stats.riskDistribution?.riesgo_muy_alto || 0);
+  const totalDims = Object.values(stats.riskDistribution || {}).reduce((s, v) => s + v, 0);
+  const highRiskPct = totalDims > 0 ? (highRiskCount / totalDims) * 100 : 0;
 
-  // Footer
-  doc.fontSize(8).fillColor('gray');
-  doc.text('Este reporte ha sido generado automáticamente por el Sistema BRS Digital', margin, doc.page.height - 50, { 
-    width: doc.page.width - 2 * margin, 
-    align: 'center' 
+  doc.fontSize(10).fillColor('#374151').font('Helvetica');
+
+  if (highRiskPct > 30) {
+    doc.fillColor('#EF4444').font('Helvetica-Bold');
+    doc.text('PRIORIDAD ALTA: Más del 30% de las dimensiones evaluadas presenta riesgo alto o muy alto.');
+    doc.font('Helvetica').fillColor('#374151');
+    doc.moveDown(0.5);
+    doc.text('Se requiere implementar un programa integral de intervención inmediata que incluya:');
+    doc.moveDown(0.3);
+    ['Revisión y ajuste de cargas de trabajo',
+     'Fortalecimiento de programas de liderazgo',
+     'Implementación de estrategias de manejo del estrés',
+     'Mejora de los sistemas de comunicación organizacional'
+    ].forEach(r => doc.text(`  • ${r}`));
+  } else if (highRiskPct > 15) {
+    doc.fillColor('#F97316').font('Helvetica-Bold');
+    doc.text('PRIORIDAD MEDIA: Entre el 15% y 30% de las dimensiones presenta riesgo elevado.');
+    doc.font('Helvetica').fillColor('#374151');
+    doc.moveDown(0.5);
+    doc.text('Se recomienda implementar medidas preventivas focalizadas en las áreas de mayor riesgo.');
+  } else {
+    doc.fillColor('#10B981').font('Helvetica-Bold');
+    doc.text('SITUACIÓN CONTROLADA: La mayoría de dimensiones presenta niveles de riesgo bajos.');
+    doc.font('Helvetica').fillColor('#374151');
+    doc.moveDown(0.5);
+    doc.text('Mantener programas de vigilancia y prevención existentes.');
+  }
+
+  doc.moveDown(1.5);
+  doc.fontSize(12).fillColor('#1F2937').font('Helvetica-Bold').text('Acciones Recomendadas:');
+  doc.moveDown(0.5);
+  doc.font('Helvetica').fontSize(9).fillColor('#374151');
+
+  [
+    'Implementar programas de capacitación en manejo del estrés y habilidades de afrontamiento.',
+    'Desarrollar estrategias de mejora del clima organizacional y comunicación.',
+    'Revisar procesos de trabajo para optimizar cargas y demandas laborales.',
+    'Establecer programas de reconocimiento y bienestar laboral.',
+    'Crear espacios de participación y retroalimentación para los trabajadores.',
+    'Realizar evaluaciones de seguimiento cada 6-12 meses.'
+  ].forEach((r, i) => {
+    doc.text(`${i + 1}. ${r}`);
+    doc.moveDown(0.2);
   });
-  doc.text(`Fecha de generación: ${new Date().toLocaleString('es-ES')}`, margin, doc.page.height - 35, { 
-    width: doc.page.width - 2 * margin, 
-    align: 'center' 
-  });
+
+  addFooters(doc);
 }
 
-// Función para calcular estadísticas organizacionales
-async function calculateOrganizationalStats(participants) {
+// ============================================================
+// UTILITY FUNCTIONS
+// ============================================================
+
+function aggregateOrganizationalStats(allResults) {
   const stats = {
-    totalParticipants: participants.length,
-    riskDistribution: {
-      sin_riesgo: 0,
-      riesgo_bajo: 0,
-      riesgo_medio: 0,
-      riesgo_alto: 0,
-      riesgo_muy_alto: 0
-    },
-    averageScores: {},
-    domainStats: {}
+    riskDistribution: { sin_riesgo: 0, riesgo_bajo: 0, riesgo_medio: 0, riesgo_alto: 0, riesgo_muy_alto: 0 },
+    dimensionAverages: []
   };
 
-  for (const participant of participants) {
-    try {
-      // Obtener respuestas del participante
-      const responsesResult = await db('responses')
-        .where('participant_evaluation_id', participant.participant_evaluation_id)
-        .select('questionnaire_type', 'responses');
-      
-      for (const response of responsesResult) {
-        const results = await calculateResults({
-          questionnaire_type: response.questionnaire_type,
-          responses: response.responses,
-          demographic_data: participant.demographic_data
-        });
+  // Collect all dimension scores
+  const dimScores = {}; // key: `${qType}_${dimension}` => { scores: [], risks: [] }
 
-        // Contar distribución de riesgo
-        const generalRisk = results.general_risk_level || 'sin_riesgo';
-        stats.riskDistribution[generalRisk]++;
+  allResults.forEach(row => {
+    const parsed = typeof row.results === 'string' ? JSON.parse(row.results) : (row.results || []);
+    parsed.forEach(d => {
+      if (d.riskLevel && stats.riskDistribution[d.riskLevel] !== undefined) {
+        stats.riskDistribution[d.riskLevel]++;
       }
-    } catch (error) {
-      console.error(`Error processing participant ${participant.participant_evaluation_id}:`, error);
-    }
-  }
+
+      const key = `${row.questionnaire_type}_${d.dimension}`;
+      if (!dimScores[key]) {
+        dimScores[key] = { questionnaireType: row.questionnaire_type, dimension: d.dimension, scores: [], risks: [] };
+      }
+      if (d.transformedScore != null) {
+        dimScores[key].scores.push(d.transformedScore);
+      }
+      if (d.riskLevel) {
+        dimScores[key].risks.push(d.riskLevel);
+      }
+    });
+  });
+
+  // Calculate averages and predominant risk
+  stats.dimensionAverages = Object.values(dimScores).map(entry => {
+    const avgScore = entry.scores.length > 0
+      ? entry.scores.reduce((s, v) => s + v, 0) / entry.scores.length
+      : 0;
+
+    // Find predominant risk level
+    const riskCounts = {};
+    entry.risks.forEach(r => { riskCounts[r] = (riskCounts[r] || 0) + 1; });
+    const predominantRisk = Object.entries(riskCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || 'sin_riesgo';
+
+    return {
+      questionnaireType: entry.questionnaireType,
+      dimension: entry.dimension,
+      avgScore,
+      predominantRisk,
+      count: entry.scores.length
+    };
+  });
 
   return stats;
 }
 
-// Funciones auxiliares
-function getQuestionnaireTitle(type) {
-  const titles = {
-    'forma_a': 'Cuestionario Intralaboral Forma A',
-    'forma_b': 'Cuestionario Intralaboral Forma B', 
-    'extralaboral': 'Cuestionario de Factores Extralaborales',
-    'estres': 'Cuestionario de Síntomas de Estrés'
-  };
-  return titles[type] || type;
+function fmtDate(d) {
+  if (!d) return 'N/A';
+  try { return new Date(d).toLocaleDateString('es-CO'); } catch { return 'N/A'; }
 }
 
-function formatRiskLevel(level) {
-  const levels = {
-    'sin_riesgo': 'Sin Riesgo',
-    'riesgo_bajo': 'Riesgo Bajo',
-    'riesgo_medio': 'Riesgo Medio', 
-    'riesgo_alto': 'Riesgo Alto',
-    'riesgo_muy_alto': 'Riesgo Muy Alto'
-  };
-  return levels[level] || level;
-}
-
-function formatDomainName(domain) {
-  const domains = {
-    'liderazgo_relaciones_sociales': 'Liderazgo y Relaciones Sociales',
-    'control': 'Control',
-    'demandas_trabajo': 'Demandas del Trabajo',
-    'recompensas': 'Recompensas'
-  };
-  return domains[domain] || domain.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
-}
-
-function getRiskColor(level) {
-  const colors = {
-    'sin_riesgo': '#10B981',
-    'riesgo_bajo': '#3B82F6', 
-    'riesgo_medio': '#F59E0B',
-    'riesgo_alto': '#FB923C',
-    'riesgo_muy_alto': '#EF4444'
-  };
-  return colors[level] || '#6B7280';
-}
-
-function generateInterpretation(results) {
-  let interpretation = 'INTERPRETACIÓN DE RESULTADOS:\n\n';
-  
-  interpretation += 'Los resultados de esta evaluación de riesgo psicosocial se basan en la metodología oficial del Ministerio de la Protección Social de Colombia (Resolución 2646 de 2008). ';
-  interpretation += 'Cada cuestionario evalúa diferentes aspectos del ambiente laboral y extralaboral que pueden impactar la salud mental y física del trabajador.\n\n';
-  
-  interpretation += 'SIGNIFICADO DE LOS NIVELES DE RIESGO:\n\n';
-  interpretation += '• SIN RIESGO o RIESGO DESPRECIABLE: Las condiciones del ambiente de trabajo no representan riesgo para la salud del trabajador.\n\n';
-  interpretation += '• RIESGO BAJO: Las condiciones de riesgo están presentes de forma leve. Se recomienda mantener sistemas de vigilancia.\n\n';
-  interpretation += '• RIESGO MEDIO: Las condiciones de riesgo están presentes de forma moderada. Se requieren acciones de intervención a mediano plazo.\n\n';
-  interpretation += '• RIESGO ALTO: Las condiciones de riesgo están presentes de forma importante. Se requieren acciones de intervención a corto plazo.\n\n';
-  interpretation += '• RIESGO MUY ALTO: Las condiciones de riesgo están presentes de forma crítica. Se requieren acciones de intervención inmediatas.\n\n';
-  
-  interpretation += 'RECOMENDACIONES GENERALES:\n\n';
-  interpretation += 'Es importante implementar programas de vigilancia epidemiológica en salud mental y programas de intervención basados en los factores de riesgo identificados. ';
-  interpretation += 'Se recomienda realizar seguimiento periódico y evaluaciones de efectividad de las medidas implementadas.';
-  
-  return interpretation;
-}
-
-function generateOrganizationalRecommendations(stats) {
-  let recommendations = 'RECOMENDACIONES BASADAS EN LOS RESULTADOS ORGANIZACIONALES:\n\n';
-  
-  const totalParticipants = stats.totalParticipants;
-  const riskDist = stats.riskDistribution;
-  
-  const highRiskCount = (riskDist.riesgo_alto || 0) + (riskDist.riesgo_muy_alto || 0);
-  const highRiskPercentage = totalParticipants > 0 ? (highRiskCount / totalParticipants) * 100 : 0;
-  
-  if (highRiskPercentage > 30) {
-    recommendations += '⚠️ PRIORIDAD ALTA: Más del 30% de los trabajadores presenta niveles de riesgo alto o muy alto. ';
-    recommendations += 'Se requiere implementar un programa integral de intervención inmediata que incluya:\n';
-    recommendations += '• Revisión y ajuste de cargas de trabajo\n';
-    recommendations += '• Fortalecimiento de programas de liderazgo\n';
-    recommendations += '• Implementación de estrategias de manejo del estrés\n';
-    recommendations += '• Mejora de los sistemas de comunicación organizacional\n\n';
-  } else if (highRiskPercentage > 15) {
-    recommendations += '⚠️ PRIORIDAD MEDIA: Entre el 15% y 30% de los trabajadores presenta niveles de riesgo elevado. ';
-    recommendations += 'Se recomienda implementar medidas preventivas focalizadas.\n\n';
-  } else {
-    recommendations += '✅ SITUACIÓN CONTROLADA: La mayoría de trabajadores presenta niveles de riesgo bajos. ';
-    recommendations += 'Mantener programas de vigilancia y prevención.\n\n';
+function addFooters(doc) {
+  const pages = doc.bufferedPageRange();
+  for (let i = 0; i < pages.count; i++) {
+    doc.switchToPage(i);
+    doc.fontSize(7).fillColor('#9CA3AF');
+    doc.text(
+      'Generado por BRS Digital - Batería de Riesgo Psicosocial | Metodología oficial del Ministerio de la Protección Social',
+      doc.page.margins.left,
+      doc.page.height - 30,
+      { width: doc.page.width - doc.page.margins.left * 2, align: 'center' }
+    );
+    doc.text(
+      `Fecha: ${new Date().toLocaleString('es-CO')} | Página ${i + 1} de ${pages.count}`,
+      doc.page.margins.left,
+      doc.page.height - 20,
+      { width: doc.page.width - doc.page.margins.left * 2, align: 'center' }
+    );
   }
-  
-  recommendations += 'ACCIONES RECOMENDADAS:\n\n';
-  recommendations += '1. Implementar programas de capacitación en manejo del estrés y habilidades de afrontamiento.\n';
-  recommendations += '2. Desarrollar estrategias de mejora del clima organizacional y comunicación.\n';
-  recommendations += '3. Revisar procesos de trabajo para optimizar cargas y demandas laborales.\n';
-  recommendations += '4. Establecer programas de reconocimiento y bienestar laboral.\n';
-  recommendations += '5. Crear espacios de participación y retroalimentación para los trabajadores.\n\n';
-  
-  recommendations += 'SEGUIMIENTO:\n\n';
-  recommendations += 'Se recomienda realizar evaluaciones de seguimiento cada 6-12 meses para monitorear la efectividad de las intervenciones implementadas.';
-  
-  return recommendations;
 }
 
 module.exports = router;

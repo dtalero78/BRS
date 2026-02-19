@@ -1,21 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Download, FileText, Users, Clock, CheckCircle } from 'lucide-react';
-
-// Dynamic API URL detection
-const getApiUrl = (): string => {
-  if (process.env.NEXT_PUBLIC_API_URL) {
-    return process.env.NEXT_PUBLIC_API_URL;
-  }
-  
-  if (typeof window !== 'undefined') {
-    const hostname = window.location.hostname;
-    if (hostname.includes('github.dev')) {
-      return `https://${hostname.replace('-3000', '-5000')}`;
-    }
-  }
-  
-  return 'http://localhost:5000';
-};
+import { API_URL } from '../config/api';
 
 interface Evaluation {
   id: string;
@@ -76,20 +61,18 @@ const ReportGenerator: React.FC<ReportGeneratorProps> = ({
 
     try {
       const token = localStorage.getItem('token');
-      const apiUrl = getApiUrl();
-      
       let endpoint = '';
       let body = {};
 
       if (reportType === 'individual') {
-        endpoint = `${apiUrl}/api/reports/individual`;
+        endpoint = `${API_URL}/api/reports/individual`;
         body = {
           participantEvaluationId: selectedParticipant,
           includeCharts,
           language: 'es'
         };
       } else {
-        endpoint = `${apiUrl}/api/reports/organizational`;
+        endpoint = `${API_URL}/api/reports/organizational`;
         body = {
           evaluationId: selectedEvaluation,
           includeCharts,
