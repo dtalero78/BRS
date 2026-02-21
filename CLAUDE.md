@@ -63,8 +63,11 @@ BRS/
 │   │   ├── reports.js        # Generación de PDF (PDFKit)
 │   │   └── system.js         # Config, health, baremos
 │   └── utils/
-│       ├── calculate-results.js  # Motor de cálculo BRS oficial
-│       └── baremos-completos.js  # Baremos Tablas 29-34 del Ministerio
+│       ├── calculate-results.js      # Motor de cálculo BRS oficial
+│       ├── baremos-completos.js      # Baremos Tablas 29-34 del Ministerio
+│       ├── pdf-charts.js             # Gráficas PDF: pie, bar, grouped bar, tablas
+│       ├── report-templates.js       # Textos estáticos, mapeos dimensiones, intervenciones
+│       └── report-data-aggregator.js # Agregación demográfica y resultados por forma A/B
 ├── frontend/
 │   ├── config/
 │   │   └── api.ts            # API_URL config (relativa en prod, localhost en dev)
@@ -207,21 +210,44 @@ Dimensiones con sufijo `_total` son totales de dominio.
 
 ## GENERACIÓN DE REPORTES PDF
 
-**Archivo**: `backend/routes/reports.js`
+**Archivo principal**: `backend/routes/reports.js`
 **Librería**: PDFKit con `bufferPages: true` (requerido para footers con `switchToPage`)
+**Módulos auxiliares**:
+- `backend/utils/pdf-charts.js` — Funciones de dibujo: `drawPieChart`, `drawBarChart`, `drawGroupedBarChart`, `drawTable`, `createRiskSeries`
+- `backend/utils/report-templates.js` — Textos estáticos (introducción, marco legal/teórico, metodología, procedimiento), mapeos `DIMENSION_DISPLAY_NAMES`, `DOMAIN_DIMENSIONS`, `INTERVENTION_RECOMMENDATIONS`, generadores dinámicos de análisis
+- `backend/utils/report-data-aggregator.js` — `aggregateDemographics()` (ficha_datos → género/edad/escolaridad/dependientes), `aggregateResultsByForm()` (resultados separados por forma A/B con conteos de riesgo por dimensión/dominio), `getAtRiskDimensions()`
 
-### Reporte Individual (15 páginas)
+### Reporte Individual (~5 páginas)
 - Portada con título y datos del Ministerio
 - Datos del participante (email, empresa, evaluación, cargo, etc.)
 - Por cada cuestionario: resumen de riesgo, resultados por dominio con barras visuales, tabla de dimensiones
 - Página de interpretación y recomendaciones
 - Footers con fecha y paginación
 
-### Reporte Organizacional (9 páginas)
-- Portada con datos de la evaluación y empresa
-- Distribución de niveles de riesgo con barras visuales
-- Top 10 dimensiones con mayor riesgo
-- Recomendaciones priorizadas (alta/media/controlada según % de riesgo alto)
+### Reporte Organizacional (~22-35 páginas, profesional)
+Basado en formato de referencia `informe.pdf` del Ministerio. Estructura:
+1. **Portada** — Título, nombre empresa, evaluador, ciudad y fecha
+2. **Tabla de contenido** — Con números de página (backfill vía `switchToPage`)
+3. **Introducción** — Contexto de riesgo psicosocial y normatividad colombiana
+4. **Marco Referencial** — Resolución 2646/2008, Ley 1010/2006, Resolución 2764/2022
+5. **Marco Teórico** — Definiciones (riesgo psicosocial, estrés, factor protector, etc.)
+6. **Aspectos Generales** — Objetivos, alcance, población (Forma A: X, Forma B: Y)
+7. **Ficha Sociodemográfica** — 4 gráficas de torta (género, edad, escolaridad, dependientes) con análisis
+8. **Metodología** — Tablas de dominios/dimensiones intralaborales, extralaborales, escala de riesgo
+9. **Procedimiento** — Descripción de aplicación digital
+10. **Condiciones Intralaborales** — Gráficas de barras (general, Forma A, Forma B)
+11. **Dominios por Forma** — Gráficas de barras agrupadas (4 dominios × 5 niveles de riesgo)
+12. **Detalle por Dominio** — 4 dominios × 2 formas con gráficas agrupadas por dimensión + texto de análisis dinámico
+13. **Condiciones Extralaborales** — Gráficas agrupadas (general + por forma) con 7 dimensiones
+14. **Estrés** — Gráfica de torta + efectos en salud (fisiológicos, psicológicos, comportamentales)
+15. **Plan de Intervención** — Tabla con dimensiones en riesgo, recomendaciones y población objetivo
+16. **Recomendación Prioritaria** — Lista numerada de acciones prioritarias
+17. **Conclusiones** — Resumen dinámico + dimensiones de mayor atención + firma del evaluador
+
+### Notas técnicas de PDFKit
+- **switchToPage + addPage bug**: Al usar `switchToPage()` y luego `doc.text()`, PDFKit crea páginas extras. Solución: monkey-patch `doc.addPage = () => doc` durante loops de footer/TOC backfill, restaurar después.
+- **Gráficas SVG path**: Pie charts usan `doc.path()` con arcos SVG (`M`, `L`, `A`, `Z`). Bar charts usan `doc.rect()` con efecto 3D (caras lateral/superior con `darkenColor`/`lightenColor`).
+- **Tablas con auto page-break**: `drawTable()` verifica espacio restante y redibuja headers en nueva página.
 
 ## NAVEGACIÓN POR ROL
 
