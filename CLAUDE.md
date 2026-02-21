@@ -2,7 +2,7 @@
 
 ## RESUMEN DEL PROYECTO
 
-Aplicación web completa para la evaluación de factores de riesgo psicosocial basada en la **Batería oficial del Ministerio de la Protección Social de Colombia** (Resolución 2646 de 2008). Desplegada en producción en DigitalOcean App Platform.
+Plataforma SaaS multi-empresa para la evaluación de factores de riesgo psicosocial basada en la **Batería oficial del Ministerio de la Protección Social de Colombia** (Resolución 2646 de 2008). Los psicólogos se auto-registran, crean sus propias empresas y gestionan múltiples baterías de forma independiente. Desplegada en producción en DigitalOcean App Platform.
 
 **URL Producción**: https://brs-abaxh.ondigitalocean.app
 **Repositorio**: https://github.com/dtalero78/BRS
@@ -49,17 +49,17 @@ BRS/
 │   ├── config/
 │   │   └── database.js       # Conexión PostgreSQL con Knex.js (SSL)
 │   ├── middleware/
-│   │   └── auth.js           # JWT verification & role-based auth
+│   │   └── auth.js           # JWT verification, role-based auth, getOwnedCompanyIds()
 │   ├── routes/
-│   │   ├── auth.js           # Login, register, refresh, logout
-│   │   ├── companies.js      # CRUD empresas (admin)
+│   │   ├── auth.js           # Login, register (self-service evaluador), refresh, logout
+│   │   ├── companies.js      # CRUD empresas (admin + evaluador con ownership)
 │   │   ├── users.js          # CRUD usuarios (admin)
-│   │   ├── evaluations.js    # Gestión de evaluaciones
-│   │   ├── participants.js   # Gestión de participantes
+│   │   ├── evaluations.js    # Gestión de evaluaciones (filtrado por ownership)
+│   │   ├── participants.js   # Gestión de participantes (filtrado por ownership)
 │   │   ├── participant-access.js # Acceso público por token
 │   │   ├── questionnaires.js # Servir cuestionarios
 │   │   ├── responses.js      # Guardar/recuperar respuestas
-│   │   ├── results.js        # Calcular y consultar resultados
+│   │   ├── results.js        # Calcular y consultar resultados (filtrado por ownership)
 │   │   ├── reports.js        # Generación de PDF (PDFKit)
 │   │   └── system.js         # Config, health, baremos
 │   └── utils/
@@ -72,25 +72,37 @@ BRS/
 │   ├── config/
 │   │   └── api.ts            # API_URL config (relativa en prod, localhost en dev)
 │   ├── components/
-│   │   ├── Layout.tsx         # Sidebar + topbar con navegación por rol
+│   │   ├── FlowLayout.tsx     # Layout Typeform-style: header + content (reemplaza Layout para la mayoría de páginas)
+│   │   ├── FlowOption.tsx     # Card-option con letra, icono, badge, arrow (para hubs)
+│   │   ├── FlowQuestion.tsx   # Título de pregunta estilo Typeform
+│   │   ├── FlowStats.tsx      # Barra de estadísticas compactas
+│   │   ├── Layout.tsx         # Sidebar + topbar legacy (solo participantes y páginas específicas)
 │   │   ├── QuestionnaireForm.tsx # Formulario progresivo de cuestionarios
 │   │   ├── ReportGenerator.tsx   # UI para generar reportes PDF
 │   │   ├── ResultsDimensionCard.tsx
 │   │   ├── ResultsDomainsChart.tsx
 │   │   ├── ResultsInterpretation.tsx
 │   │   └── RiskSummaryChart.tsx
+│   ├── hooks/
+│   │   └── useFlowKeyboard.ts # Hook para navegación por teclado (A-Z) en hubs
+│   ├── public/
+│   │   └── fonts/
+│   │       └── ibrand.otf     # Font personalizado para branding
 │   ├── pages/
 │   │   ├── index.tsx                    # Landing page (auto-redirect si logueado)
 │   │   ├── _app.tsx                     # App wrapper
-│   │   ├── auth/login.tsx               # Login
+│   │   ├── auth/
+│   │   │   ├── login.tsx                # Login (con link a registro)
+│   │   │   └── register.tsx             # Auto-registro de evaluadores (sin empresa)
 │   │   ├── admin/
-│   │   │   ├── dashboard.tsx            # Dashboard admin
-│   │   │   ├── companies.tsx            # CRUD empresas
-│   │   │   └── users.tsx                # CRUD usuarios
+│   │   │   ├── dashboard.tsx            # Dashboard admin (FlowLayout hub)
+│   │   │   ├── companies.tsx            # CRUD empresas (FlowLayout full)
+│   │   │   └── users.tsx                # CRUD usuarios (FlowLayout full)
 │   │   ├── evaluator/
-│   │   │   ├── dashboard.tsx            # Dashboard evaluador
-│   │   │   ├── evaluations.tsx          # Gestión evaluaciones
-│   │   │   ├── participants.tsx         # Gestión participantes
+│   │   │   ├── dashboard.tsx            # Dashboard evaluador (FlowLayout hub)
+│   │   │   ├── companies.tsx            # CRUD empresas del evaluador (FlowLayout full)
+│   │   │   ├── evaluations.tsx          # Gestión evaluaciones + selector empresa
+│   │   │   ├── participants.tsx         # Gestión participantes (FlowLayout full)
 │   │   │   ├── results.tsx              # Lista de resultados
 │   │   │   ├── results/[participantId].tsx # Resultados detallados por participante
 │   │   │   ├── results-dashboard/       # Dashboard visual de resultados
@@ -109,8 +121,8 @@ BRS/
 
 ```sql
 -- Gestión de usuarios y empresas
-users (id, email, password_hash, role, company_id, active, created_at, updated_at)
-companies (id, name, nit, contact_email, contact_phone, active, created_at, updated_at)
+users (id, email, password_hash, role, company_id [nullable], active, created_at, updated_at)
+companies (id, name, nit, contact_email, contact_phone, active, created_by [FK→users], created_at, updated_at)
 participants (id, company_id, email, demographic_data, active, created_at, updated_at)
 
 -- Sistema de evaluaciones
@@ -125,6 +137,13 @@ results (id, participant_evaluation_id, questionnaire_type, results, calculated_
 system_configs (id, config_key, config_value, description, updated_at)
 audit_logs (id, user_id, action, table_name, record_id, old_values, new_values, created_at)
 ```
+
+### Modelo SaaS Multi-Empresa
+- `companies.created_by` vincula cada empresa al evaluador que la creó (ownership)
+- `users.company_id` es nullable — evaluadores nuevos se registran sin empresa
+- Filtrado por ownership: `getOwnedCompanyIds(userId)` → `whereIn('company_id', ownedIds)`
+- JWT payload: `{userId, role}` — sin companyId fijo
+- Admin ve todo; evaluador solo ve sus empresas y datos asociados
 
 **Formato de `results.results`** (JSONB array):
 ```json
@@ -143,22 +162,29 @@ Dimensiones con sufijo `_total` son totales de dominio.
 ## API REST - ENDPOINTS
 
 ### Autenticación (`/api/auth`)
-- `POST /login` - JWT login (devuelve token + user data)
-- `POST /register` - Registro
+- `POST /login` - JWT login (devuelve token + user data + lista de empresas)
+- `POST /register` - Auto-registro evaluador (solo email, password, nombre — sin empresa)
 - `POST /refresh` - Renovar token
 - `POST /logout` - Cerrar sesión
 
-### Empresas (`/api/companies`) - Solo admin
-- `GET /` | `POST /` | `PUT /:id` | `DELETE /:id`
+### Empresas (`/api/companies`)
+- `GET /mine` - Empresas del evaluador (ownership via `created_by`)
+- `POST /` - Crear empresa (admin o evaluador, set `created_by = userId`)
+- `PUT /:id` - Editar empresa (admin: cualquiera, evaluador: solo propias)
+- `DELETE /:id` - Eliminar empresa (admin: cualquiera, evaluador: solo propias)
+- `GET /` - Listar todas (solo admin)
 
 ### Usuarios (`/api/users`) - Solo admin
 - `GET /` | `POST /` | `PUT /:id` | `DELETE /:id`
 
 ### Evaluaciones (`/api/evaluations`)
-- `GET /` | `POST /` | `PUT /:id` | `POST /:id/assign`
+- `GET /` - Listar (filtrado por ownership para evaluadores)
+- `POST /` - Crear (requiere `companyId` en body, evaluador elige empresa)
+- `PUT /:id` | `POST /:id/assign`
 
 ### Participantes (`/api/participants`)
-- `GET /` | `POST /` | `PUT /:id` | `GET /evaluation/:evalId`
+- `GET /` - Listar (filtrado por ownership)
+- `POST /` | `PUT /:id` | `GET /evaluation/:evalId`
 
 ### Cuestionarios (`/api/questionnaires`)
 - `GET /` - Listar tipos | `GET /:type` - Obtener (forma_a, forma_b, extralaboral, estres)
@@ -249,16 +275,52 @@ Basado en formato de referencia `informe.pdf` del Ministerio. Estructura:
 - **Gráficas SVG path**: Pie charts usan `doc.path()` con arcos SVG (`M`, `L`, `A`, `Z`). Bar charts usan `doc.rect()` con efecto 3D (caras lateral/superior con `darkenColor`/`lightenColor`).
 - **Tablas con auto page-break**: `drawTable()` verifica espacio restante y redibuja headers en nueva página.
 
+## SISTEMA DE UI - FLOWLAYOUT
+
+### Arquitectura de Layouts
+La UI usa dos sistemas de layout:
+
+1. **FlowLayout** (`frontend/components/FlowLayout.tsx`) — Layout principal Typeform-style
+   - Header minimalista: back button + logo centrado + avatar/logout
+   - Dos modos según `maxWidth`:
+     - **Hub** (`maxWidth="3xl"`): Fondo gradiente `from-slate-50 to-blue-50`, contenido centrado
+     - **Data** (`maxWidth="full"`): Fondo neutro `bg-gray-50`, padding amplio `px-6 lg:px-10`
+   - Auth check automático (redirige a login si no hay token)
+
+2. **Layout** (`frontend/components/Layout.tsx`) — Sidebar legacy (solo participantes)
+
+### Componentes Flow
+- **FlowOption** — Card con letra (A, B, C...), icono, título, descripción, badge, arrow. Para menús hub
+- **FlowQuestion** — Título de pregunta con greeting estilo Typeform
+- **FlowStats** — Barra de estadísticas compactas (4 valores)
+- **useFlowKeyboard** — Hook: presionar A-Z navega a la opción correspondiente
+
+### Patrón de uso
+```tsx
+// Hub (dashboard): centrado con gradiente
+<FlowLayout showBack={false}>
+  <FlowQuestion greeting="Hola, user" question="Que deseas hacer?" />
+  <FlowOption letter="A" title="Empresas" href="/evaluator/companies" badge="3 empresas" />
+  <FlowStats items={[{label: 'Empresas', value: 3}]} />
+</FlowLayout>
+
+// Data page: full width con bg neutro
+<FlowLayout backHref="/evaluator/dashboard" backLabel="Volver al menu" maxWidth="full">
+  <table>...</table>
+</FlowLayout>
+```
+
 ## NAVEGACIÓN POR ROL
 
 ### Admin
-- Dashboard → `/admin/dashboard`
+- Dashboard (hub) → `/admin/dashboard`
 - Empresas → `/admin/companies`
 - Usuarios → `/admin/users`
 
 ### Evaluador
-- Dashboard → `/evaluator/dashboard`
-- Evaluaciones → `/evaluator/evaluations`
+- Dashboard (hub) → `/evaluator/dashboard`
+- Empresas → `/evaluator/companies` (CRUD con ownership)
+- Evaluaciones → `/evaluator/evaluations` (selector de empresa al crear)
 - Participantes → `/evaluator/participants`
 - Resultados → `/evaluator/results`
 - Dashboard Resultados → `/evaluator/results-dashboard`
@@ -269,6 +331,10 @@ Basado en formato de referencia `informe.pdf` del Ministerio. Estructura:
 - Dashboard → `/participant/dashboard`
 - Cuestionarios → `/participant/questionnaires`
 - Mis Resultados → `/participant/results`
+
+### Auth
+- Login → `/auth/login`
+- Registro → `/auth/register` (auto-registro de evaluadores)
 
 ## COMANDOS
 
@@ -305,6 +371,7 @@ git push origin main
 - @heroicons/react, lucide-react
 - react-hot-toast
 - recharts (gráficos)
+- react-hook-form, @hookform/resolvers, yup (validación formulario registro)
 
 ## NOTAS TÉCNICAS IMPORTANTES
 
@@ -314,6 +381,9 @@ git push origin main
 4. **Resultados pre-calculados**: Los reportes PDF leen de la tabla `results` (pre-calculados), no recalculan.
 5. **Deploy time**: ~15 minutos en DigitalOcean. `doctl` a veces retorna exit code 1 pero output es válido.
 6. **Frontend export**: Next.js en modo `output: 'export'` (estático). No soporta API routes del lado frontend ni SSR.
+7. **Ownership filtering**: Todas las rutas de evaluador usan `getOwnedCompanyIds(req.user.userId)` → `whereIn('company_id', ownedIds)` para aislar datos entre evaluadores.
+8. **FlowLayout maxWidth**: Hub pages usan `"3xl"` (gradiente), data pages usan `"full"` (bg-gray-50 neutro). No mezclar — las cards blancas se ven mal sobre gradiente en full-width.
+9. **Font ibrand**: Cargada via `@font-face` en `globals.css` desde `frontend/public/fonts/ibrand.otf`. Clase Tailwind: `font-ibrand` (configurada en `tailwind.config.js`).
 
 ## ESTADO DEL PROYECTO
 
@@ -324,8 +394,7 @@ git push origin main
 - [x] API REST completa (11 módulos de rutas)
 - [x] Base de datos PostgreSQL desplegada en DigitalOcean
 - [x] Autenticación JWT con roles (admin, evaluator, participant)
-- [x] Frontend completo con 20 páginas
-- [x] Navegación por rol con sidebar
+- [x] Frontend completo con 20+ páginas
 - [x] CRUD de empresas y usuarios (admin)
 - [x] Gestión de evaluaciones y participantes (evaluador)
 - [x] Aplicación de cuestionarios con progreso (participante)
@@ -334,17 +403,23 @@ git push origin main
 - [x] Dashboard de resultados individuales y organizacionales
 - [x] Generación de reportes PDF individuales y organizacionales
 - [x] Desplegado en producción (DigitalOcean App Platform)
-- [x] UX/navegación corregida para todos los roles
 - [x] Corrección mapeo ítems-dimensiones según Tabla 23 oficial (Forma A, B, Extralaboral)
 - [x] Implementación de ítems invertidos (Tablas 21, 22, 11)
 - [x] Factores de transformación oficiales (Tablas 25, 26, 14)
 - [x] Baremos duales extralaborales (Tabla 17 jefes / Tabla 18 auxiliares)
 - [x] Baremos oficiales de estrés con puntuación ponderada (Tabla 4, Tabla 6)
 - [x] Puntajes totales: intralaboral (Tabla 33), extralaboral, estrés
+- [x] **Modelo SaaS multi-empresa** — evaluadores se auto-registran, crean y gestionan múltiples empresas
+- [x] **Auto-registro de evaluadores** — `/auth/register` sin empresa obligatoria
+- [x] **Ownership-based filtering** — `companies.created_by` + `getOwnedCompanyIds()` para aislamiento
+- [x] **CRUD empresas por evaluador** — `/evaluator/companies` con verificación de ownership
+- [x] **Selector de empresa al crear evaluación** — dropdown con empresas propias
+- [x] **UI Typeform-style** — FlowLayout con hubs (dashboards) y data pages (tablas full-width)
+- [x] **Componentes Flow** — FlowOption, FlowQuestion, FlowStats, useFlowKeyboard
+- [x] **Font personalizado ibrand** — branding consistente en header
 
 ### Pendiente
 - [ ] Tests unitarios y de integración
-- [ ] Mejoras de diseño/estilos más refinados
 - [ ] Exportación de datos a Excel/CSV
 - [ ] Notificaciones por email a participantes
 - [ ] Dashboard admin con métricas del sistema
