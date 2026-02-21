@@ -53,17 +53,21 @@ router.post('/calculate/:participantId', auth, async (req, res) => {
       return res.status(400).json({ error: 'No hay cuestionarios BRS completados para calcular' });
     }
 
+    // Determine occupational group from intralaboral form type
+    const occupationalGroup = responsesByType['intralaboral_b'] ? 'auxiliares' : 'jefes';
+    console.log(`DEBUG - Occupational group determined: ${occupationalGroup}`);
+
     // Calculate results for each questionnaire type
     const results = [];
 
     for (const [questionnaireType, responseRecord] of Object.entries(responsesByType)) {
       try {
         console.log(`DEBUG - Processing ${questionnaireType}`);
-        
+
         // Parse the JSON responses and convert to the format expected by calculate-results.js
         let responseData;
         try {
-          responseData = typeof responseRecord.responses === 'string' 
+          responseData = typeof responseRecord.responses === 'string'
             ? JSON.parse(responseRecord.responses)
             : responseRecord.responses;
         } catch (e) {
@@ -73,47 +77,37 @@ router.post('/calculate/:participantId', auth, async (req, res) => {
 
         // Handle different response data formats
         let formattedResponses;
-        
+
         if (Array.isArray(responseData)) {
           // Format: [{questionNumber: 1, responseValue: 1, ...}, ...]
           console.log(`DEBUG - ${questionnaireType} has array format with ${responseData.length} responses`);
-          formattedResponses = responseData.map(item => {
-            console.log(`DEBUG - Array item Q${item.questionNumber || item.question_number}: ${item.responseValue || item.response_value}`);
-            return {
-              question_number: parseInt(item.questionNumber || item.question_number),
-              response_value: parseInt(item.responseValue || item.response_value) || 0
-            };
-          });
+          formattedResponses = responseData.map(item => ({
+            question_number: parseInt(item.questionNumber || item.question_number),
+            response_value: parseInt(item.responseValue || item.response_value) || 0
+          }));
         } else if (typeof responseData === 'object') {
           // Format: {1: 0, 2: 1, ...} or {"1": "0", "2": "1", ...}
           console.log(`DEBUG - ${questionnaireType} has object format with ${Object.keys(responseData).length} keys`);
-          formattedResponses = Object.entries(responseData).map(([questionNumber, responseValue]) => {
-            console.log(`DEBUG - Object entry Q${questionNumber}: "${responseValue}" (type: ${typeof responseValue})`);
-            return {
-              question_number: parseInt(questionNumber),
-              response_value: parseInt(responseValue) || 0
-            };
-          });
+          formattedResponses = Object.entries(responseData).map(([questionNumber, responseValue]) => ({
+            question_number: parseInt(questionNumber),
+            response_value: parseInt(responseValue) || 0
+          }));
         } else {
           console.error(`DEBUG - Unexpected responseData format for ${questionnaireType}:`, typeof responseData);
           formattedResponses = [];
         }
 
         console.log(`DEBUG - ${questionnaireType} has ${formattedResponses.length} individual responses`);
-        
-        const calculatedResults = await calculateResults(questionnaireType, formattedResponses);
+
+        // Pass occupational group for extralaboral and stress baremos selection
+        const calculatedResults = await calculateResults(questionnaireType, formattedResponses, { occupationalGroup });
         console.log(`DEBUG - ${questionnaireType} calculated ${calculatedResults.length} dimension results`);
-        
-        // Debug: Log sample result structure
-        if (calculatedResults.length > 0) {
-          console.log(`DEBUG - Sample result for ${questionnaireType}:`, JSON.stringify(calculatedResults[0], null, 2));
-        }
-        
+
         results.push(...calculatedResults);
       } catch (error) {
         console.error(`Error calculating results for ${questionnaireType}:`, error);
-        return res.status(400).json({ 
-          error: `Error calculando resultados para ${questionnaireType}: ${error.message}` 
+        return res.status(400).json({
+          error: `Error calculando resultados para ${questionnaireType}: ${error.message}`
         });
       }
     }

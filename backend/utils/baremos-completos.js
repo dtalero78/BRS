@@ -2,7 +2,7 @@
 // Extraídos del documento oficial del Ministerio de la Protección Social
 
 const BAREMOS_BRS = {
-  
+
   // FORMA A - BAREMOS POR DIMENSIONES (Tabla 29)
   intralaboral_forma_a: {
     dimensiones: {
@@ -140,7 +140,7 @@ const BAREMOS_BRS = {
         riesgo_muy_alto: [37.6, 100]
       }
     },
-    
+
     // DOMINIOS FORMA A (Tabla 31)
     dominios: {
       'liderazgo_relaciones_sociales': {
@@ -172,7 +172,7 @@ const BAREMOS_BRS = {
         riesgo_muy_alto: [27.6, 100]
       }
     },
-    
+
     // PUNTAJE TOTAL FORMA A (Tabla 33)
     puntaje_total: {
       sin_riesgo: [0.0, 19.7],
@@ -299,7 +299,7 @@ const BAREMOS_BRS = {
         riesgo_muy_alto: [37.6, 100]
       }
     },
-    
+
     // DOMINIOS FORMA B (Tabla 32)
     dominios: {
       'liderazgo_relaciones_sociales': {
@@ -331,7 +331,7 @@ const BAREMOS_BRS = {
         riesgo_muy_alto: [29.6, 100]
       }
     },
-    
+
     // PUNTAJE TOTAL FORMA B (Tabla 33)
     puntaje_total: {
       sin_riesgo: [0.0, 20.6],
@@ -360,8 +360,10 @@ const BAREMOS_BRS = {
     }
   },
 
-  // BAREMOS EXTRALABORALES (valores estimados - pendiente de confirmación en documento)
-  extralaboral: {
+  // ================================================================
+  // BAREMOS EXTRALABORALES - JEFES/PROFESIONALES/TECNICOS (Tabla 17)
+  // ================================================================
+  extralaboral_jefes: {
     dimensiones: {
       'tiempo_fuera_trabajo': {
         sin_riesgo: [0.0, 6.3],
@@ -378,32 +380,32 @@ const BAREMOS_BRS = {
         riesgo_muy_alto: [50.1, 100]
       },
       'comunicacion_relaciones_interpersonales': {
-        sin_riesgo: [0.0, 5.6],
-        riesgo_bajo: [5.7, 16.7],
-        riesgo_medio: [16.8, 25.0],
-        riesgo_alto: [25.1, 41.7],
-        riesgo_muy_alto: [41.8, 100]
+        sin_riesgo: [0.0, 0.9],
+        riesgo_bajo: [1.0, 10.0],
+        riesgo_medio: [10.1, 20.0],
+        riesgo_alto: [20.1, 30.0],
+        riesgo_muy_alto: [30.1, 100]
       },
       'situacion_economica': {
         sin_riesgo: [0.0, 8.3],
         riesgo_bajo: [8.4, 25.0],
-        riesgo_medio: [25.1, 41.7],
-        riesgo_alto: [41.8, 58.3],
-        riesgo_muy_alto: [58.4, 100]
+        riesgo_medio: [25.1, 33.3],
+        riesgo_alto: [33.4, 50.0],
+        riesgo_muy_alto: [50.1, 100]
       },
       'caracteristicas_vivienda': {
-        sin_riesgo: [0.0, 5.0],
-        riesgo_bajo: [5.1, 10.0],
-        riesgo_medio: [10.1, 25.0],
-        riesgo_alto: [25.1, 35.0],
-        riesgo_muy_alto: [35.1, 100]
+        sin_riesgo: [0.0, 5.6],
+        riesgo_bajo: [5.7, 11.1],
+        riesgo_medio: [11.2, 13.9],
+        riesgo_alto: [14.0, 22.2],
+        riesgo_muy_alto: [22.3, 100]
       },
       'influencia_entorno_trabajo': {
-        sin_riesgo: [0.0, 12.5],
-        riesgo_bajo: [12.6, 25.0],
-        riesgo_medio: [25.1, 37.5],
-        riesgo_alto: [37.6, 50.0],
-        riesgo_muy_alto: [50.1, 100]
+        sin_riesgo: [0.0, 8.3],
+        riesgo_bajo: [8.4, 16.7],
+        riesgo_medio: [16.8, 25.0],
+        riesgo_alto: [25.1, 41.7],
+        riesgo_muy_alto: [41.8, 100]
       },
       'desplazamiento_vivienda_trabajo': {
         sin_riesgo: [0.0, 0.9],
@@ -412,86 +414,148 @@ const BAREMOS_BRS = {
         riesgo_alto: [25.1, 43.8],
         riesgo_muy_alto: [43.9, 100]
       }
+    },
+    total: {
+      sin_riesgo: [0.0, 11.3],
+      riesgo_bajo: [11.4, 16.9],
+      riesgo_medio: [17.0, 22.6],
+      riesgo_alto: [22.7, 29.0],
+      riesgo_muy_alto: [29.1, 100]
     }
   },
 
-  // BAREMOS DE ESTRÉS (valores estimados - pendiente de confirmación en documento)
-  estres: {
-    sintomas_fisiologicos: {
-      sin_riesgo: [0.0, 25.0],
-      riesgo_bajo: [25.1, 37.5],
-      riesgo_medio: [37.6, 50.0],
-      riesgo_alto: [50.1, 62.5],
-      riesgo_muy_alto: [62.6, 100]
+  // ================================================================
+  // BAREMOS EXTRALABORALES - AUXILIARES/OPERARIOS (Tabla 18)
+  // ================================================================
+  extralaboral_auxiliares: {
+    dimensiones: {
+      'tiempo_fuera_trabajo': {
+        sin_riesgo: [0.0, 6.3],
+        riesgo_bajo: [6.4, 25.0],
+        riesgo_medio: [25.1, 37.5],
+        riesgo_alto: [37.6, 50.0],
+        riesgo_muy_alto: [50.1, 100]
+      },
+      'relaciones_familiares': {
+        sin_riesgo: [0.0, 8.3],
+        riesgo_bajo: [8.4, 25.0],
+        riesgo_medio: [25.1, 33.3],
+        riesgo_alto: [33.4, 50.0],
+        riesgo_muy_alto: [50.1, 100]
+      },
+      'comunicacion_relaciones_interpersonales': {
+        sin_riesgo: [0.0, 5.0],
+        riesgo_bajo: [5.1, 15.0],
+        riesgo_medio: [15.1, 25.0],
+        riesgo_alto: [25.1, 35.0],
+        riesgo_muy_alto: [35.1, 100]
+      },
+      'situacion_economica': {
+        sin_riesgo: [0.0, 16.7],
+        riesgo_bajo: [16.8, 25.0],
+        riesgo_medio: [25.1, 41.7],
+        riesgo_alto: [41.8, 50.0],
+        riesgo_muy_alto: [50.1, 100]
+      },
+      'caracteristicas_vivienda': {
+        sin_riesgo: [0.0, 5.6],
+        riesgo_bajo: [5.7, 11.1],
+        riesgo_medio: [11.2, 16.7],
+        riesgo_alto: [16.8, 27.8],
+        riesgo_muy_alto: [27.9, 100]
+      },
+      'influencia_entorno_trabajo': {
+        sin_riesgo: [0.0, 0.9],
+        riesgo_bajo: [1.0, 16.7],
+        riesgo_medio: [16.8, 25.0],
+        riesgo_alto: [25.1, 41.7],
+        riesgo_muy_alto: [41.8, 100]
+      },
+      'desplazamiento_vivienda_trabajo': {
+        sin_riesgo: [0.0, 0.9],
+        riesgo_bajo: [1.0, 12.5],
+        riesgo_medio: [12.6, 25.0],
+        riesgo_alto: [25.1, 43.8],
+        riesgo_muy_alto: [43.9, 100]
+      }
     },
-    sintomas_comportamiento_social: {
-      sin_riesgo: [0.0, 16.7],
-      riesgo_bajo: [16.8, 25.0],
-      riesgo_medio: [25.1, 41.7],
-      riesgo_alto: [41.8, 58.3],
-      riesgo_muy_alto: [58.4, 100]
-    },
-    sintomas_intelectuales_laborales: {
-      sin_riesgo: [0.0, 33.3],
-      riesgo_bajo: [33.4, 41.7],
-      riesgo_medio: [41.8, 58.3],
-      riesgo_alto: [58.4, 75.0],
-      riesgo_muy_alto: [75.1, 100]
-    },
-    sintomas_psicoemocionales: {
-      sin_riesgo: [0.0, 25.0],
-      riesgo_bajo: [25.1, 35.0],
-      riesgo_medio: [35.1, 45.0],
-      riesgo_alto: [45.1, 60.0],
-      riesgo_muy_alto: [60.1, 100]
+    total: {
+      sin_riesgo: [0.0, 12.9],
+      riesgo_bajo: [13.0, 17.7],
+      riesgo_medio: [17.8, 24.2],
+      riesgo_alto: [24.3, 32.3],
+      riesgo_muy_alto: [32.4, 100]
     }
+  },
+
+  // ================================================================
+  // BAREMOS DE ESTRES - JEFES/PROFESIONALES/TECNICOS (Tabla 6)
+  // Solo puntaje total (no hay baremos por categoría en metodología oficial)
+  // ================================================================
+  estres_jefes: {
+    sin_riesgo: [0.0, 7.8],
+    riesgo_bajo: [7.9, 12.6],
+    riesgo_medio: [12.7, 17.7],
+    riesgo_alto: [17.8, 25.0],
+    riesgo_muy_alto: [25.1, 100]
+  },
+
+  // ================================================================
+  // BAREMOS DE ESTRES - AUXILIARES/OPERARIOS (Tabla 6)
+  // ================================================================
+  estres_auxiliares: {
+    sin_riesgo: [0.0, 6.5],
+    riesgo_bajo: [6.6, 11.8],
+    riesgo_medio: [11.9, 17.0],
+    riesgo_alto: [17.1, 23.4],
+    riesgo_muy_alto: [23.5, 100]
   }
 };
 
 // Función para obtener el nivel de riesgo basado en el puntaje
 function getRiskLevel(score, baremos) {
   const levels = ['sin_riesgo', 'riesgo_bajo', 'riesgo_medio', 'riesgo_alto', 'riesgo_muy_alto'];
-  
+
   for (const level of levels) {
     const range = baremos[level];
     if (score >= range[0] && score <= range[1]) {
       return level;
     }
   }
-  
+
   // Fallback: si no encaja en ningún rango
   if (score < baremos.sin_riesgo[0]) return 'sin_riesgo';
   if (score > baremos.riesgo_muy_alto[1]) return 'riesgo_muy_alto';
-  
+
   return 'riesgo_medio'; // Default
 }
 
 // Función para obtener baremos según forma y tipo
 function getBaremos(forma, tipo, dimension) {
   const formaKey = `intralaboral_forma_${forma.toLowerCase()}`;
-  
+
   if (!BAREMOS_BRS[formaKey]) {
     throw new Error(`Forma ${forma} no encontrada`);
   }
-  
+
   if (tipo === 'dimension') {
     if (!BAREMOS_BRS[formaKey].dimensiones[dimension]) {
       throw new Error(`Dimensión ${dimension} no encontrada para forma ${forma}`);
     }
     return BAREMOS_BRS[formaKey].dimensiones[dimension];
   }
-  
+
   if (tipo === 'dominio') {
     if (!BAREMOS_BRS[formaKey].dominios[dimension]) {
       throw new Error(`Dominio ${dimension} no encontrado para forma ${forma}`);
     }
     return BAREMOS_BRS[formaKey].dominios[dimension];
   }
-  
+
   if (tipo === 'total') {
     return BAREMOS_BRS[formaKey].puntaje_total;
   }
-  
+
   throw new Error(`Tipo ${tipo} no reconocido`);
 }
 

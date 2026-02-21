@@ -40,8 +40,8 @@ interface ResultsData {
 
 const getQuestionnaireLabel = (type: string) => {
   const labels: { [key: string]: string } = {
-    'forma_a': 'Forma A - Intralaboral',
-    'forma_b': 'Forma B - Intralaboral',
+    'intralaboral_a': 'Forma A - Intralaboral',
+    'intralaboral_b': 'Forma B - Intralaboral',
     'extralaboral': 'Factores Extralaborales',
     'estres': 'Niveles de Estrés'
   };
@@ -51,59 +51,59 @@ const getQuestionnaireLabel = (type: string) => {
 const calculateDomains = (results: Result[], questionnaireType: string): DomainResult[] => {
   // Domain mappings based on BRS official methodology
   const domainMappings: { [key: string]: { [key: string]: string[] } } = {
-    forma_a: {
+    intralaboral_a: {
       'liderazgo_relaciones_sociales': [
         'caracteristicas_liderazgo',
         'relaciones_sociales_trabajo',
-        'retroalimentacion_desempeno',
+        'retroalimentacion_desempeño',
         'relacion_colaboradores'
       ],
-      'control': [
+      'control_trabajo': [
+        'control_autonomia',
+        'oportunidades_desarrollo',
+        'participacion_manejo_cambio',
         'claridad_rol',
-        'capacitacion',
-        'participacion_cambio',
-        'oportunidades_desarrollo_habilidades',
-        'control_autonomia'
+        'capacitacion'
       ],
       'demandas_trabajo': [
         'demandas_ambientales',
-        'demandas_emocionales',
         'demandas_cuantitativas',
-        'influencia_entorno_extralaboral',
-        'exigencias_responsabilidad',
         'demandas_carga_mental',
+        'demandas_emocionales',
+        'exigencias_responsabilidad',
+        'demandas_jornada',
         'consistencia_rol',
-        'demandas_jornada_trabajo'
+        'influencia_trabajo_entorno'
       ],
       'recompensas': [
-        'recompensas_pertenencia',
-        'reconocimiento_compensacion'
+        'reconocimiento_compensacion',
+        'recompensas_pertenencia'
       ]
     },
-    forma_b: {
+    intralaboral_b: {
       'liderazgo_relaciones_sociales': [
         'caracteristicas_liderazgo',
         'relaciones_sociales_trabajo',
-        'retroalimentacion_desempeno'
+        'retroalimentacion_desempeño'
       ],
-      'control': [
+      'control_trabajo': [
+        'control_autonomia',
+        'oportunidades_desarrollo',
+        'participacion_manejo_cambio',
         'claridad_rol',
-        'capacitacion',
-        'participacion_cambio',
-        'oportunidades_desarrollo_habilidades',
-        'control_autonomia'
+        'capacitacion'
       ],
       'demandas_trabajo': [
         'demandas_ambientales',
-        'demandas_emocionales',
         'demandas_cuantitativas',
-        'influencia_entorno_extralaboral',
         'demandas_carga_mental',
-        'demandas_jornada_trabajo'
+        'demandas_emocionales',
+        'demandas_jornada',
+        'influencia_trabajo_entorno'
       ],
       'recompensas': [
-        'recompensas_pertenencia',
-        'reconocimiento_compensacion'
+        'reconocimiento_compensacion',
+        'recompensas_pertenencia'
       ]
     }
   };

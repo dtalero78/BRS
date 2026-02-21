@@ -184,6 +184,7 @@ const QUESTIONNAIRE_TITLES = {
 
 function formatDimensionName(dim) {
   return dim
+    .replace(/^puntaje_total_/, 'Puntaje Total ')
     .replace(/_total$/, ' (Total Dominio)')
     .split('_')
     .map(w => w.charAt(0).toUpperCase() + w.slice(1))
@@ -261,8 +262,9 @@ function generateIndividualPDF(doc, { participant, demo, resultsByType }) {
     drawHorizontalLine(doc);
     doc.moveDown(0.5);
 
-    // Separate dimensions and domain totals
-    const dimResults = dimensions.filter(d => !d.dimension.endsWith('_total'));
+    // Separate dimensions, domain totals, and overall totals
+    const overallTotals = dimensions.filter(d => d.dimension.startsWith('puntaje_total'));
+    const dimResults = dimensions.filter(d => !d.dimension.endsWith('_total') && !d.dimension.startsWith('puntaje_total'));
     const domainResults = dimensions.filter(d => d.dimension.endsWith('_total'));
 
     // Risk summary for this questionnaire
@@ -300,6 +302,23 @@ function generateIndividualPDF(doc, { participant, demo, resultsByType }) {
       });
 
       doc.moveDown(0.5);
+    }
+
+    // Overall total (puntaje total) if present
+    if (overallTotals.length > 0) {
+      overallTotals.forEach(d => {
+        ensureSpace(doc, 50);
+        const name = formatDimensionName(d.dimension);
+        const score = d.transformedScore != null ? d.transformedScore.toFixed(1) : '0';
+        const risk = RISK_LABELS[d.riskLevel] || d.riskLevel;
+
+        doc.fontSize(13).fillColor('#1E40AF').font('Helvetica-Bold').text(name.toUpperCase());
+        doc.font('Helvetica').fontSize(11).fillColor(RISK_COLORS[d.riskLevel] || '#6B7280')
+          .text(`  Puntaje transformado: ${score}%  |  ${risk}`);
+
+        drawRiskBar(doc, m, doc.y + 2, pageW * 0.7, parseFloat(score), d.riskLevel);
+        doc.moveDown(2);
+      });
     }
 
     // Dimension detail table
@@ -457,7 +476,7 @@ function generateOrganizationalPDF(doc, { evaluation, stats, totalParticipants, 
   if (stats.dimensionAverages && stats.dimensionAverages.length > 0) {
     // Sort by average score descending and take top 10
     const topDimensions = [...stats.dimensionAverages]
-      .filter(d => !d.dimension.endsWith('_total'))
+      .filter(d => !d.dimension.endsWith('_total') && !d.dimension.startsWith('puntaje_total'))
       .sort((a, b) => b.avgScore - a.avgScore)
       .slice(0, 10);
 

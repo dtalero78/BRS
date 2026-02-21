@@ -1,206 +1,116 @@
 # BRS - Batería de Riesgo Psicosocial
 
-## 📋 RESUMEN DEL PROYECTO
+## RESUMEN DEL PROYECTO
 
-Aplicación web completa para la evaluación de factores de riesgo psicosocial basada en la **Batería oficial del Ministerio de la Protección Social de Colombia** (Resolución 2646 de 2008).
+Aplicación web completa para la evaluación de factores de riesgo psicosocial basada en la **Batería oficial del Ministerio de la Protección Social de Colombia** (Resolución 2646 de 2008). Desplegada en producción en DigitalOcean App Platform.
 
-## 🎯 OBJETIVO
+**URL Producción**: https://brs-abaxh.ondigitalocean.app
+**Repositorio**: https://github.com/dtalero78/BRS
 
-Desarrollar una aplicación web que permita:
-- Aplicar los cuestionarios de riesgo psicosocial de forma digital
-- Calcular automáticamente los puntajes según la metodología oficial
-- Generar reportes individuales y organizacionales
-- Clasificar el riesgo en 5 niveles según baremos oficiales
-
-## 📊 DATOS EXTRAÍDOS DEL DOCUMENTO OFICIAL
-
-### ✅ Completado - Extracción de Datos:
-
-1. **Documento fuente**: `brs-documento.html` (16MB)
-2. **Texto plano**: `brs-texto.txt` (685,255 caracteres)
-3. **Datos estructurados**: `bateria_riesgo_psicosocial_preguntas.json`
-4. **Baremos oficiales**: `backend/utils/baremos-completos.js` - Tablas 29-34 del documento oficial
-
-### 📝 Cuestionarios Extraídos:
-
-- **Forma A**: 123 preguntas (jefes, profesionales, técnicos)
-- **Forma B**: 97 preguntas (auxiliares, operarios)
-- **Extralaboral**: 31 preguntas (factores externos al trabajo)
-- **Estrés**: 31 síntomas (evaluación específica del estrés)
-- **Ficha Datos**: 18 campos demográficos y laborales
-
-**Total: 282 preguntas + datos demográficos**
-
-### 🎯 Sistema de Puntuación:
-
-- **Escala Likert**: Siempre (4), Casi siempre (3), Algunas veces (2), Casi nunca (1), Nunca (0)
-- **Fórmula oficial**: `(Puntaje obtenido / Puntaje máximo) * 100`
-- **Niveles de riesgo**: Sin riesgo, Riesgo bajo, Riesgo medio, Riesgo alto, Riesgo muy alto
-- **Baremos oficiales** extraídos de las Tablas 29-34 del Ministerio con rangos exactos
-
-### 🏗️ Dimensiones y Dominios Implementados:
-
-#### **Forma A Intralaboral** (19 dimensiones):
-**Dominio: Liderazgo y relaciones sociales en el trabajo**
-- Características del liderazgo (8 preguntas: 13, 14, 15, 16, 17, 18, 19, 20)
-- Relaciones sociales en el trabajo (4 preguntas: 9, 10, 11, 12)
-- Retroalimentación del desempeño (3 preguntas: 21, 22, 23)
-- Relación con colaboradores (subordinados) (9 preguntas: 104, 105, 106, 107, 108, 109, 110, 111, 112)
-
-**Dominio: Control**
-- Claridad de rol (5 preguntas: 24, 25, 26, 27, 28)
-- Capacitación (4 preguntas: 29, 30, 31, 32)
-- Participación y manejo del cambio (3 preguntas: 33, 34, 35)
-- Oportunidades para el uso y desarrollo de habilidades y conocimientos (4 preguntas: 36, 37, 38, 39)
-- Control y autonomía sobre el trabajo (8 preguntas: 40, 41, 42, 43, 44, 45, 46, 47)
-
-**Dominio: Demandas del trabajo**
-- Demandas ambientales (5 preguntas: 1, 2, 3, 4, 5)
-- Demandas emocionales (9 preguntas: 97, 98, 99, 100, 101, 102, 103, 113, 114)
-- Demandas cuantitativas (3 preguntas: 48, 49, 50)
-- Influencia del trabajo sobre el entorno extralaboral (4 preguntas: 115, 116, 117, 118)
-- Exigencias de responsabilidad del cargo (5 preguntas: 119, 120, 121, 122, 123)
-- Demandas de carga mental (5 preguntas: 51, 52, 53, 54, 55)
-- Consistencia del rol (5 preguntas: 62, 63, 64, 65, 66)
-- Demandas de la jornada de trabajo (8 preguntas: 56, 57, 58, 59, 60, 61, 67, 68)
-
-**Dominio: Recompensas**
-- Recompensas derivadas de la pertenencia a la organización y del trabajo que se realiza (4 preguntas: 69, 70, 71, 72)
-- Reconocimiento y compensación (6 preguntas: 73, 74, 75, 76, 77, 78)
-
-#### **Forma B Intralaboral** (15 dimensiones):
-**Dominio: Liderazgo y relaciones sociales en el trabajo**
-- Características del liderazgo (8 preguntas: 13, 14, 15, 16, 17, 18, 19, 20)
-- Relaciones sociales en el trabajo (4 preguntas: 9, 10, 11, 12)
-- Retroalimentación del desempeño (3 preguntas: 21, 22, 23)
-
-**Dominio: Control**
-- Claridad de rol (5 preguntas: 24, 25, 26, 27, 28)
-- Capacitación (4 preguntas: 29, 30, 31, 32)
-- Participación y manejo del cambio (3 preguntas: 33, 34, 35)
-- Oportunidades para el uso y desarrollo de habilidades y conocimientos (4 preguntas: 36, 37, 38, 39)
-- Control y autonomía sobre el trabajo (8 preguntas: 40, 41, 42, 43, 44, 45, 46, 47)
-
-**Dominio: Demandas del trabajo**
-- Demandas ambientales (5 preguntas: 1, 2, 3, 4, 5)
-- Demandas emocionales (3 preguntas: 88, 89, 90)
-- Demandas cuantitativas (3 preguntas: 48, 49, 50)
-- Influencia del trabajo sobre el entorno extralaboral (4 preguntas: 91, 92, 93, 94)
-- Demandas de carga mental (5 preguntas: 51, 52, 53, 54, 55)
-- Demandas de la jornada de trabajo (8 preguntas: 56, 57, 58, 59, 60, 61, 62, 63)
-
-**Dominio: Recompensas**
-- Recompensas derivadas de la pertenencia a la organización y del trabajo que se realiza (6 preguntas: 64, 65, 66, 67, 68, 69)
-- Reconocimiento y compensación (11 preguntas: 70, 71, 72, 73, 74, 75, 76, 77, 78, 95, 96)
-
-#### **Extralaboral** (7 dimensiones):
-1. **Tiempo fuera del trabajo** (4 preguntas: 1, 2, 3, 4)
-2. **Relaciones familiares** (4 preguntas: 5, 6, 7, 8)
-3. **Comunicación y relaciones interpersonales** (4 preguntas: 9, 10, 11, 12)
-4. **Situación económica del grupo familiar** (6 preguntas: 13, 14, 15, 16, 17, 18)
-5. **Características de la vivienda y de su entorno** (6 preguntas: 19, 20, 21, 22, 23, 24)
-6. **Influencia del entorno extralaboral sobre el trabajo** (3 preguntas: 25, 26, 27)
-7. **Desplazamiento vivienda-trabajo-vivienda** (4 preguntas: 28, 29, 30, 31)
-
-#### **Estrés** (4 categorías de síntomas):
-1. **Síntomas fisiológicos** (8 preguntas: 1, 2, 3, 4, 5, 6, 7, 8)
-2. **Síntomas de comportamiento social** (4 preguntas: 9, 10, 11, 12)
-3. **Síntomas intelectuales y laborales** (10 preguntas: 13, 14, 15, 16, 17, 18, 19, 20, 21, 22)
-4. **Síntomas psicoemocionales** (9 preguntas: 23, 24, 25, 26, 27, 28, 29, 30, 31)
-
-## 🚀 PLAN DE DESARROLLO - APLICACIÓN WEB COMPLETA
-
-### Arquitectura Tecnológica:
+## ARQUITECTURA
 
 ```
-Frontend (React/Next.js)
+Frontend (Next.js + TypeScript + Tailwind CSS)
+    ↓  (exportado estático, servido por Express)
+Backend (Node.js/Express + Knex.js)
     ↓
-Backend API (Node.js/Express)
-    ↓
-Base de Datos (PostgreSQL)
+PostgreSQL (DigitalOcean Managed Database, SSL requerido)
 ```
 
-### Estructura del Proyecto:
+**Modelo de despliegue**: Single-service en DigitalOcean App Platform. El backend Express sirve el frontend como archivos estáticos desde `frontend/out/`. No hay servicio separado de frontend en producción.
+
+## INFRAESTRUCTURA DE PRODUCCIÓN
+
+- **DO App ID**: `420e1df4-744a-4442-a9b9-87c8b8603eb7`
+- **DB Host**: `brs-do-user-19197755-0.l.db.ondigitalocean.com`
+- **DB Port**: `25060` | **DB Name**: `defaultdb` | **DB User**: `doadmin`
+- **DB Password**: (ver variable de entorno en DigitalOcean) (SSL requerido, `rejectUnauthorized: false`)
+- **doctl**: `~/bin/doctl`
+
+### Usuarios de Prueba
+| Rol | Email | Password |
+|-----|-------|----------|
+| Admin | admin@brsdigital.com | admin123 |
+| Evaluador | evaluator@test.com | evaluator123 |
+| Participante | carlos.ruiz@techcorp.com | (acceso por token) |
+
+### Datos de Prueba
+- Participante Carlos Ruiz: `participant_id=5`, `participant_evaluation_id=5`
+- Tiene 4 respuestas completadas: estres, extralaboral, intralaboral_a, ficha_datos
+- Tiene resultados calculados: 34 dimensiones/dominios
+
+## ESTRUCTURA DEL PROYECTO
 
 ```
 BRS/
-├── frontend/          # React/Next.js
-│   ├── components/    # Componentes reutilizables
-│   ├── pages/         # Páginas de la aplicación
-│   ├── hooks/         # Custom hooks
-│   └── utils/         # Utilidades frontend
-├── backend/           # Node.js/Express API
-│   ├── routes/        # Rutas de la API
-│   ├── models/        # Modelos de datos
-│   ├── controllers/   # Lógica de negocio
-│   └── utils/         # Cálculos y utilidades
-├── database/          # Scripts y migrations
-└── docs/              # Documentación
+├── .do/app.yaml              # Config DigitalOcean (no se usa, deploy es single-service)
+├── backend/
+│   ├── server.js             # Express server principal (sirve frontend estático)
+│   ├── config/
+│   │   └── database.js       # Conexión PostgreSQL con Knex.js (SSL)
+│   ├── middleware/
+│   │   └── auth.js           # JWT verification & role-based auth
+│   ├── routes/
+│   │   ├── auth.js           # Login, register, refresh, logout
+│   │   ├── companies.js      # CRUD empresas (admin)
+│   │   ├── users.js          # CRUD usuarios (admin)
+│   │   ├── evaluations.js    # Gestión de evaluaciones
+│   │   ├── participants.js   # Gestión de participantes
+│   │   ├── participant-access.js # Acceso público por token
+│   │   ├── questionnaires.js # Servir cuestionarios
+│   │   ├── responses.js      # Guardar/recuperar respuestas
+│   │   ├── results.js        # Calcular y consultar resultados
+│   │   ├── reports.js        # Generación de PDF (PDFKit)
+│   │   └── system.js         # Config, health, baremos
+│   └── utils/
+│       ├── calculate-results.js  # Motor de cálculo BRS oficial
+│       └── baremos-completos.js  # Baremos Tablas 29-34 del Ministerio
+├── frontend/
+│   ├── config/
+│   │   └── api.ts            # API_URL config (relativa en prod, localhost en dev)
+│   ├── components/
+│   │   ├── Layout.tsx         # Sidebar + topbar con navegación por rol
+│   │   ├── QuestionnaireForm.tsx # Formulario progresivo de cuestionarios
+│   │   ├── ReportGenerator.tsx   # UI para generar reportes PDF
+│   │   ├── ResultsDimensionCard.tsx
+│   │   ├── ResultsDomainsChart.tsx
+│   │   ├── ResultsInterpretation.tsx
+│   │   └── RiskSummaryChart.tsx
+│   ├── pages/
+│   │   ├── index.tsx                    # Landing page (auto-redirect si logueado)
+│   │   ├── _app.tsx                     # App wrapper
+│   │   ├── auth/login.tsx               # Login
+│   │   ├── admin/
+│   │   │   ├── dashboard.tsx            # Dashboard admin
+│   │   │   ├── companies.tsx            # CRUD empresas
+│   │   │   └── users.tsx                # CRUD usuarios
+│   │   ├── evaluator/
+│   │   │   ├── dashboard.tsx            # Dashboard evaluador
+│   │   │   ├── evaluations.tsx          # Gestión evaluaciones
+│   │   │   ├── participants.tsx         # Gestión participantes
+│   │   │   ├── results.tsx              # Lista de resultados
+│   │   │   ├── results/[participantId].tsx # Resultados detallados por participante
+│   │   │   ├── results-dashboard/       # Dashboard visual de resultados
+│   │   │   ├── organizational-dashboard/ # Dashboard organizacional
+│   │   │   └── reports.tsx              # Generador de reportes PDF
+│   │   └── participant/
+│   │       ├── questionnaires.tsx       # Lista de cuestionarios
+│   │       ├── questionnaires/[id].tsx  # Completar cuestionario
+│   │       └── evaluation/[token].tsx   # Acceso público por token
+│   └── out/                             # Build estático exportado
+└── database/
+    └── schema.sql                       # Schema inicial
 ```
 
-### Módulos Principales:
+## BASE DE DATOS
 
-#### 1. **Gestión de Usuarios**
-- Registro de empresas y evaluadores
-- Autenticación y autorización
-- Roles: Administrador, Evaluador, Participante
-
-#### 2. **Aplicación de Cuestionarios**
-- Interface progresiva para completar evaluaciones
-- Guardado automático del progreso
-- Validación de respuestas en tiempo real
-
-#### 3. **Motor de Cálculo**
-- Algoritmos de puntuación según metodología oficial
-- Transformación de puntajes brutos a percentiles
-- Clasificación automática por niveles de riesgo
-
-#### 4. **Sistema de Reportes**
-- Reportes individuales con interpretación
-- Reportes organizacionales agregados
-- Gráficos y visualizaciones
-- Exportación a PDF
-
-#### 5. **Dashboard Analytics**
-- Estadísticas en tiempo real
-- Comparativas por departamentos
-- Indicadores de riesgo consolidados
-- Recomendaciones automatizadas
-
-## 🔧 IMPLEMENTACIÓN TÉCNICA COMPLETA
-
-### ✅ Backend Completado - Node.js/Express + PostgreSQL
-
-#### **Estructura del Backend:**
-```
-backend/
-├── routes/
-│   ├── auth.js           # JWT authentication & user management  
-│   ├── companies.js      # Company management
-│   ├── evaluations.js    # Evaluation lifecycle management
-│   ├── participants.js   # Participant management
-│   ├── questionnaires.js # Serve questionnaire data
-│   ├── responses.js      # Save/retrieve responses
-│   ├── results.js        # Calculate and store results
-│   ├── reports.js        # Generate PDF reports
-│   └── system.js         # System configuration & baremos
-├── utils/
-│   ├── calculate-results.js   # Motor de cálculo oficial BRS
-│   └── baremos-completos.js   # Baremos oficiales completos
-├── config/
-│   └── database.js       # PostgreSQL connection
-└── middleware/
-    └── auth.js           # JWT verification & role-based auth
-```
-
-#### **Base de Datos - Esquema Completo:**
 ```sql
 -- Gestión de usuarios y empresas
 users (id, email, password_hash, role, company_id, active, created_at, updated_at)
 companies (id, name, nit, contact_email, contact_phone, active, created_at, updated_at)
 participants (id, company_id, email, demographic_data, active, created_at, updated_at)
 
--- Sistema de evaluaciones  
+-- Sistema de evaluaciones
 evaluations (id, company_id, name, description, start_date, end_date, status, created_by, created_at)
 participant_evaluations (id, evaluation_id, participant_id, status, assigned_at, completed_at, updated_at)
 
@@ -213,182 +123,208 @@ system_configs (id, config_key, config_value, description, updated_at)
 audit_logs (id, user_id, action, table_name, record_id, old_values, new_values, created_at)
 ```
 
-### ✅ Motor de Cálculo - Implementación Oficial BRS
+**Formato de `results.results`** (JSONB array):
+```json
+[
+  {"dimension": "sintomas_fisiologicos", "rawScore": 6, "transformedScore": 25, "percentile": 25, "riskLevel": "sin_riesgo"},
+  {"dimension": "demandas_del_trabajo_total", "rawScore": null, "transformedScore": 45.2, "percentile": null, "riskLevel": "riesgo_alto"}
+]
+```
+Dimensiones con sufijo `_total` son totales de dominio.
 
-#### **Archivo: `backend/utils/calculate-results.js`**
-- **Fórmula oficial**: `(Puntaje obtenido / Puntaje máximo) * 100`
-- **Mapeos exactos** de preguntas por dimensión para Forma A y Forma B
-- **Cálculo de dominios** basado en promedio de dimensiones 
-- **Clasificación automática** usando baremos oficiales del Ministerio
-- **Soporte completo** para los 4 cuestionarios (Forma A, Forma B, Extralaboral, Estrés)
-
-```javascript
-// Ejemplo de implementación:
-function transformScore(rawScore, maxScore) {
-  // Fórmula oficial BRS del Ministerio
-  return Math.round((rawScore / maxScore) * 100 * 100) / 100;
-}
-
-function classifyRisk(transformedScore, baremos) {
-  // Clasificación según rangos oficiales
-  if (transformedScore <= baremos.sin_riesgo[1]) return 'sin_riesgo';
-  if (transformedScore <= baremos.riesgo_bajo[1]) return 'riesgo_bajo';
-  if (transformedScore <= baremos.riesgo_medio[1]) return 'riesgo_medio';
-  if (transformedScore <= baremos.riesgo_alto[1]) return 'riesgo_alto';
-  return 'riesgo_muy_alto';
-}
+**Formato de `responses.responses`** (JSONB array):
+```json
+[{"questionNumber": 1, "responseValue": 3}, {"questionNumber": 2, "responseValue": 1}]
 ```
 
-### ✅ Baremos Oficiales Completos
+## API REST - ENDPOINTS
 
-#### **Archivo: `backend/utils/baremos-completos.js`**
-- **Tablas 29-34** del documento oficial del Ministerio implementadas
-- **Rangos exactos** para cada dimensión y dominio
-- **5 niveles de riesgo** con límites precisos
-- **Estructura completa** para Forma A, Forma B, Extralaboral y Estrés
-
-**Ejemplo de baremos implementados:**
-```javascript
-const BAREMOS_BRS = {
-  intralaboral_forma_a: {
-    dimensiones: {
-      'caracteristicas_liderazgo': {
-        sin_riesgo: [0.0, 3.8],
-        riesgo_bajo: [3.9, 15.4], 
-        riesgo_medio: [15.5, 30.8],
-        riesgo_alto: [30.9, 46.2],
-        riesgo_muy_alto: [46.3, 100]
-      },
-      // ... 18 dimensiones más con rangos exactos
-    },
-    dominios: {
-      'liderazgo_relaciones_sociales': {
-        sin_riesgo: [0.0, 8.3],
-        riesgo_bajo: [8.4, 17.5],
-        riesgo_medio: [17.6, 25.0],
-        riesgo_alto: [25.1, 37.5], 
-        riesgo_muy_alto: [37.6, 100]
-      }
-      // ... 3 dominios más
-    }
-  }
-  // Implementación completa para forma_b, extralaboral y estres
-};
-```
-
-### ✅ API REST Completa - Endpoints Implementados
-
-#### **Autenticación (`/api/auth`)**
-- `POST /login` - Autenticación JWT
-- `POST /register` - Registro de usuarios  
+### Autenticación (`/api/auth`)
+- `POST /login` - JWT login (devuelve token + user data)
+- `POST /register` - Registro
 - `POST /refresh` - Renovar token
 - `POST /logout` - Cerrar sesión
 
-#### **Empresas (`/api/companies`)**
-- `GET /` - Listar empresas (admin)
-- `POST /` - Crear empresa (admin)
-- `PUT /:id` - Actualizar empresa
-- `DELETE /:id` - Eliminar empresa
+### Empresas (`/api/companies`) - Solo admin
+- `GET /` | `POST /` | `PUT /:id` | `DELETE /:id`
 
-#### **Evaluaciones (`/api/evaluations`)**  
-- `GET /` - Listar evaluaciones de la empresa
-- `POST /` - Crear nueva evaluación
-- `PUT /:id` - Actualizar evaluación
-- `POST /:id/assign` - Asignar participantes
+### Usuarios (`/api/users`) - Solo admin
+- `GET /` | `POST /` | `PUT /:id` | `DELETE /:id`
 
-#### **Cuestionarios (`/api/questionnaires`)**
-- `GET /:type` - Obtener cuestionario (forma_a, forma_b, extralaboral, estres)
-- `GET /` - Listar todos los cuestionarios disponibles
+### Evaluaciones (`/api/evaluations`)
+- `GET /` | `POST /` | `PUT /:id` | `POST /:id/assign`
 
-#### **Respuestas (`/api/responses`)**
-- `POST /` - Guardar respuestas de cuestionario  
-- `GET /evaluation/:evalId/participant/:partId` - Obtener respuestas guardadas
-- `PUT /:id` - Actualizar respuestas
+### Participantes (`/api/participants`)
+- `GET /` | `POST /` | `PUT /:id` | `GET /evaluation/:evalId`
 
-#### **Resultados (`/api/results`)**
-- `POST /calculate` - Calcular resultados con baremos oficiales
-- `GET /evaluation/:evalId` - Obtener todos los resultados de una evaluación
-- `GET /participant/:partId` - Obtener resultados de un participante
+### Cuestionarios (`/api/questionnaires`)
+- `GET /` - Listar tipos | `GET /:type` - Obtener (forma_a, forma_b, extralaboral, estres)
 
-#### **Sistema (`/api/system`)**
-- `POST /load-questionnaires` - Cargar datos de cuestionarios (admin)
-- `POST /load-baremos` - Cargar baremos oficiales (admin)  
-- `GET /config/:configKey` - Obtener configuración
-- `GET /baremos-summary` - Resumen de baremos implementados
-- `GET /health` - Estado del sistema
+### Respuestas (`/api/responses`)
+- `POST /` | `GET /evaluation/:evalId/participant/:partId` | `PUT /:id`
 
-### ✅ Frontend - Estructura Next.js + TypeScript
+### Resultados (`/api/results`)
+- `POST /calculate/:participantEvaluationId` - Calcula y guarda resultados
+- `GET /participant/:participantEvaluationId` - Resultados por participante
+- `GET /evaluation/:evalId` - Resultados por evaluación
 
-#### **Configuración Completada:**
+### Reportes (`/api/reports`)
+- `POST /individual` - PDF individual (`{participantEvaluationId}`)
+- `POST /organizational` - PDF organizacional (`{evaluationId}`)
+
+### Acceso Participante (`/api/participant-access`)
+- `POST /token/validate` - Validar token de acceso
+- `GET /token/:token/questionnaires` - Cuestionarios disponibles
+- `POST /token/:token/responses` - Guardar respuestas
+
+### Sistema (`/api/system`)
+- `GET /health` | `POST /load-questionnaires` | `POST /load-baremos` | `GET /baremos-summary`
+
+## MOTOR DE CÁLCULO BRS
+
+**Archivo**: `backend/utils/calculate-results.js`
+**Firma**: `calculateResults(questionnaireType, responses, options)` donde `responses` es `[{question_number, response_value}]` y `options` puede incluir `{ occupationalGroup: 'jefes' | 'auxiliares' }`
+
+- **Fórmula oficial**: `(Puntaje obtenido / Factor de transformación) * 100`
+- **Escala Likert intralaboral/extralaboral**: Siempre (4), Casi siempre (3), Algunas veces (2), Casi nunca (1), Nunca (0)
+- **Escala Likert estrés**: Siempre (3), Casi siempre (2), A veces (1), Nunca (0) → con puntuación variable por ítem
+- **Ítems invertidos**: Tablas 21, 22, 11 del documento oficial. Ítems protectores usan `score = 4 - responseValue`
+- **5 niveles de riesgo**: sin_riesgo, riesgo_bajo, riesgo_medio, riesgo_alto, riesgo_muy_alto
+- Retorna array de objetos: `{dimension, rawScore, transformedScore, percentile, riskLevel}`
+- Incluye totales de dominio (`*_total`) y puntaje total (`puntaje_total_*`)
+
+### Dimensiones implementadas (Tabla 23):
+- **Forma A Intralaboral**: 19 dimensiones + 4 dominios + 1 total general (items NO secuenciales por dimensión)
+- **Forma B Intralaboral**: 16 dimensiones + 4 dominios + 1 total general
+- **Extralaboral**: 7 dimensiones + 1 total (con baremos duales: Tabla 17 jefes / Tabla 18 auxiliares)
+- **Estrés**: Solo puntaje total con metodología de promedios ponderados (×4, ×3, ×2, ×1) y factor 61.16
+
+### Baremos (`backend/utils/baremos-completos.js`)
+- Intralaboral: Tablas 29-33 del documento oficial (verificados correctos)
+- Extralaboral: Tabla 17 (jefes/profesionales) y Tabla 18 (auxiliares/operarios) - baremos duales
+- Estrés: Tabla 6 - baremos duales por grupo ocupacional (solo puntaje total)
+- Total general: Tabla 34 (intralaboral + extralaboral combinado)
+
+## GENERACIÓN DE REPORTES PDF
+
+**Archivo**: `backend/routes/reports.js`
+**Librería**: PDFKit con `bufferPages: true` (requerido para footers con `switchToPage`)
+
+### Reporte Individual (15 páginas)
+- Portada con título y datos del Ministerio
+- Datos del participante (email, empresa, evaluación, cargo, etc.)
+- Por cada cuestionario: resumen de riesgo, resultados por dominio con barras visuales, tabla de dimensiones
+- Página de interpretación y recomendaciones
+- Footers con fecha y paginación
+
+### Reporte Organizacional (9 páginas)
+- Portada con datos de la evaluación y empresa
+- Distribución de niveles de riesgo con barras visuales
+- Top 10 dimensiones con mayor riesgo
+- Recomendaciones priorizadas (alta/media/controlada según % de riesgo alto)
+
+## NAVEGACIÓN POR ROL
+
+### Admin
+- Dashboard → `/admin/dashboard`
+- Empresas → `/admin/companies`
+- Usuarios → `/admin/users`
+
+### Evaluador
+- Dashboard → `/evaluator/dashboard`
+- Evaluaciones → `/evaluator/evaluations`
+- Participantes → `/evaluator/participants`
+- Resultados → `/evaluator/results`
+- Dashboard Resultados → `/evaluator/results-dashboard`
+- Dashboard Organizacional → `/evaluator/organizational-dashboard`
+- Reportes → `/evaluator/reports`
+
+### Participante
+- Dashboard → `/participant/dashboard`
+- Cuestionarios → `/participant/questionnaires`
+- Mis Resultados → `/participant/results`
+
+## COMANDOS
+
+```bash
+# Desarrollo local
+cd backend && npm run dev    # Backend en puerto 5000
+cd frontend && npm run dev   # Frontend en puerto 3000
+
+# Build producción
+npm run build                # Build frontend + backend
+
+# Deploy (auto-deploy en push a main)
+git push origin main
+
+# Verificar deploy
+~/bin/doctl apps list-deployments 420e1df4-744a-4442-a9b9-87c8b8603eb7 --format ID,Phase,Progress
+
+# Ver logs
+~/bin/doctl apps logs 420e1df4-744a-4442-a9b9-87c8b8603eb7 --type run
 ```
-frontend/
-├── tailwind.config.js    # Configuración Tailwind CSS
-├── postcss.config.js     # PostCSS con Tailwind y Autoprefixer  
-├── tsconfig.json         # TypeScript configuration
-└── next.config.js        # Next.js configuration
-```
 
-## 📋 ESTADO ACTUAL DEL PROYECTO
+## DEPENDENCIAS CLAVE
 
-### ✅ **COMPLETADO (100%)**
+### Backend
+- express, cors, helmet, morgan
+- knex + pg (PostgreSQL con SSL)
+- bcrypt, jsonwebtoken (auth)
+- pdfkit (reportes PDF, requiere `bufferPages: true`)
+- express-rate-limit
+
+### Frontend
+- next, react, react-dom
+- typescript, tailwindcss
+- @heroicons/react, lucide-react
+- react-hot-toast
+- recharts (gráficos)
+
+## NOTAS TÉCNICAS IMPORTANTES
+
+1. **SSL de DB**: Conexión usa `ssl: { rejectUnauthorized: false }` - requerido por DigitalOcean managed DB.
+2. **API URL en frontend**: `config/api.ts` usa URL relativa en browser (mismo origen), `localhost:5000` en SSR. Variable `NEXT_PUBLIC_API_URL` para override.
+3. **PDFKit bufferPages**: SIEMPRE usar `bufferPages: true` al crear PDFDocument si se necesitan footers con `switchToPage()`.
+4. **Resultados pre-calculados**: Los reportes PDF leen de la tabla `results` (pre-calculados), no recalculan.
+5. **Deploy time**: ~15 minutos en DigitalOcean. `doctl` a veces retorna exit code 1 pero output es válido.
+6. **Frontend export**: Next.js en modo `output: 'export'` (estático). No soporta API routes del lado frontend ni SSR.
+
+## ESTADO DEL PROYECTO
+
+### Completado
 - [x] Extracción completa de 282 preguntas del documento oficial
-- [x] Implementación de baremos oficiales (Tablas 29-34 del Ministerio)
+- [x] Baremos oficiales (Tablas 29-34 del Ministerio) - 45 dimensiones, 10 dominios
 - [x] Motor de cálculo con fórmula oficial BRS
-- [x] API REST completa con 9 módulos
-- [x] Base de datos PostgreSQL con esquema completo
-- [x] Autenticación JWT y autorización por roles
-- [x] Sistema de configuración y carga de baremos
-- [x] Soporte completo para Forma A, Forma B, Extralaboral y Estrés
-- [x] Mapeo exacto de 19+15+7+4 dimensiones según documento oficial
-- [x] Clasificación automática en 5 niveles de riesgo
+- [x] API REST completa (11 módulos de rutas)
+- [x] Base de datos PostgreSQL desplegada en DigitalOcean
+- [x] Autenticación JWT con roles (admin, evaluator, participant)
+- [x] Frontend completo con 20 páginas
+- [x] Navegación por rol con sidebar
+- [x] CRUD de empresas y usuarios (admin)
+- [x] Gestión de evaluaciones y participantes (evaluador)
+- [x] Aplicación de cuestionarios con progreso (participante)
+- [x] Cálculo de resultados con clasificación automática
+- [x] Visualización de resultados por dimensión y dominio
+- [x] Dashboard de resultados individuales y organizacionales
+- [x] Generación de reportes PDF individuales y organizacionales
+- [x] Desplegado en producción (DigitalOcean App Platform)
+- [x] UX/navegación corregida para todos los roles
+- [x] Corrección mapeo ítems-dimensiones según Tabla 23 oficial (Forma A, B, Extralaboral)
+- [x] Implementación de ítems invertidos (Tablas 21, 22, 11)
+- [x] Factores de transformación oficiales (Tablas 25, 26, 14)
+- [x] Baremos duales extralaborales (Tabla 17 jefes / Tabla 18 auxiliares)
+- [x] Baremos oficiales de estrés con puntuación ponderada (Tabla 4, Tabla 6)
+- [x] Puntajes totales: intralaboral (Tabla 33), extralaboral, estrés
 
-### 🔄 **PRÓXIMOS PASOS**
-1. **Desarrollo Frontend** - Crear interfaces de usuario con React/Next.js
-2. **Sistema de Reportes** - Generación de PDF con interpretaciones
-3. **Testing** - Tests unitarios y de integración
-4. **Deployment** - Configuración para producción
+### Pendiente
+- [ ] Tests unitarios y de integración
+- [ ] Mejoras de diseño/estilos más refinados
+- [ ] Exportación de datos a Excel/CSV
+- [ ] Notificaciones por email a participantes
+- [ ] Dashboard admin con métricas del sistema
 
-## 🔧 COMANDOS IMPORTANTES
-
-- **Iniciar desarrollo**: `npm run dev`
-- **Ejecutar tests**: `npm test`
-- **Build producción**: `npm run build`
-
-## 📚 REFERENCIAS
+## REFERENCIAS
 
 - **Documento oficial**: https://dtalero78.github.io/bsl-presentacion/todos-brs-unificado.html
 - **Marco legal**: Resolución 2646 de 2008
 - **Validación**: Pontificia Universidad Javeriana - Ministerio de la Protección Social
-
-## 📊 ESTADÍSTICAS DE IMPLEMENTACIÓN
-
-### **Cobertura Completa de la BRS Oficial:**
-- ✅ **282 preguntas** extraídas y estructuradas
-- ✅ **45 dimensiones** implementadas (19 Forma A + 15 Forma B + 7 Extralaboral + 4 Estrés)
-- ✅ **10 dominios** con cálculos automáticos 
-- ✅ **5 niveles de riesgo** con baremos exactos del Ministerio
-- ✅ **Fórmula oficial** implementada: `(Puntaje obtenido / Puntaje máximo) * 100`
-
-### **API REST - Endpoints Funcionales:**
-- ✅ **37 endpoints** implementados
-- ✅ **9 módulos** de rutas completos
-- ✅ **JWT Authentication** con roles (admin, evaluator, participant)
-- ✅ **PostgreSQL** con esquema normalizado
-- ✅ **Validación** de datos y manejo de errores
-- ✅ **Audit logging** para trazabilidad
-
-### **Motor de Cálculo - Precisión Oficial:**
-- ✅ **Mapeos exactos** de preguntas por dimensión según documento oficial
-- ✅ **Cálculos de dominios** basados en promedio ponderado de dimensiones
-- ✅ **Transformación de puntajes** con fórmula del Ministerio
-- ✅ **Clasificación automática** usando Tablas 29-34 oficiales
-- ✅ **Soporte multi-cuestionario** (Forma A/B, Extralaboral, Estrés)
-
----
-
-**🎉 IMPLEMENTACIÓN BRS OFICIAL COMPLETADA AL 100%**  
-
-**Todos los cálculos, baremos y metodologías del documento oficial del Ministerio de la Protección Social están implementados con precisión exacta.**
-
-**Estado actual**: ✅ **Backend y motor de cálculo BRS oficial completamente implementado**  
-**Siguiente paso**: 🚀 **Desarrollo de interfaces de usuario (Frontend React/Next.js)**

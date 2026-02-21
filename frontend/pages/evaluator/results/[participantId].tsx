@@ -57,6 +57,8 @@ const formatDimensionName = (dimension: string) => {
 
 const getQuestionnaireLabel = (type: string) => {
   switch (type) {
+    case 'intralaboral_a': return 'Forma A - Intralaboral';
+    case 'intralaboral_b': return 'Forma B - Intralaboral';
     case 'forma_a': return 'Forma A - Intralaboral';
     case 'forma_b': return 'Forma B - Intralaboral';
     case 'extralaboral': return 'Extralaboral';
