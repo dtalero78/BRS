@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
-import Layout from '../../components/Layout';
-import { 
+import FlowLayout from '../../components/FlowLayout';
+import {
   PlusIcon,
   PencilIcon,
   TrashIcon,
@@ -9,14 +9,22 @@ import {
   ChartBarIcon,
   CalendarIcon,
   UsersIcon,
-  ClockIcon
+  ClockIcon,
+  BuildingOfficeIcon
 } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
+
+interface Company {
+  id: number;
+  name: string;
+}
 
 interface Evaluation {
   id: number;
   name: string;
   description: string;
+  companyId: number;
+  companyName: string;
   startDate: string;
   endDate: string;
   status: 'active' | 'completed' | 'cancelled';
@@ -29,6 +37,7 @@ interface Evaluation {
 
 export default function EvaluatorEvaluations() {
   const [evaluations, setEvaluations] = useState<Evaluation[]>([]);
+  const [companies, setCompanies] = useState<Company[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editingEvaluation, setEditingEvaluation] = useState<Evaluation | null>(null);
@@ -36,11 +45,13 @@ export default function EvaluatorEvaluations() {
     name: '',
     description: '',
     startDate: '',
-    endDate: ''
+    endDate: '',
+    companyId: ''
   });
 
   useEffect(() => {
     fetchEvaluations();
+    fetchCompanies();
   }, []);
 
   const fetchEvaluations = async () => {
@@ -63,6 +74,21 @@ export default function EvaluatorEvaluations() {
       toast.error('Error de conexión');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchCompanies = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch('/api/companies/mine', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setCompanies(data.companies);
+      }
+    } catch (error) {
+      console.error('Error fetching companies:', error);
     }
   };
 
@@ -94,7 +120,7 @@ export default function EvaluatorEvaluations() {
         );
         setShowModal(false);
         setEditingEvaluation(null);
-        setFormData({ name: '', description: '', startDate: '', endDate: '' });
+        setFormData({ name: '', description: '', startDate: '', endDate: '', companyId: '' });
         fetchEvaluations();
       } else {
         const errorData = await response.json();
@@ -112,7 +138,8 @@ export default function EvaluatorEvaluations() {
       name: evaluation.name,
       description: evaluation.description,
       startDate: evaluation.startDate.split('T')[0],
-      endDate: evaluation.endDate ? evaluation.endDate.split('T')[0] : ''
+      endDate: evaluation.endDate ? evaluation.endDate.split('T')[0] : '',
+      companyId: String(evaluation.companyId)
     });
     setShowModal(true);
   };
@@ -174,29 +201,29 @@ export default function EvaluatorEvaluations() {
 
   if (loading) {
     return (
-      <Layout>
+      <FlowLayout backHref="/evaluator/dashboard" backLabel="Volver al menu" maxWidth="full">
         <div className="flex items-center justify-center h-64">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
         </div>
-      </Layout>
+      </FlowLayout>
     );
   }
 
   return (
-    <Layout>
+    <FlowLayout backHref="/evaluator/dashboard" backLabel="Volver al menu" maxWidth="full">
       <div className="space-y-6">
         <div className="sm:flex sm:items-center sm:justify-between">
           <div>
             <h1 className="text-3xl font-bold text-gray-900">Evaluaciones</h1>
             <p className="mt-2 text-sm text-gray-600">
-              Gestiona las evaluaciones de riesgo psicosocial de tu empresa
+              Gestiona las evaluaciones de riesgo psicosocial de tus empresas
             </p>
           </div>
           <div className="mt-4 sm:mt-0">
             <button
               onClick={() => {
                 setEditingEvaluation(null);
-                setFormData({ name: '', description: '', startDate: '', endDate: '' });
+                setFormData({ name: '', description: '', startDate: '', endDate: '', companyId: '' });
                 setShowModal(true);
               }}
               className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
@@ -305,7 +332,7 @@ export default function EvaluatorEvaluations() {
                 <button
                   onClick={() => {
                     setEditingEvaluation(null);
-                    setFormData({ name: '', description: '', startDate: '', endDate: '' });
+                    setFormData({ name: '', description: '', startDate: '', endDate: '', companyId: '' });
                     setShowModal(true);
                   }}
                   className="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
@@ -337,6 +364,10 @@ export default function EvaluatorEvaluations() {
                         </div>
                         <div className="text-sm text-gray-500">
                           {evaluation.description}
+                        </div>
+                        <div className="flex items-center mt-1 text-xs text-gray-400">
+                          <BuildingOfficeIcon className="h-3.5 w-3.5 mr-1" />
+                          {evaluation.companyName}
                         </div>
                         <div className="flex items-center mt-1 text-sm text-gray-500">
                           <CalendarIcon className="h-4 w-4 mr-1" />
@@ -396,6 +427,30 @@ export default function EvaluatorEvaluations() {
               </h3>
               
               <form onSubmit={handleSubmit} className="space-y-4">
+                {!editingEvaluation && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">
+                      Empresa *
+                    </label>
+                    <select
+                      required
+                      value={formData.companyId}
+                      onChange={(e) => setFormData({ ...formData, companyId: e.target.value })}
+                      className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                    >
+                      <option value="">Selecciona una empresa</option>
+                      {companies.map((c) => (
+                        <option key={c.id} value={c.id}>{c.name}</option>
+                      ))}
+                    </select>
+                    {companies.length === 0 && (
+                      <p className="mt-1 text-xs text-amber-600">
+                        No tienes empresas. Crea una primero en la sección de Empresas.
+                      </p>
+                    )}
+                  </div>
+                )}
+
                 <div>
                   <label className="block text-sm font-medium text-gray-700">
                     Nombre *
@@ -454,7 +509,7 @@ export default function EvaluatorEvaluations() {
                     onClick={() => {
                       setShowModal(false);
                       setEditingEvaluation(null);
-                      setFormData({ name: '', description: '', startDate: '', endDate: '' });
+                      setFormData({ name: '', description: '', startDate: '', endDate: '', companyId: '' });
                     }}
                     className="px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
                   >
@@ -472,6 +527,6 @@ export default function EvaluatorEvaluations() {
           </div>
         </div>
       )}
-    </Layout>
+    </FlowLayout>
   );
 }

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
-import Layout from '../../../components/Layout';
+import FlowLayout from '../../../components/FlowLayout';
 import QuestionnaireForm from '../../../components/QuestionnaireForm';
 import toast from 'react-hot-toast';
 
@@ -55,29 +55,29 @@ export default function QuestionnaireDetailPage() {
 
   if (loading) {
     return (
-      <Layout title="Cargando...">
+      <FlowLayout backHref="/participant/questionnaires" backLabel="Volver" maxWidth="3xl">
         <div className="flex items-center justify-center h-64">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
         </div>
-      </Layout>
+      </FlowLayout>
     );
   }
 
   if (!assignment) {
     return (
-      <Layout title="Error">
+      <FlowLayout backHref="/participant/questionnaires" backLabel="Volver" maxWidth="3xl">
         <div className="text-center py-12">
           <h3 className="mt-2 text-sm font-medium text-gray-900">
             Cuestionario no encontrado
           </h3>
         </div>
-      </Layout>
+      </FlowLayout>
     );
   }
 
   if (assignment.status === 'completed') {
     return (
-      <Layout title="Cuestionario Completado">
+      <FlowLayout backHref="/participant/questionnaires" backLabel="Volver" maxWidth="3xl">
         <div className="max-w-2xl mx-auto text-center py-12">
           <div className="mx-auto h-12 w-12 rounded-full bg-green-100 flex items-center justify-center mb-4">
             <svg className="h-6 w-6 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -97,12 +97,12 @@ export default function QuestionnaireDetailPage() {
             Volver a Cuestionarios
           </button>
         </div>
-      </Layout>
+      </FlowLayout>
     );
   }
 
   return (
-    <Layout title={`Cuestionario: ${assignment.evaluation.name}`}>
+    <FlowLayout backHref="/participant/questionnaires" backLabel="Volver" maxWidth="3xl">
       <div className="mb-6">
         <button
           onClick={() => router.push('/participant/questionnaires')}
@@ -119,6 +119,6 @@ export default function QuestionnaireDetailPage() {
         participantEvaluationId={assignment.id}
         questionnaireType={assignment.questionnaire_type}
       />
-    </Layout>
+    </FlowLayout>
   );
 }

@@ -7,8 +7,7 @@ function ParticipantLayout({ children }: { children: ReactNode }) {
     <div className="min-h-screen bg-gray-50">
       <header className="bg-white shadow-sm border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 py-3 flex items-center">
-          <span className="text-xl font-bold text-blue-700">BRS Digital</span>
-          <span className="ml-3 text-sm text-gray-500">Evaluación de Riesgo Psicosocial</span>
+          <span className="text-lg font-ibrand text-blue-700">Batería de Riesgo Psicosocial</span>
         </div>
       </header>
       <main>{children}</main>

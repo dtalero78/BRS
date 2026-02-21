@@ -329,8 +329,15 @@ router.get('/company/:companyId', auth, async (req, res) => {
     const values = [companyId];
 
     if (req.user.role !== 'admin') {
-      whereClause += ' AND u.company_id = ?';
-      values.push(req.user.company_id);
+      // Evaluators can only see users from their owned companies
+      const { getOwnedCompanyIds } = require('../middleware/auth');
+      const ownedIds = await getOwnedCompanyIds(req.user.userId);
+      if (ownedIds.length > 0) {
+        whereClause += ` AND u.company_id IN (${ownedIds.map(() => '?').join(',')})`;
+        values.push(...ownedIds);
+      } else {
+        whereClause += ' AND 1=0'; // No companies owned
+      }
     }
 
     const query = `

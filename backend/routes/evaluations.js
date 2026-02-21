@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const Joi = require('joi');
-const { auth, authorize } = require('../middleware/auth');
+const { auth, authorize, getOwnedCompanyIds } = require('../middleware/auth');
 const db = require('../config/database');
 const { v4: uuidv4 } = require('uuid');
 
@@ -10,7 +10,8 @@ const createEvaluationSchema = Joi.object({
   name: Joi.string().required(),
   description: Joi.string().allow(''),
   startDate: Joi.date().required(),
-  endDate: Joi.date().min(Joi.ref('startDate')).allow(null)
+  endDate: Joi.date().min(Joi.ref('startDate')).allow(null),
+  companyId: Joi.number().integer().required()
 });
 
 const updateEvaluationSchema = Joi.object({
@@ -21,30 +22,32 @@ const updateEvaluationSchema = Joi.object({
   status: Joi.string().valid('active', 'completed', 'cancelled')
 });
 
-// Get all evaluations for the company
+// Get all evaluations for the evaluator's companies
 router.get('/', auth, async (req, res) => {
   try {
     const { page = 1, limit = 10, status } = req.query;
     const offset = (page - 1) * limit;
+    const companyIds = await getOwnedCompanyIds(req.user.userId);
 
     let query = db('evaluations')
-      .where('company_id', req.user.companyId)
-      .orderBy('created_at', 'desc');
+      .leftJoin('companies', 'evaluations.company_id', 'companies.id')
+      .whereIn('evaluations.company_id', companyIds)
+      .orderBy('evaluations.created_at', 'desc');
 
     if (status) {
-      query = query.where('status', status);
+      query = query.where('evaluations.status', status);
     }
 
     const evaluations = await query
       .limit(limit)
       .offset(offset)
-      .select('*');
+      .select('evaluations.*', 'companies.name as company_name');
 
     // Get total count
     const totalQuery = db('evaluations')
-      .where('company_id', req.user.companyId)
+      .whereIn('company_id', companyIds)
       .count('* as count');
-    
+
     if (status) {
       totalQuery.where('status', status);
     }
@@ -54,6 +57,8 @@ router.get('/', auth, async (req, res) => {
     res.json({
       evaluations: evaluations.map(evaluation => ({
         id: evaluation.id,
+        companyId: evaluation.company_id,
+        companyName: evaluation.company_name,
         name: evaluation.name,
         description: evaluation.description,
         startDate: evaluation.start_date,
@@ -61,7 +66,7 @@ router.get('/', auth, async (req, res) => {
         status: evaluation.status,
         totalParticipants: evaluation.total_participants,
         completedParticipants: evaluation.completed_participants,
-        progress: evaluation.total_participants > 0 
+        progress: evaluation.total_participants > 0
           ? Math.round((evaluation.completed_participants / evaluation.total_participants) * 100)
           : 0,
         createdAt: evaluation.created_at,
@@ -86,9 +91,10 @@ router.get('/:id', auth, async (req, res) => {
   try {
     const { id } = req.params;
 
+    const companyIds = await getOwnedCompanyIds(req.user.userId);
     const evaluation = await db('evaluations')
       .where('id', id)
-      .where('company_id', req.user.companyId)
+      .whereIn('company_id', companyIds)
       .first();
 
     if (!evaluation) {
@@ -140,11 +146,20 @@ router.post('/', auth, authorize('admin', 'evaluator'), async (req, res) => {
     const { error } = createEvaluationSchema.validate(req.body);
     if (error) return res.status(400).json({ error: error.details[0].message });
 
-    const { name, description, startDate, endDate } = req.body;
+    const { name, description, startDate, endDate, companyId } = req.body;
+
+    // Validate company ownership
+    if (!companyId) {
+      return res.status(400).json({ error: 'companyId es requerido' });
+    }
+    const companyIds = await getOwnedCompanyIds(req.user.userId);
+    if (!companyIds.includes(parseInt(companyId))) {
+      return res.status(403).json({ error: 'No autorizado para esta empresa' });
+    }
 
     const [evaluation] = await db('evaluations')
       .insert({
-        company_id: req.user.companyId,
+        company_id: companyId,
         created_by: req.user.userId,
         name,
         description,
@@ -190,10 +205,11 @@ router.put('/:id', auth, authorize('admin', 'evaluator'), async (req, res) => {
     const { error } = updateEvaluationSchema.validate(req.body);
     if (error) return res.status(400).json({ error: error.details[0].message });
 
-    // Check if evaluation exists and belongs to company
+    // Check if evaluation exists and belongs to evaluator's companies
+    const ownedIds = await getOwnedCompanyIds(req.user.userId);
     const existingEvaluation = await db('evaluations')
       .where('id', id)
-      .where('company_id', req.user.companyId)
+      .whereIn('company_id', ownedIds)
       .first();
 
     if (!existingEvaluation) {
@@ -249,10 +265,11 @@ router.delete('/:id', auth, authorize('admin'), async (req, res) => {
   try {
     const { id } = req.params;
 
-    // Check if evaluation exists and belongs to company
+    // Check if evaluation exists and belongs to evaluator's companies
+    const ownedIds = await getOwnedCompanyIds(req.user.userId);
     const evaluation = await db('evaluations')
       .where('id', id)
-      .where('company_id', req.user.companyId)
+      .whereIn('company_id', ownedIds)
       .first();
 
     if (!evaluation) {
@@ -293,11 +310,11 @@ router.delete('/:id', auth, authorize('admin'), async (req, res) => {
 // Get dashboard statistics for evaluator
 router.get('/dashboard', auth, async (req, res) => {
   try {
-    const companyId = req.user.companyId;
+    const companyIds = await getOwnedCompanyIds(req.user.userId);
 
     // Get evaluation statistics
     const evaluationStats = await db('evaluations')
-      .where('company_id', companyId)
+      .whereIn('company_id', companyIds)
       .select(
         db.raw('COUNT(*) as total_evaluations'),
         db.raw("COUNT(CASE WHEN status = 'active' THEN 1 END) as active_evaluations")
@@ -307,7 +324,7 @@ router.get('/dashboard', auth, async (req, res) => {
     // Get participant statistics
     const participantStats = await db('participants')
       .join('evaluations', 'participants.evaluation_id', 'evaluations.id')
-      .where('evaluations.company_id', companyId)
+      .whereIn('evaluations.company_id', companyIds)
       .select(
         db.raw('COUNT(DISTINCT participants.id) as total_participants'),
         db.raw('COUNT(DISTINCT CASE WHEN participants.completed_at IS NOT NULL THEN participants.id END) as completed_participants')
@@ -318,7 +335,7 @@ router.get('/dashboard', auth, async (req, res) => {
     const responseStats = await db('responses')
       .join('participants', 'responses.participant_id', 'participants.id')
       .join('evaluations', 'participants.evaluation_id', 'evaluations.id')
-      .where('evaluations.company_id', companyId)
+      .whereIn('evaluations.company_id', companyIds)
       .select(
         db.raw('COUNT(*) as total_responses'),
         db.raw('COUNT(DISTINCT responses.participant_id) as participants_with_responses')
@@ -333,7 +350,7 @@ router.get('/dashboard', auth, async (req, res) => {
     // Get recent activity (last 10 participant completions)
     const recentActivity = await db('participants')
       .join('evaluations', 'participants.evaluation_id', 'evaluations.id')
-      .where('evaluations.company_id', companyId)
+      .whereIn('evaluations.company_id', companyIds)
       .whereNotNull('participants.completed_at')
       .select(
         'participants.first_name',

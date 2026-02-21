@@ -1,198 +1,35 @@
 const express = require('express');
 const router = express.Router();
-const { auth, authorize } = require('../middleware/auth');
+const { auth, authorize, getOwnedCompanyIds } = require('../middleware/auth');
 const db = require('../config/database');
 
-// Get company profile
-router.get('/profile', auth, async (req, res) => {
+// ============================================================
+// EVALUATOR ROUTES - manage own companies
+// ============================================================
+
+// Get evaluator's companies
+router.get('/mine', auth, authorize('evaluator'), async (req, res) => {
   try {
-    const company = await db('companies')
-      .where('id', req.user.companyId)
-      .first();
-
-    if (!company) {
-      return res.status(404).json({ error: 'Empresa no encontrada' });
-    }
-
-    res.json({
-      id: company.id,
-      name: company.name,
-      nit: company.nit,
-      email: company.email,
-      phone: company.phone,
-      address: company.address,
-      sector: company.sector,
-      size: company.size,
-      createdAt: company.created_at,
-      updatedAt: company.updated_at
-    });
-
-  } catch (error) {
-    console.error('Get company profile error:', error);
-    res.status(500).json({ error: 'Error interno del servidor' });
-  }
-});
-
-// Update company profile
-router.put('/profile', auth, authorize('admin'), async (req, res) => {
-  try {
-    const allowedFields = ['name', 'email', 'phone', 'address', 'sector', 'size'];
-    const updateData = {};
-
-    allowedFields.forEach(field => {
-      if (req.body[field] !== undefined) {
-        updateData[field] = req.body[field];
-      }
-    });
-
-    if (Object.keys(updateData).length === 0) {
-      return res.status(400).json({ error: 'No hay datos para actualizar' });
-    }
-
-    const [company] = await db('companies')
-      .where('id', req.user.companyId)
-      .update(updateData)
-      .returning('*');
-
-    // Log update
-    await db('audit_logs').insert({
-      user_id: req.user.userId,
-      action: 'update_company_profile',
-      entity_type: 'company',
-      entity_id: req.user.companyId,
-      details: updateData
-    });
-
-    res.json({
-      id: company.id,
-      name: company.name,
-      nit: company.nit,
-      email: company.email,
-      phone: company.phone,
-      address: company.address,
-      sector: company.sector,
-      size: company.size,
-      updatedAt: company.updated_at
-    });
-
-  } catch (error) {
-    console.error('Update company profile error:', error);
-    res.status(500).json({ error: 'Error interno del servidor' });
-  }
-});
-
-// Get company statistics
-router.get('/stats', auth, async (req, res) => {
-  try {
-    // Total evaluations
-    const totalEvaluations = await db('evaluations')
-      .where('company_id', req.user.companyId)
-      .count('* as count')
-      .first();
-
-    // Active evaluations
-    const activeEvaluations = await db('evaluations')
-      .where('company_id', req.user.companyId)
-      .where('status', 'active')
-      .count('* as count')
-      .first();
-
-    // Total participants
-    const totalParticipants = await db('participants')
-      .join('evaluations', 'participants.evaluation_id', 'evaluations.id')
-      .where('evaluations.company_id', req.user.companyId)
-      .count('* as count')
-      .first();
-
-    // Completed participants
-    const completedParticipants = await db('participants')
-      .join('evaluations', 'participants.evaluation_id', 'evaluations.id')
-      .where('evaluations.company_id', req.user.companyId)
-      .where('participants.status', 'completed')
-      .count('* as count')
-      .first();
-
-    // Recent evaluations
-    const recentEvaluations = await db('evaluations')
-      .where('company_id', req.user.companyId)
+    const companies = await db('companies')
+      .where('created_by', req.user.userId)
       .orderBy('created_at', 'desc')
-      .limit(5)
-      .select('id', 'name', 'status', 'total_participants', 'completed_participants', 'created_at');
+      .select('id', 'name', 'nit', 'contact_email', 'contact_phone', 'active', 'created_at', 'updated_at');
 
-    res.json({
-      summary: {
-        totalEvaluations: parseInt(totalEvaluations.count),
-        activeEvaluations: parseInt(activeEvaluations.count),
-        totalParticipants: parseInt(totalParticipants.count),
-        completedParticipants: parseInt(completedParticipants.count),
-        completionRate: totalParticipants.count > 0 
-          ? Math.round((completedParticipants.count / totalParticipants.count) * 100)
-          : 0
-      },
-      recentEvaluations: recentEvaluations.map(evaluation => ({
-        id: evaluation.id,
-        name: evaluation.name,
-        status: evaluation.status,
-        totalParticipants: evaluation.total_participants,
-        completedParticipants: evaluation.completed_participants,
-        progress: evaluation.total_participants > 0 
-          ? Math.round((evaluation.completed_participants / evaluation.total_participants) * 100)
-          : 0,
-        createdAt: evaluation.created_at
-      }))
-    });
-
-  } catch (error) {
-    console.error('Get company stats error:', error);
-    res.status(500).json({ error: 'Error interno del servidor' });
-  }
-});
-
-// ADMIN ROUTES - for managing all companies
-
-// Get all companies (admin only)
-router.get('/', auth, authorize('admin'), async (req, res) => {
-  try {
-    const companies = await db('companies as c')
-      .leftJoin('users as u', function() {
-        this.on('c.id', '=', 'u.company_id')
-            .andOn('u.active', '=', db.raw('true'));
-      })
-      .select(
-        'c.id',
-        'c.name', 
-        'c.nit',
-        'c.contact_email',
-        'c.contact_phone',
-        'c.active',
-        'c.created_at',
-        'c.updated_at'
-      )
-      .count('u.id as users_count')
-      .groupBy('c.id', 'c.name', 'c.nit', 'c.contact_email', 'c.contact_phone', 'c.active', 'c.created_at', 'c.updated_at')
-      .orderBy('c.created_at', 'desc');
-    
     res.json({
       success: true,
-      companies: companies.map(company => ({
-        ...company,
-        users_count: parseInt(company.users_count)
-      }))
+      companies
     });
   } catch (error) {
-    console.error('Error fetching companies:', error);
-    res.status(500).json({
-      error: 'Error al obtener empresas'
-    });
+    console.error('Error fetching evaluator companies:', error);
+    res.status(500).json({ error: 'Error al obtener empresas' });
   }
 });
 
-// Create new company (admin only)
-router.post('/', auth, authorize('admin'), async (req, res) => {
+// Create company (evaluator or admin)
+router.post('/', auth, authorize('admin', 'evaluator'), async (req, res) => {
   try {
     const { name, nit, contact_email, contact_phone } = req.body;
 
-    // Validate required fields
     if (!name || !nit || !contact_email) {
       return res.status(400).json({
         error: 'Nombre, NIT y email de contacto son requeridos'
@@ -200,27 +37,22 @@ router.post('/', auth, authorize('admin'), async (req, res) => {
     }
 
     // Check if NIT already exists
-    const existingCompany = await db('companies')
-      .where('nit', nit)
-      .first();
-
+    const existingCompany = await db('companies').where('nit', nit).first();
     if (existingCompany) {
-      return res.status(409).json({
-        error: 'Ya existe una empresa con este NIT'
-      });
+      return res.status(409).json({ error: 'Ya existe una empresa con este NIT' });
     }
 
-    // Insert company
     const [company] = await db('companies')
       .insert({
         name,
         nit,
         contact_email,
         contact_phone: contact_phone || null,
-        active: true
+        active: true,
+        created_by: req.user.userId
       })
       .returning(['id', 'name', 'nit', 'contact_email', 'contact_phone', 'active', 'created_at']);
-    
+
     res.status(201).json({
       success: true,
       message: 'Empresa creada exitosamente',
@@ -228,46 +60,35 @@ router.post('/', auth, authorize('admin'), async (req, res) => {
     });
   } catch (error) {
     console.error('Error creating company:', error);
-    res.status(500).json({
-      error: 'Error al crear empresa'
-    });
+    res.status(500).json({ error: 'Error al crear empresa' });
   }
 });
 
-// Update company (admin only)
-router.put('/:id', auth, authorize('admin'), async (req, res) => {
+// Update company (owner or admin)
+router.put('/:id', auth, authorize('admin', 'evaluator'), async (req, res) => {
   try {
     const { id } = req.params;
     const { name, nit, contact_email, contact_phone, active } = req.body;
 
-    // Check if company exists
-    const existingCompany = await db('companies')
-      .where('id', id)
-      .first();
-
+    // Check ownership
+    const existingCompany = await db('companies').where('id', id).first();
     if (!existingCompany) {
-      return res.status(404).json({
-        error: 'Empresa no encontrada'
-      });
+      return res.status(404).json({ error: 'Empresa no encontrada' });
     }
 
-    // Check if NIT is taken by another company
-    if (nit) {
-      const nitCheck = await db('companies')
-        .where('nit', nit)
-        .whereNot('id', id)
-        .first();
+    if (req.user.role === 'evaluator' && existingCompany.created_by !== req.user.userId) {
+      return res.status(403).json({ error: 'No autorizado' });
+    }
 
+    // Check NIT uniqueness
+    if (nit) {
+      const nitCheck = await db('companies').where('nit', nit).whereNot('id', id).first();
       if (nitCheck) {
-        return res.status(409).json({
-          error: 'Ya existe otra empresa con este NIT'
-        });
+        return res.status(409).json({ error: 'Ya existe otra empresa con este NIT' });
       }
     }
 
-    // Build update data
     const updateData = {};
-
     if (name) updateData.name = name;
     if (nit) updateData.nit = nit;
     if (contact_email) updateData.contact_email = contact_email;
@@ -275,9 +96,7 @@ router.put('/:id', auth, authorize('admin'), async (req, res) => {
     if (typeof active === 'boolean') updateData.active = active;
 
     if (Object.keys(updateData).length === 0) {
-      return res.status(400).json({
-        error: 'No hay campos para actualizar'
-      });
+      return res.status(400).json({ error: 'No hay campos para actualizar' });
     }
 
     updateData.updated_at = db.fn.now();
@@ -287,67 +106,116 @@ router.put('/:id', auth, authorize('admin'), async (req, res) => {
       .update(updateData)
       .returning(['id', 'name', 'nit', 'contact_email', 'contact_phone', 'active', 'updated_at']);
 
-    res.json({
-      success: true,
-      message: 'Empresa actualizada exitosamente',
-      company
-    });
+    res.json({ success: true, message: 'Empresa actualizada exitosamente', company });
   } catch (error) {
     console.error('Error updating company:', error);
-    res.status(500).json({
-      error: 'Error al actualizar empresa'
-    });
+    res.status(500).json({ error: 'Error al actualizar empresa' });
   }
 });
 
-// Delete company (admin only)
-router.delete('/:id', auth, authorize('admin'), async (req, res) => {
+// Delete company (owner or admin)
+router.delete('/:id', auth, authorize('admin', 'evaluator'), async (req, res) => {
   try {
     const { id } = req.params;
 
-    // Check if company exists
-    const existingCompany = await db('companies')
-      .where('id', id)
-      .first();
-
+    const existingCompany = await db('companies').where('id', id).first();
     if (!existingCompany) {
-      return res.status(404).json({
-        error: 'Empresa no encontrada'
-      });
+      return res.status(404).json({ error: 'Empresa no encontrada' });
     }
 
-    // Check for related records that might prevent deletion
-    const userCount = await db('users')
-      .where('company_id', id)
-      .count('* as count')
-      .first();
-
-    if (parseInt(userCount.count) > 0) {
-      // Instead of deleting, deactivate the company
-      await db('companies')
-        .where('id', id)
-        .update({ active: false });
-
-      return res.json({
-        success: true,
-        message: 'Empresa desactivada (tiene usuarios asociados)'
-      });
+    if (req.user.role === 'evaluator' && existingCompany.created_by !== req.user.userId) {
+      return res.status(403).json({ error: 'No autorizado' });
     }
 
-    // Delete company
-    await db('companies')
-      .where('id', id)
-      .del();
+    // Check for evaluations
+    const evalCount = await db('evaluations').where('company_id', id).count('* as count').first();
+    if (parseInt(evalCount.count) > 0) {
+      await db('companies').where('id', id).update({ active: false });
+      return res.json({ success: true, message: 'Empresa desactivada (tiene evaluaciones asociadas)' });
+    }
+
+    await db('companies').where('id', id).del();
+    res.json({ success: true, message: 'Empresa eliminada exitosamente' });
+  } catch (error) {
+    console.error('Error deleting company:', error);
+    res.status(500).json({ error: 'Error al eliminar empresa' });
+  }
+});
+
+// ============================================================
+// SHARED ROUTES
+// ============================================================
+
+// Get company stats (evaluator sees own companies' stats)
+router.get('/stats', auth, async (req, res) => {
+  try {
+    const companyIds = await getOwnedCompanyIds(req.user.userId);
+
+    const totalEvaluations = await db('evaluations')
+      .whereIn('company_id', companyIds).count('* as count').first();
+
+    const activeEvaluations = await db('evaluations')
+      .whereIn('company_id', companyIds).where('status', 'active').count('* as count').first();
+
+    const totalParticipants = await db('participants')
+      .join('evaluations', 'participants.evaluation_id', 'evaluations.id')
+      .whereIn('evaluations.company_id', companyIds).count('* as count').first();
+
+    const completedParticipants = await db('participants')
+      .join('evaluations', 'participants.evaluation_id', 'evaluations.id')
+      .whereIn('evaluations.company_id', companyIds)
+      .where('participants.status', 'completed').count('* as count').first();
+
+    const recentEvaluations = await db('evaluations')
+      .whereIn('company_id', companyIds)
+      .orderBy('created_at', 'desc').limit(5)
+      .select('id', 'name', 'status', 'total_participants', 'completed_participants', 'created_at');
+
+    res.json({
+      summary: {
+        totalEvaluations: parseInt(totalEvaluations.count),
+        activeEvaluations: parseInt(activeEvaluations.count),
+        totalParticipants: parseInt(totalParticipants.count),
+        completedParticipants: parseInt(completedParticipants.count),
+        completionRate: totalParticipants.count > 0
+          ? Math.round((completedParticipants.count / totalParticipants.count) * 100) : 0
+      },
+      recentEvaluations: recentEvaluations.map(e => ({
+        id: e.id, name: e.name, status: e.status,
+        totalParticipants: e.total_participants,
+        completedParticipants: e.completed_participants,
+        progress: e.total_participants > 0 ? Math.round((e.completed_participants / e.total_participants) * 100) : 0,
+        createdAt: e.created_at
+      }))
+    });
+  } catch (error) {
+    console.error('Get company stats error:', error);
+    res.status(500).json({ error: 'Error interno del servidor' });
+  }
+});
+
+// ============================================================
+// ADMIN ROUTES - see all companies
+// ============================================================
+
+router.get('/', auth, authorize('admin'), async (req, res) => {
+  try {
+    const companies = await db('companies as c')
+      .leftJoin('users as u', function() {
+        this.on('c.id', '=', 'u.company_id').andOn('u.active', '=', db.raw('true'));
+      })
+      .select('c.id', 'c.name', 'c.nit', 'c.contact_email', 'c.contact_phone', 'c.active', 'c.created_at', 'c.updated_at')
+      .count('u.id as users_count')
+      .groupBy('c.id', 'c.name', 'c.nit', 'c.contact_email', 'c.contact_phone', 'c.active', 'c.created_at', 'c.updated_at')
+      .orderBy('c.created_at', 'desc');
 
     res.json({
       success: true,
-      message: 'Empresa eliminada exitosamente'
+      companies: companies.map(c => ({ ...c, users_count: parseInt(c.users_count) }))
     });
   } catch (error) {
-    console.error('Error deleting company:', error);
-    res.status(500).json({
-      error: 'Error al eliminar empresa'
-    });
+    console.error('Error fetching companies:', error);
+    res.status(500).json({ error: 'Error al obtener empresas' });
   }
 });
 

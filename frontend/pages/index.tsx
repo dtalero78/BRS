@@ -54,14 +54,11 @@ export default function HomePage() {
         {/* Header */}
         <div className="text-center mb-16">
           <div className="mb-6">
-            <div className="inline-flex items-center justify-center w-20 h-20 bg-blue-600 rounded-full mb-4">
-              <ChartBarIcon className="h-10 w-10 text-white" />
-            </div>
-            <h1 className="text-5xl font-bold text-gray-900 mb-4">
-              BRS Digital
+            <h1 className="text-4xl sm:text-5xl font-ibrand text-gray-900 mb-4">
+              Batería de Riesgo Psicosocial
             </h1>
             <p className="text-xl text-gray-600 max-w-2xl mx-auto">
-              Batería de Riesgo Psicosocial - Plataforma oficial para la evaluación 
+              Plataforma oficial para la evaluación
               de factores de riesgo psicosocial en entornos laborales
             </p>
           </div>

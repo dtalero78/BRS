@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
-import Layout from '../../components/Layout';
+import FlowLayout from '../../components/FlowLayout';
 import { API_URL } from '../../config/api';
 
 interface Evaluation {
@@ -176,7 +176,7 @@ export default function Results() {
     : '0';
 
   return (
-    <Layout>
+    <FlowLayout backHref="/evaluator/dashboard" backLabel="Volver al menu" maxWidth="full">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Header */}
         <div className="mb-8">
@@ -380,6 +380,6 @@ export default function Results() {
           </>
         )}
       </div>
-    </Layout>
+    </FlowLayout>
   );
 }

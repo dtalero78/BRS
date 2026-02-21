@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
-import Layout from '../../components/Layout';
+import FlowLayout from '../../components/FlowLayout';
 import { 
   PlusIcon,
   PencilIcon,
@@ -332,16 +332,16 @@ export default function EvaluatorParticipants() {
 
   if (loading) {
     return (
-      <Layout>
+      <FlowLayout backHref="/evaluator/dashboard" backLabel="Volver al menu" maxWidth="full">
         <div className="flex items-center justify-center h-64">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
         </div>
-      </Layout>
+      </FlowLayout>
     );
   }
 
   return (
-    <Layout>
+    <FlowLayout backHref="/evaluator/dashboard" backLabel="Volver al menu" maxWidth="full">
       <div className="space-y-6">
         <div className="sm:flex sm:items-center sm:justify-between">
           <div>
@@ -867,6 +867,6 @@ export default function EvaluatorParticipants() {
           </div>
         </div>
       )}
-    </Layout>
+    </FlowLayout>
   );
 }

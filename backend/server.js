@@ -94,11 +94,12 @@ try {
 app.get('/api/evaluator/dashboard', require('./middleware/auth').auth, async (req, res) => {
   try {
     const db = require('./config/database');
-    const companyId = req.user.companyId;
+    const { getOwnedCompanyIds } = require('./middleware/auth');
+    const companyIds = await getOwnedCompanyIds(req.user.userId);
 
     // Get evaluation statistics
     const evaluationStats = await db('evaluations')
-      .where('company_id', companyId)
+      .whereIn('company_id', companyIds)
       .select(
         db.raw('COUNT(*) as total_evaluations'),
         db.raw("COUNT(CASE WHEN status = 'active' THEN 1 END) as active_evaluations")
@@ -109,7 +110,7 @@ app.get('/api/evaluator/dashboard', require('./middleware/auth').auth, async (re
     const participantStats = await db('participants')
       .join('participant_evaluations', 'participants.id', 'participant_evaluations.participant_id')
       .join('evaluations', 'participant_evaluations.evaluation_id', 'evaluations.id')
-      .where('evaluations.company_id', companyId)
+      .whereIn('evaluations.company_id', companyIds)
       .select(
         db.raw('COUNT(DISTINCT participants.id) as total_participants'),
         db.raw('COUNT(DISTINCT CASE WHEN participant_evaluations.completed_at IS NOT NULL THEN participants.id END) as completed_participants')
@@ -125,7 +126,7 @@ app.get('/api/evaluator/dashboard', require('./middleware/auth').auth, async (re
     const recentActivity = await db('participant_evaluations')
       .join('participants', 'participant_evaluations.participant_id', 'participants.id')
       .join('evaluations', 'participant_evaluations.evaluation_id', 'evaluations.id')
-      .where('evaluations.company_id', companyId)
+      .whereIn('evaluations.company_id', companyIds)
       .whereNotNull('participant_evaluations.completed_at')
       .select(
         'participants.email',
@@ -136,6 +137,7 @@ app.get('/api/evaluator/dashboard', require('./middleware/auth').auth, async (re
       .limit(10);
 
     const stats = {
+      totalCompanies: companyIds.length,
       totalEvaluations: parseInt(evaluationStats.total_evaluations) || 0,
       activeEvaluations: parseInt(evaluationStats.active_evaluations) || 0,
       totalParticipants: parseInt(participantStats.total_participants) || 0,

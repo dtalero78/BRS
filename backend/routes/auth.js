@@ -8,21 +8,10 @@ const { auth } = require('../middleware/auth');
 
 // Validation schemas
 const registerSchema = Joi.object({
-  company: Joi.object({
-    name: Joi.string().required(),
-    nit: Joi.string().required(),
-    email: Joi.string().email().required(),
-    phone: Joi.string(),
-    address: Joi.string(),
-    sector: Joi.string(),
-    size: Joi.string().valid('micro', 'pequeña', 'mediana', 'grande')
-  }).required(),
-  user: Joi.object({
-    email: Joi.string().email().required(),
-    password: Joi.string().min(6).required(),
-    firstName: Joi.string().required(),
-    lastName: Joi.string().required()
-  }).required()
+  email: Joi.string().email().required(),
+  password: Joi.string().min(6).required(),
+  firstName: Joi.string().required(),
+  lastName: Joi.string().required()
 });
 
 const loginSchema = Joi.object({
@@ -30,54 +19,33 @@ const loginSchema = Joi.object({
   password: Joi.string().required()
 });
 
-// Register company and admin user
+// Register evaluator (self-service, no company required)
 router.post('/register', async (req, res) => {
   try {
     const { error } = registerSchema.validate(req.body);
     if (error) return res.status(400).json({ error: error.details[0].message });
 
-    const { company, user } = req.body;
-
-    // Check if company already exists
-    const existingCompany = await db('companies').where('nit', company.nit).first();
-    if (existingCompany) {
-      return res.status(409).json({ error: 'La empresa ya está registrada' });
-    }
+    const { email, password, firstName, lastName } = req.body;
 
     // Check if user already exists
-    const existingUser = await db('users').where('email', user.email).first();
+    const existingUser = await db('users').where('email', email).first();
     if (existingUser) {
-      return res.status(409).json({ error: 'El usuario ya existe' });
+      return res.status(409).json({ error: 'El correo electrónico ya está registrado' });
     }
 
     // Hash password
-    const saltRounds = 10;
-    const passwordHash = await bcrypt.hash(user.password, saltRounds);
+    const passwordHash = await bcrypt.hash(password, 10);
 
-    // Start transaction
-    await db.transaction(async (trx) => {
-      // Insert company
-      const [companyId] = await trx('companies')
-        .insert({
-          name: company.name,
-          nit: company.nit,
-          contact_email: company.email,
-          contact_phone: company.phone
-        })
-        .returning('id');
-
-      // Insert admin user
-      await trx('users').insert({
-        company_id: companyId.id,
-        email: user.email,
-        password_hash: passwordHash,
-        role: 'evaluator'
-      });
+    // Insert evaluator (no company_id)
+    await db('users').insert({
+      email,
+      password_hash: passwordHash,
+      role: 'evaluator'
     });
 
-    res.status(201).json({ 
-      message: 'Empresa y usuario registrados exitosamente',
-      success: true 
+    res.status(201).json({
+      message: 'Cuenta creada exitosamente. Inicia sesión para continuar.',
+      success: true
     });
 
   } catch (error) {
@@ -94,9 +62,9 @@ router.post('/login', async (req, res) => {
 
     const { email, password } = req.body;
 
-    // Find user with company info
+    // Find user (LEFT JOIN for users without a company)
     const user = await db('users')
-      .join('companies', 'users.company_id', 'companies.id')
+      .leftJoin('companies', 'users.company_id', 'companies.id')
       .select(
         'users.*',
         'companies.name as company_name',
@@ -116,12 +84,20 @@ router.post('/login', async (req, res) => {
       return res.status(401).json({ error: 'Credenciales inválidas' });
     }
 
-    // Generate JWT
+    // Get evaluator's companies
+    let companies = [];
+    if (user.role === 'evaluator') {
+      companies = await db('companies')
+        .where('created_by', user.id)
+        .select('id', 'name', 'nit')
+        .orderBy('name');
+    }
+
+    // Generate JWT (no companyId - evaluators manage multiple companies)
     const token = jwt.sign(
-      { 
+      {
         userId: user.id,
-        companyId: user.company_id,
-        role: user.role 
+        role: user.role
       },
       process.env.JWT_SECRET,
       { expiresIn: process.env.JWT_EXPIRE || '7d' }
@@ -133,11 +109,7 @@ router.post('/login', async (req, res) => {
         id: user.id,
         email: user.email,
         role: user.role,
-        company: {
-          id: user.company_id,
-          name: user.company_name,
-          nit: user.company_nit
-        }
+        companies
       }
     });
 
@@ -151,31 +123,25 @@ router.post('/login', async (req, res) => {
 router.get('/profile', auth, async (req, res) => {
   try {
     const user = await db('users')
-      .join('companies', 'users.company_id', 'companies.id')
-      .select(
-        'users.id',
-        'users.email',
-        'users.role',
-        'companies.id as company_id',
-        'companies.name as company_name',
-        'companies.nit as company_nit'
-      )
-      .where('users.id', req.user.userId)
+      .select('id', 'email', 'role')
+      .where('id', req.user.userId)
       .first();
 
     if (!user) {
       return res.status(404).json({ error: 'Usuario no encontrado' });
     }
 
+    // Get owned companies
+    const companies = await db('companies')
+      .where('created_by', user.id)
+      .select('id', 'name', 'nit')
+      .orderBy('name');
+
     res.json({
       id: user.id,
       email: user.email,
       role: user.role,
-      company: {
-        id: user.company_id,
-        name: user.company_name,
-        nit: user.company_nit
-      }
+      companies
     });
 
   } catch (error) {
@@ -187,7 +153,6 @@ router.get('/profile', auth, async (req, res) => {
 // Logout (for audit purposes)
 router.post('/logout', auth, async (req, res) => {
   try {
-    // Log logout action
     await db('audit_logs').insert({
       user_id: req.user.userId,
       action: 'logout',

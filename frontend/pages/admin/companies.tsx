@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
-import Layout from '../../components/Layout';
+import FlowLayout from '../../components/FlowLayout';
 import { 
   BuildingOfficeIcon,
   PlusIcon,
@@ -166,16 +166,16 @@ export default function CompaniesPage() {
 
   if (loading) {
     return (
-      <Layout title="Empresas">
+      <FlowLayout backHref="/admin/dashboard" backLabel="Volver al menu" maxWidth="full">
         <div className="flex items-center justify-center h-64">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
         </div>
-      </Layout>
+      </FlowLayout>
     );
   }
 
   return (
-    <Layout title="Gestión de Empresas">
+    <FlowLayout backHref="/admin/dashboard" backLabel="Volver al menu" maxWidth="full">
       <div className="space-y-6">
         {/* Header */}
         <div className="flex justify-between items-center">
@@ -416,6 +416,6 @@ export default function CompaniesPage() {
           </div>
         )}
       </div>
-    </Layout>
+    </FlowLayout>
   );
 }

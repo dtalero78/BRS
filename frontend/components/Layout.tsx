@@ -72,6 +72,7 @@ export default function Layout({ children, title }: LayoutProps) {
       case 'evaluator':
         return [
           ...baseItems,
+          { name: 'Empresas', href: '/evaluator/companies', icon: BuildingOfficeIcon },
           { name: 'Evaluaciones', href: '/evaluator/evaluations', icon: DocumentTextIcon },
           { name: 'Participantes', href: '/evaluator/participants', icon: UserGroupIcon },
           { name: 'Resultados', href: '/evaluator/results', icon: ClipboardDocumentListIcon },
@@ -113,8 +114,7 @@ export default function Layout({ children, title }: LayoutProps) {
       }`}>
         <div className="flex items-center justify-between h-16 px-6 border-b border-gray-200">
           <div className="flex items-center">
-            <ChartBarIcon className="h-8 w-8 text-blue-600" />
-            <span className="ml-2 text-xl font-bold text-gray-900">BRS Digital</span>
+            <span className="text-lg font-ibrand text-gray-900">Batería de Riesgo Psicosocial</span>
           </div>
           <button
             className="lg:hidden"

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import axios from 'axios';
+import FlowLayout from '../../../components/FlowLayout';
 import { 
   Building2, 
   Users, 
@@ -339,19 +340,21 @@ export default function OrganizationalDashboard() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Cargando dashboard organizacional...</p>
+      <FlowLayout backHref="/evaluator/dashboard" backLabel="Volver al menu" maxWidth="full">
+        <div className="flex items-center justify-center h-64">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+            <p className="mt-4 text-gray-600">Cargando dashboard organizacional...</p>
+          </div>
         </div>
-      </div>
+      </FlowLayout>
     );
   }
 
   const selectedEval = evaluations.find(e => e.id === selectedEvaluation);
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <FlowLayout backHref="/evaluator/dashboard" backLabel="Volver al menu" maxWidth="full">
       {/* Header */}
       <div className="bg-white shadow-sm border-b">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -597,6 +600,6 @@ export default function OrganizationalDashboard() {
           </>
         )}
       </div>
-    </div>
+    </FlowLayout>
   );
 }

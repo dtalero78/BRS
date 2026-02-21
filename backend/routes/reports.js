@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const PDFDocument = require('pdfkit');
 const db = require('../config/database');
-const { auth } = require('../middleware/auth');
+const { auth, getOwnedCompanyIds } = require('../middleware/auth');
 const { drawPieChart, drawBarChart, drawGroupedBarChart, drawTable, createRiskSeries, RISK_COLORS, RISK_ORDER, RISK_LABELS } = require('../utils/pdf-charts');
 const { aggregateDemographics, aggregateResultsByForm, getAtRiskDimensions, sumCounts } = require('../utils/report-data-aggregator');
 const templates = require('../utils/report-templates');
@@ -24,7 +24,7 @@ router.post('/individual', auth, async (req, res) => {
       .join('evaluations as e', 'pe.evaluation_id', 'e.id')
       .join('companies as c', 'e.company_id', 'c.id')
       .where('pe.id', participantEvaluationId)
-      .where('e.company_id', req.user.companyId)
+      .whereIn('e.company_id', await getOwnedCompanyIds(req.user.userId))
       .select(
         'pe.id as pe_id',
         'pe.status',
@@ -102,7 +102,7 @@ router.post('/organizational', auth, async (req, res) => {
     const evaluation = await db('evaluations as e')
       .join('companies as c', 'e.company_id', 'c.id')
       .where('e.id', evaluationId)
-      .where('e.company_id', req.user.companyId)
+      .whereIn('e.company_id', await getOwnedCompanyIds(req.user.userId))
       .select(
         'e.id', 'e.name', 'e.description', 'e.start_date', 'e.end_date', 'e.status',
         'c.name as company_name', 'c.nit as company_nit'

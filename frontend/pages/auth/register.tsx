@@ -8,13 +8,18 @@ import toast from 'react-hot-toast';
 import { EyeIcon, EyeSlashIcon } from '@heroicons/react/24/outline';
 
 const schema = yup.object({
+  firstName: yup.string().required('Nombre es requerido'),
+  lastName: yup.string().required('Apellido es requerido'),
   email: yup.string().email('Email inválido').required('Email es requerido'),
   password: yup.string().min(6, 'Mínimo 6 caracteres').required('Contraseña es requerida'),
+  confirmPassword: yup.string()
+    .oneOf([yup.ref('password')], 'Las contraseñas no coinciden')
+    .required('Confirma tu contraseña'),
 });
 
-type LoginForm = yup.InferType<typeof schema>;
+type RegisterForm = yup.InferType<typeof schema>;
 
-export default function LoginPage() {
+export default function RegisterPage() {
   const router = useRouter();
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -23,38 +28,31 @@ export default function LoginPage() {
     register,
     handleSubmit,
     formState: { errors },
-  } = useForm<LoginForm>({
+  } = useForm<RegisterForm>({
     resolver: yupResolver(schema),
   });
 
-  const onSubmit = async (data: LoginForm) => {
+  const onSubmit = async (data: RegisterForm) => {
     setIsLoading(true);
     try {
-      const response = await fetch(`/api/auth/login`, {
+      const response = await fetch(`/api/auth/register`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(data),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          firstName: data.firstName,
+          lastName: data.lastName,
+          email: data.email,
+          password: data.password,
+        }),
       });
 
       const result = await response.json();
 
       if (response.ok) {
-        localStorage.setItem('token', result.token);
-        localStorage.setItem('user', JSON.stringify(result.user));
-        toast.success('Inicio de sesión exitoso');
-        
-        // Redirect based on user role
-        if (result.user.role === 'admin') {
-          router.push('/admin/dashboard');
-        } else if (result.user.role === 'evaluator') {
-          router.push('/evaluator/dashboard');
-        } else {
-          router.push('/participant/dashboard');
-        }
+        toast.success('Cuenta creada exitosamente');
+        router.push('/auth/login');
       } else {
-        toast.error(result.error || 'Error al iniciar sesión');
+        toast.error(result.error || 'Error al crear la cuenta');
       }
     } catch (error) {
       toast.error('Error de conexión');
@@ -67,46 +65,57 @@ export default function LoginPage() {
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-md w-full space-y-8">
         <div>
-          <div className="mx-auto h-12 w-12 flex items-center justify-center rounded-full bg-blue-600">
-            <svg className="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-            </svg>
-          </div>
-          <h2 className="mt-6 text-center text-3xl font-bold text-gray-900">
-            Iniciar Sesión
+          <h2 className="text-center text-3xl font-ibrand text-gray-900">
+            Batería de Riesgo Psicosocial
           </h2>
           <p className="mt-2 text-center text-sm text-gray-600">
-            Accede a la plataforma
+            Crea tu cuenta como evaluador
           </p>
         </div>
 
         <form className="mt-8 space-y-6" onSubmit={handleSubmit(onSubmit)}>
           <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label htmlFor="firstName" className="form-label">Nombre</label>
+                <input
+                  {...register('firstName')}
+                  type="text"
+                  className="form-input"
+                  placeholder="Laura"
+                />
+                {errors.firstName && <p className="form-error">{errors.firstName.message}</p>}
+              </div>
+              <div>
+                <label htmlFor="lastName" className="form-label">Apellido</label>
+                <input
+                  {...register('lastName')}
+                  type="text"
+                  className="form-input"
+                  placeholder="Martínez"
+                />
+                {errors.lastName && <p className="form-error">{errors.lastName.message}</p>}
+              </div>
+            </div>
+
             <div>
-              <label htmlFor="email" className="form-label">
-                Email
-              </label>
+              <label htmlFor="email" className="form-label">Email</label>
               <input
                 {...register('email')}
                 type="email"
                 autoComplete="email"
                 className="form-input"
-                placeholder="usuario@empresa.com"
+                placeholder="evaluador@empresa.com"
               />
-              {errors.email && (
-                <p className="form-error">{errors.email.message}</p>
-              )}
+              {errors.email && <p className="form-error">{errors.email.message}</p>}
             </div>
 
             <div>
-              <label htmlFor="password" className="form-label">
-                Contraseña
-              </label>
+              <label htmlFor="password" className="form-label">Contraseña</label>
               <div className="relative">
                 <input
                   {...register('password')}
                   type={showPassword ? 'text' : 'password'}
-                  autoComplete="current-password"
                   className="form-input pr-10"
                   placeholder="••••••••"
                 />
@@ -122,17 +131,18 @@ export default function LoginPage() {
                   )}
                 </button>
               </div>
-              {errors.password && (
-                <p className="form-error">{errors.password.message}</p>
-              )}
+              {errors.password && <p className="form-error">{errors.password.message}</p>}
             </div>
-          </div>
 
-          <div className="flex items-center justify-between">
-            <div className="text-sm">
-              <Link href="/auth/forgot-password" className="text-blue-600 hover:text-blue-500">
-                ¿Olvidaste tu contraseña?
-              </Link>
+            <div>
+              <label htmlFor="confirmPassword" className="form-label">Confirmar Contraseña</label>
+              <input
+                {...register('confirmPassword')}
+                type={showPassword ? 'text' : 'password'}
+                className="form-input"
+                placeholder="••••••••"
+              />
+              {errors.confirmPassword && <p className="form-error">{errors.confirmPassword.message}</p>}
             </div>
           </div>
 
@@ -142,15 +152,15 @@ export default function LoginPage() {
               disabled={isLoading}
               className="w-full btn-primary py-3 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {isLoading ? 'Iniciando sesión...' : 'Iniciar Sesión'}
+              {isLoading ? 'Creando cuenta...' : 'Crear Cuenta'}
             </button>
           </div>
 
           <div className="text-center">
             <span className="text-sm text-gray-600">
-              ¿No tienes una cuenta?{' '}
-              <Link href="/auth/register" className="font-medium text-blue-600 hover:text-blue-500">
-                Registrarse
+              ¿Ya tienes una cuenta?{' '}
+              <Link href="/auth/login" className="font-medium text-blue-600 hover:text-blue-500">
+                Iniciar Sesión
               </Link>
             </span>
           </div>

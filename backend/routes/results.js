@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { auth } = require('../middleware/auth');
+const { auth, getOwnedCompanyIds } = require('../middleware/auth');
 const db = require('../config/database');
 const calculateResults = require('../utils/calculate-results');
 
@@ -14,7 +14,7 @@ router.post('/calculate/:participantId', auth, async (req, res) => {
       .leftJoin('participant_evaluations as pe', 'participants.id', 'pe.participant_id')
       .leftJoin('evaluations', 'pe.evaluation_id', 'evaluations.id')
       .where('participants.id', participantId)
-      .where('participants.company_id', req.user.companyId)
+      .whereIn('participants.company_id', await getOwnedCompanyIds(req.user.userId))
       .select('participants.*', 'pe.id as pe_id')
       .first();
 
@@ -190,7 +190,7 @@ router.get('/participant/:participantId', auth, async (req, res) => {
       .leftJoin('participant_evaluations as pe', 'participants.id', 'pe.participant_id')
       .leftJoin('evaluations', 'pe.evaluation_id', 'evaluations.id')
       .where('participants.id', participantId)
-      .where('participants.company_id', req.user.companyId)
+      .whereIn('participants.company_id', await getOwnedCompanyIds(req.user.userId))
       .select('participants.*', 'evaluations.name as evaluation_name', 'pe.id as pe_id')
       .first();
 
@@ -275,10 +275,11 @@ router.get('/evaluation/:evaluationId', auth, async (req, res) => {
   try {
     const { evaluationId } = req.params;
 
-    // Check if evaluation belongs to company
+    // Check if evaluation belongs to evaluator's companies
+    const companyIds = await getOwnedCompanyIds(req.user.userId);
     const evaluation = await db('evaluations')
       .where('id', evaluationId)
-      .where('company_id', req.user.companyId)
+      .whereIn('company_id', companyIds)
       .first();
 
     if (!evaluation) {
@@ -365,7 +366,7 @@ router.delete('/participant/:participantId', auth, async (req, res) => {
       .leftJoin('participant_evaluations as pe', 'participants.id', 'pe.participant_id')
       .leftJoin('evaluations', 'pe.evaluation_id', 'evaluations.id')
       .where('participants.id', participantId)
-      .where('participants.company_id', req.user.companyId)
+      .whereIn('participants.company_id', await getOwnedCompanyIds(req.user.userId))
       .select('participants.*', 'pe.id as pe_id')
       .first();
 

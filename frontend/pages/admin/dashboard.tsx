@@ -1,14 +1,14 @@
 import { useState, useEffect } from 'react';
-import Layout from '../../components/Layout';
+import FlowLayout from '../../components/FlowLayout';
+import FlowQuestion from '../../components/FlowQuestion';
+import FlowOption from '../../components/FlowOption';
+import FlowStats from '../../components/FlowStats';
+import useFlowKeyboard from '../../hooks/useFlowKeyboard';
 import {
   BuildingOfficeIcon,
   UserGroupIcon,
-  DocumentTextIcon,
-  ChartBarIcon,
-  CheckCircleIcon,
-  ExclamationTriangleIcon,
-  ServerIcon,
   Cog6ToothIcon,
+  CheckCircleIcon,
 } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 
@@ -54,10 +54,16 @@ export default function AdminDashboard() {
   });
   const [configs, setConfigs] = useState<SystemConfig[]>([]);
   const [loading, setLoading] = useState(true);
+  const [showSystem, setShowSystem] = useState(false);
   const [loadingBaremos, setLoadingBaremos] = useState(false);
   const [loadingQuestionnaires, setLoadingQuestionnaires] = useState(false);
+  const [user, setUser] = useState<any>(null);
 
   useEffect(() => {
+    const userData = localStorage.getItem('user');
+    if (userData) {
+      try { setUser(JSON.parse(userData)); } catch {}
+    }
     fetchDashboardData();
     fetchSystemConfigs();
   }, []);
@@ -122,16 +128,14 @@ export default function AdminDashboard() {
       });
 
       if (response.ok) {
-        const data = await response.json();
         toast.success('Baremos oficiales cargados exitosamente');
-        console.log('Baremos loaded:', data);
         fetchSystemConfigs();
       } else {
         const error = await response.json();
         toast.error(error.error || 'Error cargando baremos');
       }
     } catch (error) {
-      toast.error('Error de conexión');
+      toast.error('Error de conexion');
     } finally {
       setLoadingBaremos(false);
     }
@@ -150,247 +154,149 @@ export default function AdminDashboard() {
       });
 
       if (response.ok) {
-        const data = await response.json();
         toast.success('Datos de cuestionarios cargados exitosamente');
-        console.log('Questionnaires loaded:', data);
         fetchSystemConfigs();
       } else {
         const error = await response.json();
         toast.error(error.error || 'Error cargando cuestionarios');
       }
     } catch (error) {
-      toast.error('Error de conexión');
+      toast.error('Error de conexion');
     } finally {
       setLoadingQuestionnaires(false);
     }
   };
 
-  const statCards = [
-    {
-      name: 'Empresas Registradas',
-      value: stats.totalCompanies,
-      icon: BuildingOfficeIcon,
-      color: 'text-blue-600',
-      bg: 'bg-blue-100',
-    },
-    {
-      name: 'Usuarios Activos',
-      value: stats.totalUsers,
-      icon: UserGroupIcon,
-      color: 'text-green-600',
-      bg: 'bg-green-100',
-    },
-    {
-      name: 'Evaluaciones Creadas',
-      value: stats.totalEvaluations,
-      icon: DocumentTextIcon,
-      color: 'text-purple-600',
-      bg: 'bg-purple-100',
-    },
-    {
-      name: 'Participantes',
-      value: stats.totalParticipants,
-      icon: UserGroupIcon,
-      color: 'text-orange-600',
-      bg: 'bg-orange-100',
-    },
-    {
-      name: 'Evaluaciones Completadas',
-      value: stats.completedAssessments,
-      icon: CheckCircleIcon,
-      color: 'text-green-600',
-      bg: 'bg-green-100',
-    },
-    {
-      name: 'Evaluaciones Pendientes',
-      value: stats.pendingAssessments,
-      icon: ExclamationTriangleIcon,
-      color: 'text-yellow-600',
-      bg: 'bg-yellow-100',
-    },
-  ];
+  useFlowKeyboard([
+    { key: 'A', href: '/admin/companies' },
+    { key: 'B', href: '/admin/users' },
+    { key: 'C', onClick: () => setShowSystem(!showSystem) },
+  ]);
 
   if (loading) {
     return (
-      <Layout title="Dashboard">
+      <FlowLayout showBack={false}>
         <div className="flex items-center justify-center h-64">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
         </div>
-      </Layout>
+      </FlowLayout>
     );
   }
 
   return (
-    <Layout title="Dashboard Administrativo">
-      <div className="space-y-6">
-        {/* Welcome */}
-        <div className="bg-gradient-to-r from-blue-600 to-indigo-700 rounded-lg shadow-lg p-6 text-white">
-          <h2 className="text-2xl font-bold mb-2">
-            Panel de Administración BRS
-          </h2>
-          <p className="text-blue-100">
-            Gestión del sistema de evaluación psicosocial con metodología oficial del Ministerio
-          </p>
-        </div>
+    <FlowLayout showBack={false}>
+      <FlowQuestion
+        greeting={`Hola, ${user?.email || 'Admin'}`}
+        question="Que deseas hacer?"
+      />
 
-        {/* System Health */}
-        <div className="card">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-gray-900 flex items-center">
-              <ServerIcon className="h-6 w-6 mr-2" />
-              Estado del Sistema
-            </h3>
-            <span className={`px-3 py-1 rounded-full text-sm font-medium ${
-              stats.systemHealth.status === 'OK' 
-                ? 'bg-green-100 text-green-800' 
-                : 'bg-red-100 text-red-800'
-            }`}>
-              {stats.systemHealth.status}
-            </span>
+      <div className="space-y-3">
+        <FlowOption
+          letter="A"
+          title="Gestionar Empresas"
+          description="Crear, editar y administrar empresas registradas"
+          href="/admin/companies"
+          icon={BuildingOfficeIcon}
+          badge={`${stats.totalCompanies} registradas`}
+        />
+
+        <FlowOption
+          letter="B"
+          title="Gestionar Usuarios"
+          description="Administrar usuarios del sistema"
+          href="/admin/users"
+          icon={UserGroupIcon}
+          badge={`${stats.totalUsers} activos`}
+        />
+
+        <FlowOption
+          letter="C"
+          title="Estado del Sistema"
+          description="Salud del sistema, baremos y configuraciones"
+          onClick={() => setShowSystem(!showSystem)}
+          icon={Cog6ToothIcon}
+          badge={stats.systemHealth.status === 'OK' ? 'OK' : 'Error'}
+          badgeColor={stats.systemHealth.status === 'OK' ? 'green' : 'red'}
+        />
+      </div>
+
+      {/* System panel (expandable) */}
+      {showSystem && (
+        <div className="mt-6 animate-slide-down space-y-4">
+          {/* System health */}
+          <div className="bg-white rounded-xl border border-gray-200 p-5">
+            <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-4">Estado del Sistema</h3>
+            <div className="grid grid-cols-3 gap-4 text-center text-sm">
+              <div>
+                <p className="text-gray-500">Base de Datos</p>
+                <p className={`font-medium ${stats.systemHealth.database === 'Connected' ? 'text-green-600' : 'text-red-600'}`}>
+                  {stats.systemHealth.database === 'Connected' ? 'Conectada' : 'Error'}
+                </p>
+              </div>
+              <div>
+                <p className="text-gray-500">Configuraciones</p>
+                <p className="font-medium text-blue-600">
+                  {stats.systemHealth.configs.filter(c => c.exists && c.hasValue).length} / {stats.systemHealth.configs.length}
+                </p>
+              </div>
+              <div>
+                <p className="text-gray-500">Baremos</p>
+                <p className="font-medium text-green-600">Cargados</p>
+              </div>
+            </div>
           </div>
-          <div className="grid md:grid-cols-3 gap-4">
-            <div className="text-center">
-              <div className="text-sm text-gray-600">Base de Datos</div>
-              <div className={`font-medium ${
-                stats.systemHealth.database === 'Connected' 
-                  ? 'text-green-600' 
-                  : 'text-red-600'
-              }`}>
-                {stats.systemHealth.database}
-              </div>
-            </div>
-            <div className="text-center">
-              <div className="text-sm text-gray-600">Configuraciones</div>
-              <div className="font-medium text-blue-600">
-                {stats.systemHealth.configs.filter(c => c.exists && c.hasValue).length} de {stats.systemHealth.configs.length}
-              </div>
-            </div>
-            <div className="text-center">
-              <div className="text-sm text-gray-600">Baremos BRS</div>
-              <div className="font-medium text-purple-600">
-                Oficiales Cargados
-              </div>
-            </div>
-          </div>
-        </div>
 
-        {/* Stats Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {statCards.map((stat, index) => (
-            <div key={index} className="card">
-              <div className="flex items-center">
-                <div className={`p-3 rounded-lg ${stat.bg}`}>
-                  <stat.icon className={`h-6 w-6 ${stat.color}`} />
-                </div>
-                <div className="ml-4">
-                  <p className="text-sm font-medium text-gray-600">
-                    {stat.name}
-                  </p>
-                  <p className="text-2xl font-bold text-gray-900">
-                    {stat.value}
-                  </p>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-
-        {/* System Management */}
-        <div className="grid md:grid-cols-2 gap-6">
-          <div className="card">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-              <Cog6ToothIcon className="h-6 w-6 mr-2" />
-              Configuración del Sistema
-            </h3>
-            <div className="space-y-3">
+          {/* Actions */}
+          <div className="bg-white rounded-xl border border-gray-200 p-5">
+            <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-4">Acciones</h3>
+            <div className="flex gap-3">
               <button
                 onClick={loadBaremos}
                 disabled={loadingBaremos}
-                className={`w-full btn-primary disabled:opacity-50 disabled:cursor-not-allowed ${
-                  loadingBaremos ? 'opacity-75' : ''
-                }`}
+                className="flex-1 btn-primary disabled:opacity-50"
               >
-                {loadingBaremos ? 'Cargando...' : 'Cargar Baremos Oficiales BRS'}
+                {loadingBaremos ? 'Cargando...' : 'Cargar Baremos'}
               </button>
               <button
                 onClick={loadQuestionnaires}
                 disabled={loadingQuestionnaires}
-                className={`w-full btn-secondary disabled:opacity-50 disabled:cursor-not-allowed ${
-                  loadingQuestionnaires ? 'opacity-75' : ''
-                }`}
+                className="flex-1 btn-secondary disabled:opacity-50"
               >
-                {loadingQuestionnaires ? 'Cargando...' : 'Cargar Datos de Cuestionarios'}
+                {loadingQuestionnaires ? 'Cargando...' : 'Cargar Cuestionarios'}
               </button>
             </div>
           </div>
 
-          <div className="card">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">
-              Configuraciones del Sistema
-            </h3>
-            <div className="space-y-2 max-h-64 overflow-y-auto">
-              {configs.map((config, index) => (
-                <div key={index} className="flex items-center justify-between p-2 bg-gray-50 rounded">
-                  <div className="flex-1">
-                    <div className="text-sm font-medium text-gray-900">
-                      {config.key}
-                    </div>
-                    <div className="text-xs text-gray-500">
-                      {config.description}
+          {/* Configs list */}
+          {configs.length > 0 && (
+            <div className="bg-white rounded-xl border border-gray-200 p-5">
+              <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-3">Configuraciones</h3>
+              <div className="space-y-2 max-h-48 overflow-y-auto">
+                {configs.map((config, index) => (
+                  <div key={index} className="flex items-center justify-between py-1.5 text-sm">
+                    <span className="text-gray-700">{config.key}</span>
+                    <div className="flex items-center gap-2">
+                      {config.hasValue && (
+                        <span className="text-xs text-gray-400">
+                          {config.valueSize > 1000 ? `${Math.round(config.valueSize / 1024)}KB` : `${config.valueSize}B`}
+                        </span>
+                      )}
+                      <CheckCircleIcon className={`h-4 w-4 ${config.hasValue ? 'text-green-500' : 'text-gray-300'}`} />
                     </div>
                   </div>
-                  <div className="flex items-center space-x-2">
-                    <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                      config.hasValue 
-                        ? 'bg-green-100 text-green-800' 
-                        : 'bg-red-100 text-red-800'
-                    }`}>
-                      {config.hasValue ? '✓' : '✗'}
-                    </span>
-                    {config.hasValue && (
-                      <span className="text-xs text-gray-500">
-                        {config.valueSize > 1000 
-                          ? `${Math.round(config.valueSize / 1024)}KB`
-                          : `${config.valueSize}B`}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
-          </div>
+          )}
         </div>
+      )}
 
-        {/* BRS Info */}
-        <div className="card">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">
-            Implementación BRS Oficial
-          </h3>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-6 text-center">
-            <div>
-              <div className="text-2xl font-bold text-blue-600">282</div>
-              <div className="text-sm text-gray-600">Preguntas Implementadas</div>
-            </div>
-            <div>
-              <div className="text-2xl font-bold text-green-600">45</div>
-              <div className="text-sm text-gray-600">Dimensiones Totales</div>
-            </div>
-            <div>
-              <div className="text-2xl font-bold text-purple-600">10</div>
-              <div className="text-sm text-gray-600">Dominios Evaluados</div>
-            </div>
-            <div>
-              <div className="text-2xl font-bold text-orange-600">5</div>
-              <div className="text-sm text-gray-600">Niveles de Riesgo</div>
-            </div>
-          </div>
-          <div className="mt-4 text-center">
-            <p className="text-sm text-gray-600">
-              Implementación completa con baremos oficiales del Ministerio de la Protección Social (Tablas 29-34)
-            </p>
-          </div>
-        </div>
-      </div>
-    </Layout>
+      <FlowStats stats={[
+        { label: 'Empresas', value: stats.totalCompanies },
+        { label: 'Usuarios', value: stats.totalUsers },
+        { label: 'Evaluaciones', value: stats.totalEvaluations },
+        { label: 'Participantes', value: stats.totalParticipants },
+      ]} />
+    </FlowLayout>
   );
 }

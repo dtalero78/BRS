@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const Joi = require('joi');
-const { auth, authorize } = require('../middleware/auth');
+const { auth, authorize, getOwnedCompanyIds } = require('../middleware/auth');
 const db = require('../config/database');
 
 // Helper to get the base URL for participant evaluation links
@@ -42,10 +42,11 @@ router.post('/', auth, authorize('admin', 'evaluator'), async (req, res) => {
 
     const { evaluationId, ...participantData } = req.body;
 
-    // Check if evaluation exists and belongs to company
+    // Check if evaluation exists and belongs to evaluator's companies
+    const companyIds = await getOwnedCompanyIds(req.user.userId);
     const evaluation = await db('evaluations')
       .where('id', evaluationId)
-      .where('company_id', req.user.companyId)
+      .whereIn('company_id', companyIds)
       .first();
 
     if (!evaluation) {
@@ -55,10 +56,10 @@ router.post('/', auth, authorize('admin', 'evaluator'), async (req, res) => {
     // Create unique email from document (temporary solution)
     const email = `${participantData.documentType}_${participantData.documentNumber}@temp.com`.toLowerCase();
 
-    // Check if participant already exists by email
+    // Check if participant already exists by email in the evaluation's company
     const existingParticipant = await db('participants')
       .where('email', email)
-      .where('company_id', req.user.companyId)
+      .where('company_id', evaluation.company_id)
       .first();
 
     let participant;
@@ -89,7 +90,7 @@ router.post('/', auth, authorize('admin', 'evaluator'), async (req, res) => {
 
       [participant] = await db('participants')
         .insert({
-          company_id: req.user.companyId,
+          company_id: evaluation.company_id,
           email: email,
           demographic_data: JSON.stringify(demographicData),
           active: true
@@ -170,13 +171,15 @@ router.get('/', auth, async (req, res) => {
     const { page = 1, limit = 50, status, evaluationId } = req.query;
     const offset = (page - 1) * limit;
 
+    const companyIds = await getOwnedCompanyIds(req.user.userId);
+
     // Determinar el tipo de JOIN basado en los filtros
     const joinType = (status || evaluationId) ? 'join' : 'leftJoin';
-    
+
     let query = db('participants')
       [joinType]('participant_evaluations as pe', 'participants.id', 'pe.participant_id')
       [joinType]('evaluations', 'pe.evaluation_id', 'evaluations.id')
-      .where('participants.company_id', req.user.companyId)
+      .whereIn('participants.company_id', companyIds)
       .orderBy('participants.created_at', 'desc');
 
     if (status) {
@@ -204,7 +207,7 @@ router.get('/', auth, async (req, res) => {
     let countQuery = db('participants')
       [joinType]('participant_evaluations as pe', 'participants.id', 'pe.participant_id')
       [joinType]('evaluations', 'pe.evaluation_id', 'evaluations.id')
-      .where('participants.company_id', req.user.companyId)
+      .whereIn('participants.company_id', companyIds)
       .count('* as count');
     
     if (status) {
@@ -335,10 +338,11 @@ router.get('/evaluation/:evaluationId', auth, async (req, res) => {
     const { page = 1, limit = 10, status } = req.query;
     const offset = (page - 1) * limit;
 
-    // Check if evaluation belongs to company
+    // Check if evaluation belongs to evaluator's companies
+    const companyIds = await getOwnedCompanyIds(req.user.userId);
     const evaluation = await db('evaluations')
       .where('id', evaluationId)
-      .where('company_id', req.user.companyId)
+      .whereIn('company_id', companyIds)
       .first();
 
     if (!evaluation) {
@@ -461,11 +465,12 @@ router.get('/:id', auth, async (req, res) => {
   try {
     const { id } = req.params;
 
+    const ownedIds = await getOwnedCompanyIds(req.user.userId);
     const participant = await db('participants')
       .leftJoin('participant_evaluations as pe', 'participants.id', 'pe.participant_id')
       .leftJoin('evaluations', 'pe.evaluation_id', 'evaluations.id')
       .where('participants.id', id)
-      .where('participants.company_id', req.user.companyId)
+      .whereIn('participants.company_id', ownedIds)
       .select('participants.*', 'evaluations.name as evaluation_name', 'pe.evaluation_id', 'pe.status as evaluation_status', 'pe.assigned_at', 'pe.completed_at')
       .first();
 
@@ -523,10 +528,11 @@ router.put('/:id', auth, authorize('admin', 'evaluator'), async (req, res) => {
   try {
     const { id } = req.params;
 
-    // Check if participant exists and belongs to company
+    // Check if participant exists and belongs to evaluator's companies
+    const ownedIds = await getOwnedCompanyIds(req.user.userId);
     const existingParticipant = await db('participants')
       .where('participants.id', id)
-      .where('participants.company_id', req.user.companyId)
+      .whereIn('participants.company_id', ownedIds)
       .select('participants.*')
       .first();
 
@@ -601,11 +607,12 @@ router.delete('/:id', auth, authorize('admin'), async (req, res) => {
   try {
     const { id } = req.params;
 
-    // Check if participant exists and belongs to company
+    // Check if participant exists and belongs to evaluator's companies
+    const ownedIds = await getOwnedCompanyIds(req.user.userId);
     const participant = await db('participants')
       .leftJoin('participant_evaluations as pe', 'participants.id', 'pe.participant_id')
       .where('participants.id', id)
-      .where('participants.company_id', req.user.companyId)
+      .whereIn('participants.company_id', ownedIds)
       .select('participants.*', 'pe.evaluation_id', 'pe.status as evaluation_status')
       .first();
 
@@ -672,12 +679,13 @@ router.post('/:id/generate-token', auth, authorize('admin', 'evaluator'), async 
   try {
     const { id } = req.params;
 
-    // Check if participant exists and belongs to company
+    // Check if participant exists and belongs to evaluator's companies
+    const ownedIds = await getOwnedCompanyIds(req.user.userId);
     const participant = await db('participants')
       .join('participant_evaluations as pe', 'participants.id', 'pe.participant_id')
       .join('evaluations', 'pe.evaluation_id', 'evaluations.id')
       .where('participants.id', id)
-      .where('evaluations.company_id', req.user.companyId)
+      .whereIn('evaluations.company_id', ownedIds)
       .select('participants.*', 'pe.id as pe_id', 'pe.access_token')
       .first();
 

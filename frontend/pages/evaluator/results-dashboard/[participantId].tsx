@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
-import Layout from '../../../components/Layout';
+import FlowLayout from '../../../components/FlowLayout';
 import ResultsDimensionCard from '../../../components/ResultsDimensionCard';
 import RiskSummaryChart from '../../../components/RiskSummaryChart';
 import ResultsInterpretation from '../../../components/ResultsInterpretation';
@@ -186,9 +186,9 @@ export default function ResultsDashboard() {
     }
   };
 
-  if (loading) return <Layout><div className="text-center py-8">Cargando resultados...</div></Layout>;
-  if (error) return <Layout><div className="text-red-600 text-center py-8">{error}</div></Layout>;
-  if (!resultsData) return <Layout><div className="text-center py-8">No se encontraron resultados</div></Layout>;
+  if (loading) return <FlowLayout backHref="/evaluator/results-dashboard" backLabel="Volver" maxWidth="full"><div className="text-center py-8">Cargando resultados...</div></FlowLayout>;
+  if (error) return <FlowLayout backHref="/evaluator/results-dashboard" backLabel="Volver" maxWidth="full"><div className="text-red-600 text-center py-8">{error}</div></FlowLayout>;
+  if (!resultsData) return <FlowLayout backHref="/evaluator/results-dashboard" backLabel="Volver" maxWidth="full"><div className="text-center py-8">No se encontraron resultados</div></FlowLayout>;
 
   const allResults = Object.values(resultsData.results).flat();
   const riskSummary = calculateRiskSummary(allResults);
@@ -197,7 +197,7 @@ export default function ResultsDashboard() {
     domainGroups.find(d => d.name === selectedDomain)?.dimensions || [];
 
   return (
-    <Layout>
+    <FlowLayout backHref="/evaluator/results-dashboard" backLabel="Volver" maxWidth="full">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Header */}
         <div className="bg-white shadow-sm rounded-lg px-6 py-4 mb-6">
@@ -353,6 +353,6 @@ export default function ResultsDashboard() {
           </button>
         </div>
       </div>
-    </Layout>
+    </FlowLayout>
   );
 }

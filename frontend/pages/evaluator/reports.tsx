@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import Layout from '../../components/Layout';
+import FlowLayout from '../../components/FlowLayout';
 import ReportGenerator from '../../components/ReportGenerator';
 import { FileText, Calendar, Users, TrendingUp } from 'lucide-react';
 
@@ -94,21 +94,21 @@ export default function ReportsPage() {
 
   if (loading) {
     return (
-      <Layout title="Reportes BRS">
+      <FlowLayout backHref="/evaluator/dashboard" backLabel="Volver al menu" maxWidth="full">
         <div className="flex items-center justify-center h-64">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
         </div>
-      </Layout>
+      </FlowLayout>
     );
   }
 
   return (
-    <Layout title="Generación de Reportes BRS">
+    <FlowLayout backHref="/evaluator/dashboard" backLabel="Volver al menu" maxWidth="full">
       <div className="space-y-6">
         {/* Header */}
         <div className="bg-gradient-to-r from-blue-600 to-indigo-700 rounded-lg shadow-lg p-6 text-white">
           <h2 className="text-2xl font-bold mb-2">
-            Sistema de Reportes BRS Digital
+            Sistema de Reportes
           </h2>
           <p className="text-blue-100">
             Genera reportes profesionales basados en la metodología oficial del Ministerio de la Protección Social
@@ -314,6 +314,6 @@ export default function ReportsPage() {
           </div>
         </div>
       </div>
-    </Layout>
+    </FlowLayout>
   );
 }

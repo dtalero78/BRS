@@ -1,12 +1,15 @@
 import { useState, useEffect } from 'react';
-import Layout from '../../components/Layout';
-import { 
-  DocumentTextIcon, 
-  UserGroupIcon, 
-  ChartBarIcon, 
-  ClockIcon,
-  CheckCircleIcon,
-  ExclamationTriangleIcon
+import FlowLayout from '../../components/FlowLayout';
+import FlowQuestion from '../../components/FlowQuestion';
+import FlowOption from '../../components/FlowOption';
+import FlowStats from '../../components/FlowStats';
+import useFlowKeyboard from '../../hooks/useFlowKeyboard';
+import {
+  DocumentTextIcon,
+  UserGroupIcon,
+  ChartBarIcon,
+  DocumentChartBarIcon,
+  BuildingOfficeIcon,
 } from '@heroicons/react/24/outline';
 
 import { API_URL } from '../../config/api';
@@ -18,6 +21,7 @@ interface DashboardStats {
   completedAssessments: number;
   pendingAssessments: number;
   averageCompletion: number;
+  totalCompanies: number;
 }
 
 export default function EvaluatorDashboard() {
@@ -28,11 +32,16 @@ export default function EvaluatorDashboard() {
     completedAssessments: 0,
     pendingAssessments: 0,
     averageCompletion: 0,
+    totalCompanies: 0,
   });
-  const [recentActivity, setRecentActivity] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [user, setUser] = useState<any>(null);
 
   useEffect(() => {
+    const userData = localStorage.getItem('user');
+    if (userData) {
+      try { setUser(JSON.parse(userData)); } catch {}
+    }
     fetchDashboardData();
   }, []);
 
@@ -44,11 +53,10 @@ export default function EvaluatorDashboard() {
           'Authorization': `Bearer ${token}`,
         },
       });
-      
+
       if (response.ok) {
         const data = await response.json();
         setStats(data.stats);
-        setRecentActivity(data.recentActivity || []);
       }
     } catch (error) {
       console.error('Error fetching dashboard data:', error);
@@ -57,197 +65,90 @@ export default function EvaluatorDashboard() {
     }
   };
 
-  const statCards = [
-    {
-      name: 'Evaluaciones Totales',
-      value: stats.totalEvaluations,
-      icon: DocumentTextIcon,
-      color: 'text-blue-600',
-      bg: 'bg-blue-100',
-    },
-    {
-      name: 'Evaluaciones Activas',
-      value: stats.activeEvaluations,
-      icon: ClockIcon,
-      color: 'text-green-600',
-      bg: 'bg-green-100',
-    },
-    {
-      name: 'Participantes',
-      value: stats.totalParticipants,
-      icon: UserGroupIcon,
-      color: 'text-purple-600',
-      bg: 'bg-purple-100',
-    },
-    {
-      name: 'Evaluaciones Completadas',
-      value: stats.completedAssessments,
-      icon: CheckCircleIcon,
-      color: 'text-green-600',
-      bg: 'bg-green-100',
-    },
-    {
-      name: 'Evaluaciones Pendientes',
-      value: stats.pendingAssessments,
-      icon: ExclamationTriangleIcon,
-      color: 'text-orange-600',
-      bg: 'bg-orange-100',
-    },
-    {
-      name: 'Promedio de Completado',
-      value: `${stats.averageCompletion}%`,
-      icon: ChartBarIcon,
-      color: 'text-indigo-600',
-      bg: 'bg-indigo-100',
-    },
-  ];
+  useFlowKeyboard([
+    { key: 'A', href: '/evaluator/companies' },
+    { key: 'B', href: '/evaluator/evaluations' },
+    { key: 'C', href: '/evaluator/participants' },
+    { key: 'D', href: '/evaluator/results' },
+    { key: 'E', href: '/evaluator/reports' },
+  ]);
 
   if (loading) {
     return (
-      <Layout title="Dashboard">
+      <FlowLayout showBack={false}>
         <div className="flex items-center justify-center h-64">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
         </div>
-      </Layout>
+      </FlowLayout>
     );
   }
 
+  const subtitle = stats.activeEvaluations > 0 || stats.pendingAssessments > 0
+    ? `Tienes ${stats.activeEvaluations} evaluacion${stats.activeEvaluations !== 1 ? 'es' : ''} activa${stats.activeEvaluations !== 1 ? 's' : ''} y ${stats.pendingAssessments} participante${stats.pendingAssessments !== 1 ? 's' : ''} pendiente${stats.pendingAssessments !== 1 ? 's' : ''}`
+    : undefined;
+
   return (
-    <Layout title="Dashboard del Evaluador">
-      <div className="space-y-6">
-        {/* Welcome Message */}
-        <div className="bg-gradient-to-r from-blue-600 to-indigo-700 rounded-lg shadow-lg p-6 text-white">
-          <h2 className="text-2xl font-bold mb-2">
-            Bienvenido al Sistema BRS Digital
-          </h2>
-          <p className="text-blue-100">
-            Gestiona evaluaciones psicosociales con la metodología oficial del Ministerio de la Protección Social
-          </p>
-        </div>
+    <FlowLayout showBack={false}>
+      <FlowQuestion
+        greeting={`Hola, ${user?.email || 'Evaluador'}`}
+        question="Que deseas hacer?"
+        subtitle={subtitle}
+      />
 
-        {/* Stats Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {statCards.map((stat, index) => (
-            <div key={index} className="card">
-              <div className="flex items-center">
-                <div className={`p-3 rounded-lg ${stat.bg}`}>
-                  <stat.icon className={`h-6 w-6 ${stat.color}`} />
-                </div>
-                <div className="ml-4">
-                  <p className="text-sm font-medium text-gray-600">
-                    {stat.name}
-                  </p>
-                  <p className="text-2xl font-bold text-gray-900">
-                    {stat.value}
-                  </p>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
+      <div className="space-y-3">
+        <FlowOption
+          letter="A"
+          title="Empresas"
+          description="Crear y gestionar las empresas a las que les aplicas baterías"
+          href="/evaluator/companies"
+          icon={BuildingOfficeIcon}
+          badge={`${stats.totalCompanies} empresas`}
+        />
 
-        {/* Quick Actions */}
-        <div className="grid md:grid-cols-2 gap-6">
-          <div className="card">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">
-              Acciones Rápidas
-            </h3>
-            <div className="space-y-3">
-              <button
-                onClick={() => window.location.href = '/evaluator/evaluations'}
-                className="w-full text-left p-3 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors">
-                <div className="flex items-center">
-                  <DocumentTextIcon className="h-5 w-5 text-blue-600 mr-3" />
-                  <span className="font-medium">Crear Nueva Evaluación</span>
-                </div>
-              </button>
-              <button
-                onClick={() => window.location.href = '/evaluator/participants'}
-                className="w-full text-left p-3 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors">
-                <div className="flex items-center">
-                  <UserGroupIcon className="h-5 w-5 text-green-600 mr-3" />
-                  <span className="font-medium">Gestionar Participantes</span>
-                </div>
-              </button>
-              <button 
-                onClick={() => window.location.href = '/evaluator/results-dashboard'}
-                className="w-full text-left p-3 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors">
-                <div className="flex items-center">
-                  <ChartBarIcon className="h-5 w-5 text-purple-600 mr-3" />
-                  <span className="font-medium">Ver Dashboard de Resultados</span>
-                </div>
-              </button>
-              <button 
-                onClick={() => window.location.href = '/evaluator/organizational-dashboard'}
-                className="w-full text-left p-3 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors">
-                <div className="flex items-center">
-                  <ChartBarIcon className="h-5 w-5 text-indigo-600 mr-3" />
-                  <span className="font-medium">Dashboard Organizacional</span>
-                </div>
-              </button>
-            </div>
-          </div>
+        <FlowOption
+          letter="B"
+          title="Evaluaciones"
+          description="Crear, ver y editar evaluaciones de riesgo psicosocial"
+          href="/evaluator/evaluations"
+          icon={DocumentTextIcon}
+          badge={`${stats.activeEvaluations} activas`}
+          badgeColor="blue"
+        />
 
-          <div className="card">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">
-              Cuestionarios BRS
-            </h3>
-            <div className="space-y-3">
-              <div className="flex items-center justify-between p-3 bg-blue-50 rounded-lg">
-                <div>
-                  <div className="font-medium text-blue-900">Forma A</div>
-                  <div className="text-sm text-blue-700">123 preguntas - Jefes y profesionales</div>
-                </div>
-                <div className="text-blue-600 font-bold">19 dimensiones</div>
-              </div>
-              <div className="flex items-center justify-between p-3 bg-green-50 rounded-lg">
-                <div>
-                  <div className="font-medium text-green-900">Forma B</div>
-                  <div className="text-sm text-green-700">97 preguntas - Auxiliares y operarios</div>
-                </div>
-                <div className="text-green-600 font-bold">15 dimensiones</div>
-              </div>
-              <div className="flex items-center justify-between p-3 bg-purple-50 rounded-lg">
-                <div>
-                  <div className="font-medium text-purple-900">Extralaboral</div>
-                  <div className="text-sm text-purple-700">31 preguntas - Factores externos</div>
-                </div>
-                <div className="text-purple-600 font-bold">7 dimensiones</div>
-              </div>
-              <div className="flex items-center justify-between p-3 bg-orange-50 rounded-lg">
-                <div>
-                  <div className="font-medium text-orange-900">Estrés</div>
-                  <div className="text-sm text-orange-700">31 síntomas - Evaluación específica</div>
-                </div>
-                <div className="text-orange-600 font-bold">4 categorías</div>
-              </div>
-            </div>
-          </div>
-        </div>
+        <FlowOption
+          letter="C"
+          title="Participantes"
+          description="Agregar participantes y asignar a evaluaciones"
+          href="/evaluator/participants"
+          icon={UserGroupIcon}
+          badge={`${stats.totalParticipants} registrados`}
+        />
 
-        {/* Recent Activity */}
-        {recentActivity.length > 0 && (
-          <div className="card">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">
-              Actividad Reciente
-            </h3>
-            <div className="space-y-3">
-              {recentActivity.slice(0, 5).map((activity, index) => (
-                <div key={index} className="flex items-center p-3 bg-gray-50 rounded-lg">
-                  <div className="flex-1">
-                    <p className="text-sm font-medium text-gray-900">
-                      {activity.description}
-                    </p>
-                    <p className="text-xs text-gray-500">
-                      {new Date(activity.created_at).toLocaleDateString('es-ES')}
-                    </p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
+        <FlowOption
+          letter="D"
+          title="Resultados"
+          description="Ver, calcular y explorar resultados por participante"
+          href="/evaluator/results"
+          icon={ChartBarIcon}
+          badge={`${stats.completedAssessments} completados`}
+          badgeColor="green"
+        />
+
+        <FlowOption
+          letter="E"
+          title="Reportes PDF"
+          description="Generar reportes individuales y organizacionales"
+          href="/evaluator/reports"
+          icon={DocumentChartBarIcon}
+        />
       </div>
-    </Layout>
+
+      <FlowStats stats={[
+        { label: 'Empresas', value: stats.totalCompanies },
+        { label: 'Evaluaciones', value: stats.totalEvaluations },
+        { label: 'Participantes', value: stats.totalParticipants },
+        { label: 'Completados', value: stats.completedAssessments },
+      ]} />
+    </FlowLayout>
   );
 }
