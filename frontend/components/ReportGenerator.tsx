@@ -12,10 +12,15 @@ interface Evaluation {
 }
 
 interface Participant {
+  id: string;
   participant_evaluation_id: string;
   email: string;
+  firstName: string;
+  lastName: string;
   status: string;
+  hasResults: boolean;
   completed_at: string;
+  completedAt: string;
 }
 
 interface ReportGeneratorProps {
@@ -37,11 +42,11 @@ const ReportGenerator: React.FC<ReportGeneratorProps> = ({
   const [isGenerating, setIsGenerating] = useState(false);
   const [completedParticipants, setCompletedParticipants] = useState<Participant[]>([]);
 
-  // Filter completed participants for selected evaluation
+  // Filter participants with results for selected evaluation
   useEffect(() => {
     if (selectedEvaluation && participants.length > 0) {
-      const completed = participants.filter(p => p.status === 'completed');
-      setCompletedParticipants(completed);
+      const withResults = participants.filter(p => p.hasResults || p.status === 'completed' || p.status === 'in_progress');
+      setCompletedParticipants(withResults);
       setSelectedParticipant(''); // Reset participant selection
     }
   }, [selectedEvaluation, participants]);
@@ -103,7 +108,7 @@ const ReportGenerator: React.FC<ReportGeneratorProps> = ({
         
         let filename = '';
         if (reportType === 'individual' && participant) {
-          filename = `Reporte_Individual_BRS_${participant.email}_${new Date().toISOString().split('T')[0]}.pdf`;
+          filename = `Reporte_Individual_BRS_${participant.firstName}_${participant.lastName}_${new Date().toISOString().split('T')[0]}.pdf`;
         } else if (reportType === 'organizational' && evaluation) {
           filename = `Reporte_Organizacional_BRS_${evaluation.name}_${new Date().toISOString().split('T')[0]}.pdf`;
         } else {
@@ -214,7 +219,7 @@ const ReportGenerator: React.FC<ReportGeneratorProps> = ({
                 <option value="">Selecciona un participante</option>
                 {completedParticipants.map((participant) => (
                   <option key={participant.participant_evaluation_id} value={participant.participant_evaluation_id}>
-                    {participant.email} - {participant.completed_at ? new Date(participant.completed_at).toLocaleDateString('es-ES') : 'Sin fecha'}
+                    {participant.firstName} {participant.lastName} - {participant.completedAt || participant.completed_at ? new Date(participant.completedAt || participant.completed_at).toLocaleDateString('es-ES') : 'En progreso'}
                   </option>
                 ))}
               </select>
@@ -275,7 +280,7 @@ const ReportGenerator: React.FC<ReportGeneratorProps> = ({
               <p>• Evaluación: {evaluations.find(e => e.id === selectedEvaluation)?.name}</p>
               <p>• Tipo: {reportType === 'individual' ? 'Reporte Individual' : 'Reporte Organizacional'}</p>
               {reportType === 'individual' && selectedParticipant && (
-                <p>• Participante: {completedParticipants.find(p => p.participant_evaluation_id === selectedParticipant)?.email}</p>
+                <p>• Participante: {completedParticipants.find(p => p.participant_evaluation_id === selectedParticipant)?.firstName} {completedParticipants.find(p => p.participant_evaluation_id === selectedParticipant)?.lastName}</p>
               )}
               {reportType === 'organizational' && (
                 <p>• Participantes completados: {completedParticipants.length}</p>

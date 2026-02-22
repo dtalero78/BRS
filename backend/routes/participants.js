@@ -428,6 +428,8 @@ router.get('/evaluation/:evaluationId', auth, async (req, res) => {
 
         return {
           id: p.id,
+          participant_evaluation_id: p.pe_id,
+          email: `${demographicData.documentType || ''}_${demographicData.documentNumber || ''}@temp.com`.toLowerCase(),
           firstName: demographicData.firstName || 'N/A',
           lastName: demographicData.lastName || 'N/A',
           documentType: demographicData.documentType || 'N/A',
@@ -441,6 +443,7 @@ router.get('/evaluation/:evaluationId', auth, async (req, res) => {
           completionPercentage: 0,
           startedAt: p.assigned_at,
           completedAt: p.completed_at,
+          completed_at: p.completed_at,
           createdAt: p.created_at,
           accessToken: p.access_token,
           evaluationUrl: p.access_token ? `${getBaseUrl(req)}/participant/evaluation/${p.access_token}` : null

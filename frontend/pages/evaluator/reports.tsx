@@ -15,10 +15,15 @@ interface Evaluation {
 }
 
 interface Participant {
+  id: string;
   participant_evaluation_id: string;
   email: string;
+  firstName: string;
+  lastName: string;
   status: string;
+  hasResults: boolean;
   completed_at: string;
+  completedAt: string;
 }
 
 export default function ReportsPage() {
@@ -58,7 +63,7 @@ export default function ReportsPage() {
 
         for (const evaluation of evaluationsArray) {
           try {
-            const participantsResponse = await fetch(`${apiUrl}/api/evaluations/${evaluation.id}/participants`, {
+            const participantsResponse = await fetch(`${apiUrl}/api/participants/evaluation/${evaluation.id}?limit=100`, {
               headers: { 'Authorization': `Bearer ${token}` }
             });
 
