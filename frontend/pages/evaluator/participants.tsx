@@ -824,7 +824,7 @@ export default function EvaluatorParticipants() {
                       value={formData.department}
                       onChange={(e) => setFormData({ ...formData, department: e.target.value })}
                       className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
-                      placeholder="Recursos Humanos"
+                      placeholder=""
                     />
                   </div>
 
@@ -838,7 +838,7 @@ export default function EvaluatorParticipants() {
                       value={formData.position}
                       onChange={(e) => setFormData({ ...formData, position: e.target.value })}
                       className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
-                      placeholder="Analista"
+                      placeholder=""
                     />
                   </div>
                 </div>

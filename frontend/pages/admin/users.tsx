@@ -429,7 +429,7 @@ export default function UsersPage() {
                       value={formData.email}
                       onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                       className="form-input"
-                      placeholder="usuario@empresa.com"
+                      placeholder=""
                     />
                   </div>
 
@@ -443,7 +443,7 @@ export default function UsersPage() {
                       value={formData.password}
                       onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                       className="form-input"
-                      placeholder="••••••••"
+                      placeholder=""
                       minLength={6}
                     />
                   </div>

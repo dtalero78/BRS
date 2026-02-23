@@ -277,7 +277,7 @@ export default function EvaluatorCompanies() {
                     value={formData.name}
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                     className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
-                    placeholder="FOUNDEVER S.A.S"
+                    placeholder=""
                   />
                 </div>
 
@@ -291,7 +291,7 @@ export default function EvaluatorCompanies() {
                     value={formData.nit}
                     onChange={(e) => setFormData({ ...formData, nit: e.target.value })}
                     className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
-                    placeholder="900123456-7"
+                    placeholder=""
                   />
                 </div>
 
@@ -305,7 +305,7 @@ export default function EvaluatorCompanies() {
                     value={formData.contact_email}
                     onChange={(e) => setFormData({ ...formData, contact_email: e.target.value })}
                     className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
-                    placeholder="contacto@empresa.com"
+                    placeholder=""
                   />
                 </div>
 
@@ -318,7 +318,7 @@ export default function EvaluatorCompanies() {
                     value={formData.contact_phone}
                     onChange={(e) => setFormData({ ...formData, contact_phone: e.target.value })}
                     className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
-                    placeholder="(601) 123-4567"
+                    placeholder=""
                   />
                 </div>
 

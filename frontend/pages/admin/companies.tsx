@@ -350,7 +350,7 @@ export default function CompaniesPage() {
                       value={formData.name}
                       onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                       className="form-input"
-                      placeholder="Empresa S.A."
+                      placeholder=""
                     />
                   </div>
 
@@ -364,7 +364,7 @@ export default function CompaniesPage() {
                       value={formData.nit}
                       onChange={(e) => setFormData({ ...formData, nit: e.target.value })}
                       className="form-input"
-                      placeholder="900000000-1"
+                      placeholder=""
                     />
                   </div>
 
@@ -378,7 +378,7 @@ export default function CompaniesPage() {
                       value={formData.contact_email}
                       onChange={(e) => setFormData({ ...formData, contact_email: e.target.value })}
                       className="form-input"
-                      placeholder="contacto@empresa.com"
+                      placeholder=""
                     />
                   </div>
 
@@ -391,7 +391,7 @@ export default function CompaniesPage() {
                       value={formData.contact_phone}
                       onChange={(e) => setFormData({ ...formData, contact_phone: e.target.value })}
                       className="form-input"
-                      placeholder="(1) 234-5678"
+                      placeholder=""
                     />
                   </div>
 

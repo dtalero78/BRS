@@ -461,7 +461,7 @@ export default function EvaluatorEvaluations() {
                     value={formData.name}
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                     className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
-                    placeholder="Evaluación Q1 2025"
+                    placeholder=""
                   />
                 </div>
 
@@ -474,7 +474,7 @@ export default function EvaluatorEvaluations() {
                     onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                     rows={3}
                     className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
-                    placeholder="Descripción opcional de la evaluación"
+                    placeholder=""
                   />
                 </div>
 
