@@ -65,9 +65,9 @@ export default function RegisterPage() {
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-md w-full space-y-8">
         <div>
-          <h2 className="text-center text-3xl font-ibrand text-gray-900">
-            Batería de Riesgo Psicosocial
-          </h2>
+          <div className="flex justify-center mb-2">
+            <img src="/logo.png" alt="BRS Digital" className="h-12 w-auto" />
+          </div>
           <p className="mt-2 text-center text-sm text-gray-600">
             Crea tu cuenta como evaluador
           </p>

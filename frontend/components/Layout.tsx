@@ -114,7 +114,7 @@ export default function Layout({ children, title }: LayoutProps) {
       }`}>
         <div className="flex items-center justify-between h-16 px-6 border-b border-gray-200">
           <div className="flex items-center">
-            <span className="text-lg font-ibrand text-gray-900">Batería de Riesgo Psicosocial</span>
+            <img src="/logo.png" alt="BRS Digital" className="h-8 w-auto" />
           </div>
           <button
             className="lg:hidden"

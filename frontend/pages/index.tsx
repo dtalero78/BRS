@@ -54,9 +54,9 @@ export default function HomePage() {
         {/* Header */}
         <div className="text-center mb-16">
           <div className="mb-6">
-            <h1 className="text-4xl sm:text-5xl font-ibrand text-gray-900 mb-4">
-              Batería de Riesgo Psicosocial
-            </h1>
+            <div className="flex justify-center mb-4">
+              <img src="/logo.png" alt="BRS Digital" className="h-16 w-auto" />
+            </div>
             <p className="text-xl text-gray-600 max-w-2xl mx-auto">
               Plataforma oficial para la evaluación
               de factores de riesgo psicosocial en entornos laborales

@@ -102,7 +102,7 @@ export default function FlowLayout({
 
         {/* Center: Logo */}
         <Link href={`/${user.role}/dashboard`} className="flex items-center">
-          <span className="text-base font-ibrand text-gray-800">Batería de Riesgo Psicosocial</span>
+          <img src="/logo.png" alt="BRS Digital" className="h-8 w-auto" />
         </Link>
 
         {/* Right: User + Logout */}
