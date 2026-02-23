@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
+import Image from 'next/image';
 import { useForm } from 'react-hook-form';
 import { yupResolver } from '@hookform/resolvers/yup';
 import * as yup from 'yup';
@@ -64,98 +65,81 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full space-y-8">
-        <div>
-          <div className="mx-auto h-12 w-12 flex items-center justify-center rounded-full bg-blue-600">
-            <svg className="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-            </svg>
-          </div>
-          <h2 className="mt-6 text-center text-3xl font-bold text-gray-900">
-            Iniciar Sesión
-          </h2>
-          <p className="mt-2 text-center text-sm text-gray-600">
-            Accede a la plataforma
-          </p>
-        </div>
+    <div className="min-h-screen flex flex-col items-center justify-center py-12 px-4" style={{ backgroundColor: '#e6f4fd' }}>
 
-        <form className="mt-8 space-y-6" onSubmit={handleSubmit(onSubmit)}>
-          <div className="space-y-4">
-            <div>
-              <label htmlFor="email" className="form-label">
-                Email
-              </label>
-              <input
-                {...register('email')}
-                type="email"
-                autoComplete="email"
-                className="form-input"
-                placeholder="usuario@empresa.com"
-              />
-              {errors.email && (
-                <p className="form-error">{errors.email.message}</p>
-              )}
-            </div>
+      {/* Logo arriba de la tarjeta */}
+      <Link href="/" className="mb-8">
+        <Image src="/logo.png" alt="BRS Digital" width={300} height={86} className="h-[86px] w-auto" />
+      </Link>
 
-            <div>
-              <label htmlFor="password" className="form-label">
-                Contraseña
-              </label>
-              <div className="relative">
-                <input
-                  {...register('password')}
-                  type={showPassword ? 'text' : 'password'}
-                  autoComplete="current-password"
-                  className="form-input pr-10"
-                  placeholder="••••••••"
-                />
-                <button
-                  type="button"
-                  className="absolute inset-y-0 right-0 flex items-center pr-3"
-                  onClick={() => setShowPassword(!showPassword)}
-                >
-                  {showPassword ? (
-                    <EyeSlashIcon className="h-5 w-5 text-gray-400" />
-                  ) : (
-                    <EyeIcon className="h-5 w-5 text-gray-400" />
-                  )}
-                </button>
-              </div>
-              {errors.password && (
-                <p className="form-error">{errors.password.message}</p>
-              )}
-            </div>
-          </div>
+      <div className="w-full max-w-md bg-white rounded-2xl shadow-lg border border-blue-100 p-8">
+        <h2 className="text-2xl font-bold text-gray-900 mb-1">Iniciar sesión</h2>
+        <p className="text-sm text-gray-500 mb-8">Accede a tu cuenta de BRS Digital</p>
 
-          <div className="flex items-center justify-between">
-            <div className="text-sm">
-              <Link href="/auth/forgot-password" className="text-blue-600 hover:text-blue-500">
-                ¿Olvidaste tu contraseña?
-              </Link>
-            </div>
+        <form className="space-y-5" onSubmit={handleSubmit(onSubmit)}>
+          <div>
+            <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">
+              Email
+            </label>
+            <input
+              {...register('email')}
+              type="email"
+              autoComplete="email"
+              className="w-full rounded-lg border border-gray-200 px-4 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:border-transparent"
+              style={{ '--tw-ring-color': '#0a2d4e' } as React.CSSProperties}
+              placeholder="usuario@empresa.com"
+            />
+            {errors.email && <p className="mt-1 text-xs text-red-500">{errors.email.message}</p>}
           </div>
 
           <div>
-            <button
-              type="submit"
-              disabled={isLoading}
-              className="w-full btn-primary py-3 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {isLoading ? 'Iniciando sesión...' : 'Iniciar Sesión'}
-            </button>
+            <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">
+              Contraseña
+            </label>
+            <div className="relative">
+              <input
+                {...register('password')}
+                type={showPassword ? 'text' : 'password'}
+                autoComplete="current-password"
+                className="w-full rounded-lg border border-gray-200 px-4 py-2.5 pr-10 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2"
+                placeholder="••••••••"
+              />
+              <button
+                type="button"
+                className="absolute inset-y-0 right-0 flex items-center pr-3"
+                onClick={() => setShowPassword(!showPassword)}
+              >
+                {showPassword ? (
+                  <EyeSlashIcon className="h-4 w-4 text-gray-400" />
+                ) : (
+                  <EyeIcon className="h-4 w-4 text-gray-400" />
+                )}
+              </button>
+            </div>
+            {errors.password && <p className="mt-1 text-xs text-red-500">{errors.password.message}</p>}
           </div>
 
-          <div className="text-center">
-            <span className="text-sm text-gray-600">
-              ¿No tienes una cuenta?{' '}
-              <Link href="/auth/register" className="font-medium text-blue-600 hover:text-blue-500">
-                Registrarse
-              </Link>
-            </span>
-          </div>
+          <button
+            type="submit"
+            disabled={isLoading}
+            className="w-full rounded-full py-3 text-sm font-semibold text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            style={{ backgroundColor: '#0a2d4e' }}
+          >
+            {isLoading ? 'Iniciando sesión...' : 'Iniciar sesión'}
+          </button>
+
+          <p className="text-center text-sm text-gray-500">
+            ¿No tienes cuenta?{' '}
+            <Link href="/auth/register" className="font-semibold hover:underline" style={{ color: '#0a2d4e' }}>
+              Registrarse gratis
+            </Link>
+          </p>
         </form>
       </div>
+
+      <p className="mt-8 text-xs text-gray-400 text-center max-w-xs">
+        Basado en la Batería de Riesgo Psicosocial — Resolución 2646 de 2008
+      </p>
     </div>
   );
 }

@@ -90,8 +90,7 @@ export default function EvaluatorDashboard() {
   return (
     <FlowLayout showBack={false}>
       <FlowQuestion
-        greeting={`Hola, ${user?.email || 'Evaluador'}`}
-        question="Que deseas hacer?"
+        question="¿Qué deseas hacer?"
         subtitle={subtitle}
       />
 

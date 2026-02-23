@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
+import Image from 'next/image';
 import { useForm } from 'react-hook-form';
 import { yupResolver } from '@hookform/resolvers/yup';
 import * as yup from 'yup';
@@ -61,111 +62,78 @@ export default function RegisterPage() {
     }
   };
 
+  const inputClass = "w-full rounded-lg border border-gray-200 px-4 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2";
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full space-y-8">
-        <div>
-          <div className="flex justify-center mb-2">
-            <img src="/logo.png" alt="BRS Digital" className="h-12 w-auto" />
-          </div>
-          <p className="mt-2 text-center text-sm text-gray-600">
-            Crea tu cuenta como evaluador
-          </p>
-        </div>
+    <div className="min-h-screen flex flex-col items-center justify-center py-12 px-4" style={{ backgroundColor: '#e6f4fd' }}>
 
-        <form className="mt-8 space-y-6" onSubmit={handleSubmit(onSubmit)}>
-          <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label htmlFor="firstName" className="form-label">Nombre</label>
-                <input
-                  {...register('firstName')}
-                  type="text"
-                  className="form-input"
-                  placeholder="Laura"
-                />
-                {errors.firstName && <p className="form-error">{errors.firstName.message}</p>}
-              </div>
-              <div>
-                <label htmlFor="lastName" className="form-label">Apellido</label>
-                <input
-                  {...register('lastName')}
-                  type="text"
-                  className="form-input"
-                  placeholder="Martínez"
-                />
-                {errors.lastName && <p className="form-error">{errors.lastName.message}</p>}
-              </div>
-            </div>
+      {/* Logo arriba de la tarjeta */}
+      <Link href="/" className="mb-8">
+        <Image src="/logo.png" alt="BRS Digital" width={300} height={86} className="h-[86px] w-auto" />
+      </Link>
 
+      <div className="w-full max-w-md bg-white rounded-2xl shadow-lg border border-blue-100 p-8">
+        <h2 className="text-2xl font-bold text-gray-900 mb-1">Crear cuenta</h2>
+        <p className="text-sm text-gray-500 mb-8">Regístrate como psicólogo evaluador</p>
+
+        <form className="space-y-4" onSubmit={handleSubmit(onSubmit)}>
+          <div className="grid grid-cols-2 gap-4">
             <div>
-              <label htmlFor="email" className="form-label">Email</label>
-              <input
-                {...register('email')}
-                type="email"
-                autoComplete="email"
-                className="form-input"
-                placeholder="evaluador@empresa.com"
-              />
-              {errors.email && <p className="form-error">{errors.email.message}</p>}
+              <label className="block text-sm font-medium text-gray-700 mb-1">Nombre</label>
+              <input {...register('firstName')} type="text" className={inputClass} placeholder="Laura" />
+              {errors.firstName && <p className="mt-1 text-xs text-red-500">{errors.firstName.message}</p>}
             </div>
-
             <div>
-              <label htmlFor="password" className="form-label">Contraseña</label>
-              <div className="relative">
-                <input
-                  {...register('password')}
-                  type={showPassword ? 'text' : 'password'}
-                  className="form-input pr-10"
-                  placeholder="••••••••"
-                />
-                <button
-                  type="button"
-                  className="absolute inset-y-0 right-0 flex items-center pr-3"
-                  onClick={() => setShowPassword(!showPassword)}
-                >
-                  {showPassword ? (
-                    <EyeSlashIcon className="h-5 w-5 text-gray-400" />
-                  ) : (
-                    <EyeIcon className="h-5 w-5 text-gray-400" />
-                  )}
-                </button>
-              </div>
-              {errors.password && <p className="form-error">{errors.password.message}</p>}
-            </div>
-
-            <div>
-              <label htmlFor="confirmPassword" className="form-label">Confirmar Contraseña</label>
-              <input
-                {...register('confirmPassword')}
-                type={showPassword ? 'text' : 'password'}
-                className="form-input"
-                placeholder="••••••••"
-              />
-              {errors.confirmPassword && <p className="form-error">{errors.confirmPassword.message}</p>}
+              <label className="block text-sm font-medium text-gray-700 mb-1">Apellido</label>
+              <input {...register('lastName')} type="text" className={inputClass} placeholder="Martínez" />
+              {errors.lastName && <p className="mt-1 text-xs text-red-500">{errors.lastName.message}</p>}
             </div>
           </div>
 
           <div>
-            <button
-              type="submit"
-              disabled={isLoading}
-              className="w-full btn-primary py-3 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {isLoading ? 'Creando cuenta...' : 'Crear Cuenta'}
-            </button>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+            <input {...register('email')} type="email" autoComplete="email" className={inputClass} placeholder="evaluador@empresa.com" />
+            {errors.email && <p className="mt-1 text-xs text-red-500">{errors.email.message}</p>}
           </div>
 
-          <div className="text-center">
-            <span className="text-sm text-gray-600">
-              ¿Ya tienes una cuenta?{' '}
-              <Link href="/auth/login" className="font-medium text-blue-600 hover:text-blue-500">
-                Iniciar Sesión
-              </Link>
-            </span>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Contraseña</label>
+            <div className="relative">
+              <input {...register('password')} type={showPassword ? 'text' : 'password'} className={`${inputClass} pr-10`} placeholder="••••••••" />
+              <button type="button" className="absolute inset-y-0 right-0 flex items-center pr-3" onClick={() => setShowPassword(!showPassword)}>
+                {showPassword ? <EyeSlashIcon className="h-4 w-4 text-gray-400" /> : <EyeIcon className="h-4 w-4 text-gray-400" />}
+              </button>
+            </div>
+            {errors.password && <p className="mt-1 text-xs text-red-500">{errors.password.message}</p>}
           </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Confirmar Contraseña</label>
+            <input {...register('confirmPassword')} type={showPassword ? 'text' : 'password'} className={inputClass} placeholder="••••••••" />
+            {errors.confirmPassword && <p className="mt-1 text-xs text-red-500">{errors.confirmPassword.message}</p>}
+          </div>
+
+          <button
+            type="submit"
+            disabled={isLoading}
+            className="w-full rounded-full py-3 text-sm font-semibold text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed mt-2"
+            style={{ backgroundColor: '#0a2d4e' }}
+          >
+            {isLoading ? 'Creando cuenta...' : 'Crear cuenta'}
+          </button>
+
+          <p className="text-center text-sm text-gray-500">
+            ¿Ya tienes cuenta?{' '}
+            <Link href="/auth/login" className="font-semibold hover:underline" style={{ color: '#0a2d4e' }}>
+              Iniciar sesión
+            </Link>
+          </p>
         </form>
       </div>
+
+      <p className="mt-8 text-xs text-gray-400 text-center max-w-xs">
+        Basado en la Batería de Riesgo Psicosocial — Resolución 2646 de 2008
+      </p>
     </div>
   );
 }
