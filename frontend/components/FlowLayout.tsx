@@ -86,7 +86,7 @@ export default function FlowLayout({
   return (
     <div className="min-h-screen" style={{ backgroundColor: isFullWidth ? '#f0f8ff' : '#e6f4fd' }}>
       {/* Top bar */}
-      <header className={`h-16 flex items-center justify-between bg-white border-b border-gray-100 shadow-sm ${paddingClass}`}>
+      <header className={`flex items-center justify-between py-4 bg-white border-b border-gray-100 shadow-sm ${paddingClass}`}>
         {/* Left: Logo + optional Back */}
         <div className="flex items-center gap-5">
           <Link href={`/${user.role}/dashboard`} className="flex items-center">
