@@ -45,7 +45,26 @@ const DIMENSION_DISPLAY_NAMES = {
   demandas_trabajo_total: 'Demandas del Trabajo',
   recompensas_total: 'Recompensas',
   puntaje_total_extralaboral: 'Puntaje Total Extralaboral',
-  estres_total: 'Estrés Total'
+  estres_total: 'Estrés Total',
+  // Coping (Brief COPE)
+  afrontamiento_activo: 'Afrontamiento Activo',
+  planificacion: 'Planificación',
+  apoyo_instrumental: 'Apoyo Instrumental',
+  reinterpretacion_positiva: 'Reinterpretación Positiva',
+  apoyo_emocional: 'Apoyo Emocional',
+  desahogo: 'Desahogo',
+  aceptacion: 'Aceptación',
+  humor: 'Humor',
+  religion: 'Religión',
+  autoinculpacion: 'Auto-inculpación',
+  autodistraccion: 'Auto-distracción',
+  negacion: 'Negación',
+  desconexion_conductual: 'Desconexión Conductual',
+  uso_sustancias: 'Uso de Sustancias',
+  problem_focused_total: 'Afrontamiento Centrado en el Problema',
+  emotion_focused_total: 'Afrontamiento Centrado en la Emoción',
+  avoidant_total: 'Afrontamiento Evitativo',
+  puntaje_total_coping: 'Puntaje Total Coping'
 };
 
 const DOMAIN_DISPLAY_NAMES = {

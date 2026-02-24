@@ -33,6 +33,11 @@ const getRiskLevelColor = (riskLevel: string) => {
     case 'riesgo_medio': return 'bg-yellow-100 text-yellow-800 border-yellow-200';
     case 'riesgo_alto': return 'bg-orange-100 text-orange-800 border-orange-200';
     case 'riesgo_muy_alto': return 'bg-red-100 text-red-800 border-red-200';
+    case 'muy_bajo': return 'bg-green-100 text-green-800 border-green-200';
+    case 'bajo': return 'bg-blue-100 text-blue-800 border-blue-200';
+    case 'medio': return 'bg-yellow-100 text-yellow-800 border-yellow-200';
+    case 'alto': return 'bg-orange-100 text-orange-800 border-orange-200';
+    case 'muy_alto': return 'bg-red-100 text-red-800 border-red-200';
     default: return 'bg-gray-100 text-gray-800 border-gray-200';
   }
 };
@@ -44,11 +49,17 @@ const getRiskLevelLabel = (riskLevel: string) => {
     case 'riesgo_medio': return 'Riesgo Medio';
     case 'riesgo_alto': return 'Riesgo Alto';
     case 'riesgo_muy_alto': return 'Riesgo Muy Alto';
+    case 'muy_bajo': return 'Muy Bajo';
+    case 'bajo': return 'Bajo';
+    case 'medio': return 'Medio';
+    case 'alto': return 'Alto';
+    case 'muy_alto': return 'Muy Alto';
     default: return riskLevel;
   }
 };
 
 const formatDimensionName = (dimension: string) => {
+  if (COPING_DIMENSION_NAMES[dimension]) return COPING_DIMENSION_NAMES[dimension];
   return dimension
     .split('_')
     .map(word => word.charAt(0).toUpperCase() + word.slice(1))
@@ -63,8 +74,30 @@ const getQuestionnaireLabel = (type: string) => {
     case 'forma_b': return 'Forma B - Intralaboral';
     case 'extralaboral': return 'Extralaboral';
     case 'estres': return 'Estrés';
+    case 'coping': return 'Brief COPE - Afrontamiento';
     default: return type;
   }
+};
+
+const COPING_DIMENSION_NAMES: { [key: string]: string } = {
+  afrontamiento_activo: 'Afrontamiento activo',
+  planificacion: 'Planificación',
+  apoyo_instrumental: 'Apoyo instrumental',
+  reinterpretacion_positiva: 'Reinterpretación positiva',
+  apoyo_emocional: 'Apoyo emocional',
+  desahogo: 'Desahogo',
+  aceptacion: 'Aceptación',
+  humor: 'Humor',
+  religion: 'Religión',
+  autoinculpacion: 'Auto-inculpación',
+  autodistraccion: 'Auto-distracción',
+  negacion: 'Negación',
+  desconexion_conductual: 'Desconexión conductual',
+  uso_sustancias: 'Uso de sustancias',
+  problem_focused_total: 'Afrontamiento centrado en el problema',
+  emotion_focused_total: 'Afrontamiento centrado en la emoción',
+  avoidant_total: 'Afrontamiento evitativo',
+  puntaje_total_coping: 'Puntaje Total Coping'
 };
 
 export default function ParticipantResults() {
@@ -108,7 +141,18 @@ export default function ParticipantResults() {
     }
   };
 
+  const isCopingSelected = selectedQuestionnaire === 'coping';
+
   const calculateRiskSummary = (results: Result[]) => {
+    if (isCopingSelected) {
+      const summary = { muy_bajo: 0, bajo: 0, medio: 0, alto: 0, muy_alto: 0 };
+      results.forEach(result => {
+        if (result.riskLevel in summary) {
+          summary[result.riskLevel as keyof typeof summary]++;
+        }
+      });
+      return summary;
+    }
     const summary = {
       sin_riesgo: 0,
       riesgo_bajo: 0,
@@ -267,10 +311,10 @@ export default function ParticipantResults() {
                           <div className="w-full bg-gray-200 rounded-full h-2.5">
                             <div
                               className={`h-2.5 rounded-full ${
-                                result.riskLevel === 'sin_riesgo' ? 'bg-green-500' :
-                                result.riskLevel === 'riesgo_bajo' ? 'bg-blue-500' :
-                                result.riskLevel === 'riesgo_medio' ? 'bg-yellow-500' :
-                                result.riskLevel === 'riesgo_alto' ? 'bg-orange-500' :
+                                result.riskLevel === 'sin_riesgo' || result.riskLevel === 'muy_bajo' ? 'bg-green-500' :
+                                result.riskLevel === 'riesgo_bajo' || result.riskLevel === 'bajo' ? 'bg-blue-500' :
+                                result.riskLevel === 'riesgo_medio' || result.riskLevel === 'medio' ? 'bg-yellow-500' :
+                                result.riskLevel === 'riesgo_alto' || result.riskLevel === 'alto' ? 'bg-orange-500' :
                                 'bg-red-500'
                               }`}
                               style={{ width: `${result.transformedScore || 0}%` }}

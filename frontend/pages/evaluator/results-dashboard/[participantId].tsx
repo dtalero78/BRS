@@ -42,8 +42,15 @@ const getQuestionnaireLabel = (type: string) => {
     case 'intralaboral_b': return 'Intralaboral Forma B';
     case 'extralaboral': return 'Extralaboral';
     case 'estres': return 'Estrés';
+    case 'coping': return 'Brief COPE - Afrontamiento';
     default: return type;
   }
+};
+
+const COPING_CATEGORY_NAMES: { [key: string]: string } = {
+  problem_focused_total: 'Afrontamiento centrado en el problema',
+  emotion_focused_total: 'Afrontamiento centrado en la emoción',
+  avoidant_total: 'Afrontamiento evitativo'
 };
 
 const getRiskLevelNumericValue = (riskLevel: string) => {
@@ -133,6 +140,30 @@ const groupResultsByDomain = (results: { [key: string]: Result[] }): DomainGroup
           totalDimensions: recompensas.length
         });
       }
+    } else if (questionnaireType === 'coping') {
+      // Group coping into 3 macro categories
+      const problemFocused = questionnaireResults.filter(r =>
+        ['afrontamiento_activo', 'planificacion', 'apoyo_instrumental', 'reinterpretacion_positiva', 'problem_focused_total'].includes(r.dimension)
+      );
+      const emotionFocused = questionnaireResults.filter(r =>
+        ['apoyo_emocional', 'desahogo', 'aceptacion', 'humor', 'religion', 'autoinculpacion', 'emotion_focused_total'].includes(r.dimension)
+      );
+      const avoidant = questionnaireResults.filter(r =>
+        ['autodistraccion', 'negacion', 'desconexion_conductual', 'uso_sustancias', 'avoidant_total'].includes(r.dimension)
+      );
+      const total = questionnaireResults.filter(r => r.dimension === 'puntaje_total_coping');
+
+      [
+        { name: 'Coping: Centrado en Problema', dims: problemFocused },
+        { name: 'Coping: Centrado en Emoción', dims: emotionFocused },
+        { name: 'Coping: Evitativo', dims: avoidant },
+        ...(total.length > 0 ? [{ name: 'Coping: Total', dims: total }] : [])
+      ].forEach(({ name, dims }) => {
+        if (dims.length > 0) {
+          const avgRisk = dims.reduce((sum, d) => sum + getRiskLevelNumericValue(d.riskLevel), 0) / dims.length;
+          domains.push({ name, dimensions: dims, averageRisk: getNumericRiskLabel(avgRisk), totalDimensions: dims.length });
+        }
+      });
     } else {
       // For other questionnaires, treat as single domain
       if (questionnaireResults.length > 0) {

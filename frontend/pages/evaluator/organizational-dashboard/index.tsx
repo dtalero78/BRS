@@ -76,20 +76,30 @@ interface EvaluationSummary {
   endDate: string;
 }
 
-const RISK_COLORS = {
+const RISK_COLORS: { [key: string]: string } = {
   'sin_riesgo': '#10B981',
-  'riesgo_bajo': '#FCD34D', 
+  'riesgo_bajo': '#FCD34D',
   'riesgo_medio': '#FB923C',
   'riesgo_alto': '#EF4444',
-  'riesgo_muy_alto': '#991B1B'
+  'riesgo_muy_alto': '#991B1B',
+  'muy_bajo': '#10B981',
+  'bajo': '#FCD34D',
+  'medio': '#FB923C',
+  'alto': '#EF4444',
+  'muy_alto': '#991B1B'
 };
 
-const RISK_LABELS = {
+const RISK_LABELS: { [key: string]: string } = {
   'sin_riesgo': 'Sin Riesgo',
   'riesgo_bajo': 'Riesgo Bajo',
   'riesgo_medio': 'Riesgo Medio',
   'riesgo_alto': 'Riesgo Alto',
-  'riesgo_muy_alto': 'Riesgo Muy Alto'
+  'riesgo_muy_alto': 'Riesgo Muy Alto',
+  'muy_bajo': 'Muy Bajo',
+  'bajo': 'Bajo',
+  'medio': 'Medio',
+  'alto': 'Alto',
+  'muy_alto': 'Muy Alto'
 };
 
 export default function OrganizationalDashboard() {
@@ -308,11 +318,11 @@ export default function OrganizationalDashboard() {
 
   const getRiskBadgeClass = (riskLevel: string) => {
     switch (riskLevel) {
-      case 'sin_riesgo': return 'bg-green-100 text-green-800';
-      case 'riesgo_bajo': return 'bg-yellow-100 text-yellow-800';
-      case 'riesgo_medio': return 'bg-orange-100 text-orange-800';
-      case 'riesgo_alto': return 'bg-red-100 text-red-800';
-      case 'riesgo_muy_alto': return 'bg-red-200 text-red-900';
+      case 'sin_riesgo': case 'muy_bajo': return 'bg-green-100 text-green-800';
+      case 'riesgo_bajo': case 'bajo': return 'bg-yellow-100 text-yellow-800';
+      case 'riesgo_medio': case 'medio': return 'bg-orange-100 text-orange-800';
+      case 'riesgo_alto': case 'alto': return 'bg-red-100 text-red-800';
+      case 'riesgo_muy_alto': case 'muy_alto': return 'bg-red-200 text-red-900';
       default: return 'bg-gray-100 text-gray-800';
     }
   };

@@ -134,6 +134,8 @@ function aggregateResultsByForm(allResults) {
     },
     // Stress: general risk distribution
     estres: { general: newRiskCounts(), formaA: newRiskCounts(), formaB: newRiskCounts() },
+    // Coping (Brief COPE): subscale-level counts using coping levels
+    coping: { subscales: {}, categories: {}, overall: newCopingCounts(), participantCount: 0 },
     // All dimension averages for intervention planning
     dimensionAverages: {}
   };
@@ -142,6 +144,7 @@ function aggregateResultsByForm(allResults) {
   const uniquePE = new Set();
   const formaACounted = new Set();
   const formaBCounted = new Set();
+  const copingCounted = new Set();
 
   allResults.forEach(row => {
     const peId = row.participant_evaluation_id;
@@ -228,6 +231,20 @@ function aggregateResultsByForm(allResults) {
         if (form === 'A') incrementRisk(result.estres.formaA, riskLevel);
         else if (form === 'B') incrementRisk(result.estres.formaB, riskLevel);
       }
+
+      // Coping
+      if (qType === 'coping') {
+        if (!copingCounted.has(peId)) { copingCounted.add(peId); result.coping.participantCount++; }
+        if (dimKey === 'puntaje_total_coping') {
+          incrementCoping(result.coping.overall, riskLevel);
+        } else if (dimKey.endsWith('_total')) {
+          if (!result.coping.categories[dimKey]) result.coping.categories[dimKey] = newCopingCounts();
+          incrementCoping(result.coping.categories[dimKey], riskLevel);
+        } else {
+          if (!result.coping.subscales[dimKey]) result.coping.subscales[dimKey] = newCopingCounts();
+          incrementCoping(result.coping.subscales[dimKey], riskLevel);
+        }
+      }
     });
   });
 
@@ -296,7 +313,15 @@ function newRiskCounts() {
   return { sin_riesgo: 0, riesgo_bajo: 0, riesgo_medio: 0, riesgo_alto: 0, riesgo_muy_alto: 0 };
 }
 
+function newCopingCounts() {
+  return { muy_bajo: 0, bajo: 0, medio: 0, alto: 0, muy_alto: 0 };
+}
+
 function incrementRisk(obj, riskLevel) {
+  if (obj[riskLevel] !== undefined) obj[riskLevel]++;
+}
+
+function incrementCoping(obj, riskLevel) {
   if (obj[riskLevel] !== undefined) obj[riskLevel]++;
 }
 
@@ -309,5 +334,6 @@ module.exports = {
   aggregateResultsByForm,
   getAtRiskDimensions,
   newRiskCounts,
+  newCopingCounts,
   sumCounts
 };

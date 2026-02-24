@@ -184,7 +184,25 @@ const QUESTIONNAIRE_TITLES = {
   'intralaboral_a': 'Cuestionario Intralaboral - Forma A',
   'intralaboral_b': 'Cuestionario Intralaboral - Forma B',
   'extralaboral': 'Cuestionario de Factores Extralaborales',
-  'estres': 'Cuestionario de Síntomas de Estrés'
+  'estres': 'Cuestionario de Síntomas de Estrés',
+  'coping': 'Brief COPE - Estrategias de Afrontamiento'
+};
+
+// Coping uses a different classification scale
+const COPING_LEVEL_LABELS = {
+  muy_bajo: 'Muy Bajo',
+  bajo: 'Bajo',
+  medio: 'Medio',
+  alto: 'Alto',
+  muy_alto: 'Muy Alto'
+};
+
+const COPING_LEVEL_COLORS = {
+  muy_bajo: '#22C55E',
+  bajo: '#84CC16',
+  medio: '#EAB308',
+  alto: '#F97316',
+  muy_alto: '#EF4444'
 };
 
 function formatDimensionName(dim) {
@@ -194,6 +212,14 @@ function formatDimensionName(dim) {
     .split('_')
     .map(w => w.charAt(0).toUpperCase() + w.slice(1))
     .join(' ');
+}
+
+function getRiskLabel(level) {
+  return RISK_LABELS[level] || COPING_LEVEL_LABELS[level] || level;
+}
+
+function getRiskColor(level) {
+  return RISK_COLORS[level] || COPING_LEVEL_COLORS[level] || '#6B7280';
 }
 
 function ensureSpace(doc, needed) {
@@ -215,7 +241,7 @@ function drawRiskBar(doc, x, y, width, score, riskLevel) {
   doc.rect(x, y, width, barHeight).fillColor('#E5E7EB').fill();
   // Filled portion
   const fillWidth = (score / 100) * width;
-  doc.rect(x, y, fillWidth, barHeight).fillColor(RISK_COLORS[riskLevel] || '#6B7280').fill();
+  doc.rect(x, y, fillWidth, barHeight).fillColor(RISK_COLORS[riskLevel] || COPING_LEVEL_COLORS[riskLevel] || '#6B7280').fill();
 }
 
 // ============================================================
@@ -273,33 +299,36 @@ function generateIndividualPDF(doc, { participant, demo, resultsByType }) {
     const domainResults = dimensions.filter(d => d.dimension.endsWith('_total'));
 
     // Risk summary for this questionnaire
-    const riskCounts = { sin_riesgo: 0, riesgo_bajo: 0, riesgo_medio: 0, riesgo_alto: 0, riesgo_muy_alto: 0 };
+    const isCoping = qType === 'coping';
+    const riskCounts = isCoping
+      ? { muy_bajo: 0, bajo: 0, medio: 0, alto: 0, muy_alto: 0 }
+      : { sin_riesgo: 0, riesgo_bajo: 0, riesgo_medio: 0, riesgo_alto: 0, riesgo_muy_alto: 0 };
     dimResults.forEach(d => { if (riskCounts[d.riskLevel] !== undefined) riskCounts[d.riskLevel]++; });
 
-    doc.fontSize(12).fillColor('#1F2937').text('Resumen de Niveles de Riesgo:');
+    doc.fontSize(12).fillColor('#1F2937').text(isCoping ? 'Resumen de Niveles de Uso:' : 'Resumen de Niveles de Riesgo:');
     doc.moveDown(0.3);
     doc.fontSize(10).fillColor('#374151');
     Object.entries(riskCounts).forEach(([level, count]) => {
       if (count > 0) {
-        doc.fillColor(RISK_COLORS[level]).text(`  ● ${RISK_LABELS[level]}: ${count} dimensiones`, { continued: false });
+        doc.fillColor(getRiskColor(level)).text(`  ● ${getRiskLabel(level)}: ${count} ${isCoping ? 'subescalas' : 'dimensiones'}`, { continued: false });
       }
     });
     doc.fillColor('#374151');
     doc.moveDown(1);
 
-    // Domain totals (if any)
+    // Domain/category totals (if any)
     if (domainResults.length > 0) {
-      doc.fontSize(12).fillColor('#1F2937').text('Resultados por Dominio:');
+      doc.fontSize(12).fillColor('#1F2937').text(isCoping ? 'Resultados por Categoría:' : 'Resultados por Dominio:');
       doc.moveDown(0.5);
 
       domainResults.forEach(d => {
         ensureSpace(doc, 40);
         const name = formatDimensionName(d.dimension);
         const score = d.transformedScore != null ? d.transformedScore.toFixed(1) : '0';
-        const risk = RISK_LABELS[d.riskLevel] || d.riskLevel;
+        const risk = getRiskLabel(d.riskLevel);
 
         doc.fontSize(10).fillColor('#1F2937').font('Helvetica-Bold').text(name);
-        doc.font('Helvetica').fillColor(RISK_COLORS[d.riskLevel] || '#6B7280')
+        doc.font('Helvetica').fillColor(getRiskColor(d.riskLevel))
           .text(`  Puntaje: ${score}%  |  ${risk}`);
 
         drawRiskBar(doc, m, doc.y + 2, pageW * 0.6, parseFloat(score), d.riskLevel);
@@ -315,10 +344,10 @@ function generateIndividualPDF(doc, { participant, demo, resultsByType }) {
         ensureSpace(doc, 50);
         const name = formatDimensionName(d.dimension);
         const score = d.transformedScore != null ? d.transformedScore.toFixed(1) : '0';
-        const risk = RISK_LABELS[d.riskLevel] || d.riskLevel;
+        const risk = getRiskLabel(d.riskLevel);
 
         doc.fontSize(13).fillColor('#1E40AF').font('Helvetica-Bold').text(name.toUpperCase());
-        doc.font('Helvetica').fontSize(11).fillColor(RISK_COLORS[d.riskLevel] || '#6B7280')
+        doc.font('Helvetica').fontSize(11).fillColor(getRiskColor(d.riskLevel))
           .text(`  Puntaje transformado: ${score}%  |  ${risk}`);
 
         drawRiskBar(doc, m, doc.y + 2, pageW * 0.7, parseFloat(score), d.riskLevel);
@@ -327,16 +356,16 @@ function generateIndividualPDF(doc, { participant, demo, resultsByType }) {
     }
 
     // Dimension detail table
-    doc.fontSize(12).fillColor('#1F2937').text('Detalle por Dimensión:');
+    doc.fontSize(12).fillColor('#1F2937').text(isCoping ? 'Detalle por Subescala:' : 'Detalle por Dimensión:');
     doc.moveDown(0.5);
 
     // Table header
     const colX = [m, m + 200, m + 290, m + 370];
     doc.fontSize(9).font('Helvetica-Bold').fillColor('#6B7280');
-    doc.text('Dimensión', colX[0], doc.y);
+    doc.text(isCoping ? 'Subescala' : 'Dimensión', colX[0], doc.y);
     doc.text('Puntaje', colX[1], doc.y - doc.currentLineHeight());
-    doc.text('Percentil', colX[2], doc.y - doc.currentLineHeight());
-    doc.text('Nivel de Riesgo', colX[3], doc.y - doc.currentLineHeight());
+    doc.text(isCoping ? 'Puntaje Bruto' : 'Percentil', colX[2], doc.y - doc.currentLineHeight());
+    doc.text(isCoping ? 'Nivel' : 'Nivel de Riesgo', colX[3], doc.y - doc.currentLineHeight());
     doc.moveDown(0.5);
     drawHorizontalLine(doc);
 
@@ -344,14 +373,14 @@ function generateIndividualPDF(doc, { participant, demo, resultsByType }) {
       ensureSpace(doc, 20);
       const y = doc.y;
       const score = d.transformedScore != null ? d.transformedScore.toFixed(1) + '%' : 'N/A';
-      const percentile = d.percentile != null ? d.percentile.toFixed(1) : 'N/A';
-      const risk = RISK_LABELS[d.riskLevel] || d.riskLevel;
+      const col3Value = isCoping ? (d.rawScore != null ? String(d.rawScore) : 'N/A') : (d.percentile != null ? d.percentile.toFixed(1) : 'N/A');
+      const risk = getRiskLabel(d.riskLevel);
 
       doc.fontSize(8).font('Helvetica').fillColor('#374151');
       doc.text(formatDimensionName(d.dimension), colX[0], y, { width: 190 });
       doc.text(score, colX[1], y);
-      doc.text(percentile, colX[2], y);
-      doc.fillColor(RISK_COLORS[d.riskLevel] || '#6B7280').font('Helvetica-Bold');
+      doc.text(col3Value, colX[2], y);
+      doc.fillColor(getRiskColor(d.riskLevel)).font('Helvetica-Bold');
       doc.text(risk, colX[3], y);
       doc.font('Helvetica').fillColor('#374151');
       doc.moveDown(0.3);
@@ -999,6 +1028,89 @@ function generateOrganizationalPDF(doc, { evaluation, demographics, aggResults, 
       doc.text(`  • ${e}`, { width: pageW });
       doc.moveDown(0.2);
     });
+  }
+
+  // ==========================================================
+  // ESTRATEGIAS DE AFRONTAMIENTO (COPING)
+  // ==========================================================
+  const copingTotal = sumCounts(aggResults.coping.overall);
+  if (copingTotal > 0) {
+    newPage();
+    sections.push({ title: 'ESTRATEGIAS DE AFRONTAMIENTO (BRIEF COPE)', page: pageNum + 1 });
+    sectionTitle('ESTRATEGIAS DE AFRONTAMIENTO');
+
+    doc.fontSize(10).fillColor('#374151').font('Helvetica');
+    doc.text('El Brief COPE (COPE-28) es un instrumento que evalúa las estrategias de afrontamiento que utilizan las personas ante situaciones de estrés. Se compone de 14 subescalas agrupadas en tres macro-categorías: afrontamiento centrado en el problema, afrontamiento centrado en la emoción, y afrontamiento evitativo. Los resultados permiten identificar los estilos predominantes de afrontamiento en la población evaluada.', { width: pageW, align: 'justify' });
+    doc.moveDown(1);
+
+    // Coping overall pie chart
+    const COPING_ORDER = ['muy_bajo', 'bajo', 'medio', 'alto', 'muy_alto'];
+    const copingPieData = COPING_ORDER.map(key => ({
+      label: COPING_LEVEL_LABELS[key],
+      value: aggResults.coping.overall[key],
+      color: COPING_LEVEL_COLORS[key]
+    }));
+
+    const copingY = doc.y + chartRadius + 5;
+    drawPieChart(doc, chartCenterX, copingY, chartRadius, copingPieData, {
+      showPercentages: true,
+      showLegend: true,
+      legendX: chartCenterX + chartRadius + 30,
+      legendY: copingY - 40,
+      title: 'Nivel General de Estrategias de Afrontamiento'
+    });
+    doc.y = copingY + chartRadius + 30;
+    doc.moveDown(0.5);
+
+    // Category summary
+    const categoryEntries = Object.entries(aggResults.coping.categories);
+    if (categoryEntries.length > 0) {
+      doc.fontSize(10).font('Helvetica-Bold').fillColor('#1F2937').text('Resultados por Categoría de Afrontamiento:');
+      doc.moveDown(0.3);
+      doc.fontSize(9).font('Helvetica').fillColor('#374151');
+
+      const catNames = {
+        problem_focused_total: 'Centrado en el problema',
+        emotion_focused_total: 'Centrado en la emoción',
+        avoidant_total: 'Evitativo'
+      };
+
+      categoryEntries.forEach(([catKey, counts]) => {
+        const catTotal = sumCounts(counts);
+        const highUse = (counts.alto || 0) + (counts.muy_alto || 0);
+        const highPct = catTotal > 0 ? ((highUse / catTotal) * 100).toFixed(0) : 0;
+        const catName = catNames[catKey] || catKey;
+        doc.text(`  • ${catName}: ${highPct}% de los funcionarios presentan uso alto o muy alto de estas estrategias.`, { width: pageW });
+        doc.moveDown(0.2);
+      });
+      doc.moveDown(0.5);
+    }
+
+    // Subscale detail
+    const subscaleEntries = Object.entries(aggResults.coping.subscales);
+    if (subscaleEntries.length > 0) {
+      ensureSpace(doc, 250);
+      const copingSubLabels = subscaleEntries.map(([key]) => {
+        const name = templates.DIMENSION_DISPLAY_NAMES[key] || key;
+        return name.length > 18 ? name.substring(0, 16) + '...' : name;
+      });
+
+      const copingSubKeys = subscaleEntries.map(([key]) => key);
+      const copingSubRiskCounts = {};
+      subscaleEntries.forEach(([key, counts]) => { copingSubRiskCounts[key] = counts; });
+
+      // Create series using coping levels
+      const copingSeries = COPING_ORDER.map(riskKey => ({
+        label: COPING_LEVEL_LABELS[riskKey],
+        color: COPING_LEVEL_COLORS[riskKey],
+        values: copingSubKeys.map(dk => (copingSubRiskCounts[dk] || {})[riskKey] || 0)
+      }));
+
+      drawGroupedBarChart(doc, m, doc.y + 15, pageW, 220, copingSubLabels, copingSeries, {
+        title: 'Subescalas de Afrontamiento (Brief COPE)', showLegend: true, showValues: true
+      });
+      doc.y += 245;
+    }
   }
 
   // ==========================================================
