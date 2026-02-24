@@ -84,21 +84,8 @@ export default function HomePage() {
           <Image src="/logo.png" alt="BRS Digital" width={210} height={60} className="h-[60px] w-auto" />
         </Link>
 
-        {/* Nav Links - hidden on mobile */}
-        <div className="hidden md:flex items-center gap-8">
-          <a href="#" className="text-sm text-gray-600 hover:text-gray-900 transition-colors">
-            Plataforma
-          </a>
-          <a href="#" className="text-sm text-gray-600 hover:text-gray-900 transition-colors">
-            Soluciones
-          </a>
-          <a href="#" className="text-sm text-gray-600 hover:text-gray-900 transition-colors">
-            Recursos
-          </a>
-          <a href="#precios" className="text-sm text-gray-600 hover:text-gray-900 transition-colors">
-            Precios
-          </a>
-        </div>
+        {/* Spacer */}
+        <div className="flex-1" />
 
         {/* CTA Buttons */}
         <div className="flex items-center gap-3">
