@@ -3,7 +3,8 @@
   "descripcion": "Extracción completa de todas las preguntas de los cuestionarios de la Batería de Riesgo Psicosocial del Ministerio de la Protección Social de Colombia",
   "opciones_respuesta": {
     "escala_principal": ["Siempre", "Casi siempre", "Algunas veces", "Casi nunca", "Nunca"],
-    "escala_estres": ["Siempre", "Casi siempre", "A veces", "Nunca"]
+    "escala_estres": ["Siempre", "Casi siempre", "A veces", "Nunca"],
+    "escala_coping": ["Siempre hago esto", "Frecuentemente", "Raramente", "Nunca hago esto"]
   },
   "cuestionarios": {
     "forma_a_intralaboral": {
@@ -600,6 +601,43 @@
             "Todo variable (a destajo, por producción, por comisión)"
           ]
         }
+      ]
+    },
+    "coping": {
+      "nombre": "Brief COPE - Inventario de Estrategias de Afrontamiento",
+      "descripcion": "Evaluación de estrategias de afrontamiento al estrés (COPE-28)",
+      "total_preguntas": 28,
+      "instrucciones": "Las siguientes afirmaciones se refieren a las formas en que usted maneja el estrés en su vida. Hay muchas maneras de manejar el estrés. Estas preguntas le piden que indique lo que usted generalmente hace y siente cuando experimenta situaciones estresantes. Responda cada pregunta por separado. No hay respuestas correctas o incorrectas, simplemente indique lo que usted realmente hace.",
+      "opciones_respuesta": ["Siempre hago esto", "Frecuentemente", "Raramente", "Nunca hago esto"],
+      "preguntas": [
+        {"numero": 1, "texto": "Intento conseguir que alguien me ayude o aconseje sobre qué hacer", "subescala": "apoyo_instrumental"},
+        {"numero": 2, "texto": "Concentro mis esfuerzos en hacer algo sobre la situación en la que estoy", "subescala": "afrontamiento_activo"},
+        {"numero": 3, "texto": "Acepto la realidad de lo que ha sucedido", "subescala": "aceptacion"},
+        {"numero": 4, "texto": "Recurro al trabajo o a otras actividades para apartar las cosas de mi mente", "subescala": "autodistraccion"},
+        {"numero": 5, "texto": "Me digo a mí mismo 'esto no es real'", "subescala": "negacion"},
+        {"numero": 6, "texto": "Intento proponer una estrategia sobre qué hacer", "subescala": "planificacion"},
+        {"numero": 7, "texto": "Hago bromas sobre ello", "subescala": "humor"},
+        {"numero": 8, "texto": "Me critico a mí mismo", "subescala": "autoinculpacion"},
+        {"numero": 9, "texto": "Consigo apoyo emocional de otros", "subescala": "apoyo_emocional"},
+        {"numero": 10, "texto": "Tomo medidas para intentar que la situación mejore", "subescala": "afrontamiento_activo"},
+        {"numero": 11, "texto": "Renuncio a intentar ocuparme de ello", "subescala": "desconexion_conductual"},
+        {"numero": 12, "texto": "Digo cosas para dar rienda suelta a mis sentimientos desagradables", "subescala": "desahogo"},
+        {"numero": 13, "texto": "Me niego a creer que haya sucedido", "subescala": "negacion"},
+        {"numero": 14, "texto": "Intento verlo con otros ojos, para hacerlo parecer más positivo", "subescala": "reinterpretacion_positiva"},
+        {"numero": 15, "texto": "Utilizo alcohol u otras drogas para sentirme mejor", "subescala": "uso_sustancias"},
+        {"numero": 16, "texto": "Intento hallar consuelo en mi religión o creencias espirituales", "subescala": "religion"},
+        {"numero": 17, "texto": "Consigo el consuelo y la comprensión de alguien", "subescala": "apoyo_emocional"},
+        {"numero": 18, "texto": "Busco algo bueno en lo que está sucediendo", "subescala": "reinterpretacion_positiva"},
+        {"numero": 19, "texto": "Me río de la situación", "subescala": "humor"},
+        {"numero": 20, "texto": "Rezo o medito", "subescala": "religion"},
+        {"numero": 21, "texto": "Aprendo a vivir con ello", "subescala": "aceptacion"},
+        {"numero": 22, "texto": "Hago algo para pensar menos en ello, como ir al cine o ver televisión", "subescala": "autodistraccion"},
+        {"numero": 23, "texto": "Expreso mis sentimientos negativos", "subescala": "desahogo"},
+        {"numero": 24, "texto": "Utilizo alcohol u otras drogas para ayudarme a superar la situación", "subescala": "uso_sustancias"},
+        {"numero": 25, "texto": "Renuncio al intento de hacer frente al problema", "subescala": "desconexion_conductual"},
+        {"numero": 26, "texto": "Pienso detenidamente sobre los pasos a seguir", "subescala": "planificacion"},
+        {"numero": 27, "texto": "Me echo la culpa de lo que ha sucedido", "subescala": "autoinculpacion"},
+        {"numero": 28, "texto": "Consigo que otras personas me ayuden o aconsejen", "subescala": "apoyo_instrumental"}
       ]
     }
   },

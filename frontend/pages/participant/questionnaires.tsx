@@ -30,6 +30,7 @@ interface QuestionnaireData {
   opciones_respuesta: {
     escala_principal: string[];
     escala_estres: string[];
+    escala_coping?: string[];
   };
 }
 
@@ -124,6 +125,15 @@ const QuestionnairesPage = () => {
         totalQuestions: questionnairesData.questionnaires['estres'].total_preguntas
       });
 
+      if (questionnairesData.questionnaires['coping']) {
+        available.push({
+          id: 'coping',
+          name: questionnairesData.questionnaires['coping'].nombre,
+          description: questionnairesData.questionnaires['coping'].descripcion,
+          totalQuestions: questionnairesData.questionnaires['coping'].total_preguntas
+        });
+      }
+
       setAvailableQuestionnaires(available);
 
     } catch (err) {
@@ -170,7 +180,8 @@ const QuestionnairesPage = () => {
         'forma-a': 'intralaboral_a',
         'forma-b': 'intralaboral_b',
         'extralaboral': 'extralaboral',
-        'estres': 'stress'
+        'estres': 'stress',
+        'coping': 'coping'
       };
 
       const response = await fetch(
@@ -222,7 +233,8 @@ const QuestionnairesPage = () => {
         'forma-a': 'intralaboral_a',
         'forma-b': 'intralaboral_b',
         'extralaboral': 'extralaboral',
-        'estres': 'stress'
+        'estres': 'stress',
+        'coping': 'coping'
       };
 
       const questionsData = currentQuestionnaire.questionnaire.secciones || currentQuestionnaire.questionnaire.preguntas || [];
@@ -319,7 +331,18 @@ const QuestionnairesPage = () => {
   const getResponseOptions = () => {
     if (!currentQuestionnaire) return [];
 
+    const isCopingQuestionnaire = currentQuestionnaire.type === 'coping';
     const isStressQuestionnaire = currentQuestionnaire.type === 'estres';
+
+    if (isCopingQuestionnaire) {
+      const options = currentQuestionnaire.opciones_respuesta.escala_coping
+        || ['Siempre hago esto', 'Frecuentemente', 'Raramente', 'Nunca hago esto'];
+      return options.map((label: string, index: number) => ({
+        label,
+        value: options.length - 1 - index
+      }));
+    }
+
     const options = isStressQuestionnaire
       ? currentQuestionnaire.opciones_respuesta.escala_estres
       : currentQuestionnaire.opciones_respuesta.escala_principal;

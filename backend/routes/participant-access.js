@@ -115,6 +115,9 @@ router.get('/:token/questionnaire/:type', async (req, res) => {
       case 'estres':
         questionnaire = questionnairesData.cuestionarios.estres;
         break;
+      case 'coping':
+        questionnaire = questionnairesData.cuestionarios.coping;
+        break;
       default:
         return res.status(404).json({ error: 'Tipo de cuestionario no encontrado' });
     }
@@ -244,6 +247,13 @@ router.get('/:token/questionnaires', async (req, res) => {
       totalQuestions: questionnairesData.cuestionarios.estres?.total_preguntas || 31
     });
 
+    available.push({
+      id: 'coping',
+      name: questionnairesData.cuestionarios.coping?.nombre || 'Brief COPE - Estrategias de Afrontamiento',
+      description: 'Estrategias de afrontamiento al estrés',
+      totalQuestions: questionnairesData.cuestionarios.coping?.total_preguntas || 28
+    });
+
     res.json({
       participant: {
         id: participantEvaluation.id,
@@ -308,7 +318,8 @@ router.post('/:token/responses', async (req, res) => {
         'intralaboral_b': 97,
         'extralaboral': 31,
         'estres': 31,
-        'stress': 31
+        'stress': 31,
+        'coping': 28
       };
 
       const completedQuestionnaires = await trx('responses')

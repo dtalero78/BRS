@@ -46,6 +46,7 @@ interface QuestionnaireData {
   opciones_respuesta: {
     escala_principal: string[];
     escala_estres: string[];
+    escala_coping?: string[];
   };
 }
 
@@ -228,7 +229,8 @@ const ParticipantEvaluationPage = () => {
         'forma-a': 'intralaboral_a',
         'forma-b': 'intralaboral_b',
         'extralaboral': 'extralaboral',
-        'estres': 'estres'
+        'estres': 'estres',
+        'coping': 'coping'
       };
 
       // First check localStorage for backup
@@ -382,7 +384,8 @@ const ParticipantEvaluationPage = () => {
         'forma-a': 'intralaboral_a',
         'forma-b': 'intralaboral_b',
         'extralaboral': 'extralaboral',
-        'estres': 'estres'
+        'estres': 'estres',
+        'coping': 'coping'
       };
 
       const questionsData = getAllQuestions();
@@ -528,8 +531,19 @@ const ParticipantEvaluationPage = () => {
   const getResponseOptions = () => {
     if (!currentQuestionnaire) return [];
 
+    const isCopingQuestionnaire = currentQuestionnaire.type === 'coping';
     const isStressQuestionnaire = currentQuestionnaire.type === 'estres';
-    const options = isStressQuestionnaire 
+
+    if (isCopingQuestionnaire) {
+      const options = currentQuestionnaire.opciones_respuesta.escala_coping
+        || ['Siempre hago esto', 'Frecuentemente', 'Raramente', 'Nunca hago esto'];
+      return options.map((label: string, index: number) => ({
+        label,
+        value: options.length - 1 - index // Siempre=3, Nunca=0
+      }));
+    }
+
+    const options = isStressQuestionnaire
       ? currentQuestionnaire.opciones_respuesta.escala_estres
       : currentQuestionnaire.opciones_respuesta.escala_principal;
 

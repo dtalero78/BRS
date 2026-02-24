@@ -3,6 +3,7 @@ const router = express.Router();
 const { auth, getOwnedCompanyIds } = require('../middleware/auth');
 const db = require('../config/database');
 const calculateResults = require('../utils/calculate-results');
+const { calculateCopingResults } = require('../utils/calculate-coping');
 
 // Calculate and save results for a participant
 router.post('/calculate/:participantId', auth, async (req, res) => {
@@ -41,6 +42,7 @@ router.post('/calculate/:participantId', auth, async (req, res) => {
         console.log(`DEBUG - Filtering ${response.questionnaire_type}: ${isValid ? 'INCLUDED' : 'EXCLUDED'}`);
         return isValid;
       })
+
       .reduce((acc, response) => {
         acc[response.questionnaire_type] = response;
         return acc;
@@ -99,9 +101,16 @@ router.post('/calculate/:participantId', auth, async (req, res) => {
 
         console.log(`DEBUG - ${questionnaireType} has ${formattedResponses.length} individual responses`);
 
-        // Pass occupational group for extralaboral and stress baremos selection
-        const calculatedResults = await calculateResults(questionnaireType, formattedResponses, { occupationalGroup });
-        console.log(`DEBUG - ${questionnaireType} calculated ${calculatedResults.length} dimension results`);
+        // Use coping-specific engine or BRS engine
+        let calculatedResults;
+        if (questionnaireType === 'coping') {
+          calculatedResults = calculateCopingResults(formattedResponses);
+          console.log(`DEBUG - coping calculated ${calculatedResults.length} subscale results`);
+        } else {
+          // Pass occupational group for extralaboral and stress baremos selection
+          calculatedResults = await calculateResults(questionnaireType, formattedResponses, { occupationalGroup });
+          console.log(`DEBUG - ${questionnaireType} calculated ${calculatedResults.length} dimension results`);
+        }
 
         results.push(...calculatedResults);
       } catch (error) {

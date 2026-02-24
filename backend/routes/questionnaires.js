@@ -45,6 +45,9 @@ router.get('/:type', auth, async (req, res) => {
       case 'estres':
         questionnaire = data.cuestionarios.estres;
         break;
+      case 'coping':
+        questionnaire = data.cuestionarios.coping;
+        break;
       default:
         return res.status(404).json({ error: 'Tipo de cuestionario no encontrado' });
     }
@@ -98,6 +101,11 @@ router.get('/', auth, async (req, res) => {
         nombre: data.cuestionarios.estres?.nombre || 'Cuestionario de Estrés',
         total_preguntas: data.cuestionarios.estres?.total_preguntas || 31,
         descripcion: 'Síntomas de estrés ocupacional'
+      },
+      'coping': {
+        nombre: data.cuestionarios.coping?.nombre || 'Brief COPE - Estrategias de Afrontamiento',
+        total_preguntas: data.cuestionarios.coping?.total_preguntas || 28,
+        descripcion: 'Estrategias de afrontamiento al estrés'
       }
     };
 

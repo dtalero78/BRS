@@ -7,7 +7,7 @@ const db = require('../config/database');
 // Validation schema for saving responses
 const saveResponsesSchema = Joi.object({
   participantId: Joi.string().uuid().required(),
-  questionnaireType: Joi.string().valid('intralaboral_a', 'intralaboral_b', 'extralaboral', 'stress').required(),
+  questionnaireType: Joi.string().valid('intralaboral_a', 'intralaboral_b', 'extralaboral', 'stress', 'coping').required(),
   responses: Joi.array().items(Joi.object({
     questionNumber: Joi.number().integer().min(1).required(),
     responseValue: Joi.number().integer().min(0).max(4).required(),
@@ -78,7 +78,8 @@ router.post('/', auth, async (req, res) => {
         'intralaboral_a': 123,
         'intralaboral_b': 97,
         'extralaboral': 31,
-        'estres': 31
+        'estres': 31,
+        'coping': 28
       };
 
       const completedQuestionnaires = await trx('responses')
