@@ -139,6 +139,11 @@ export default function LoginPage() {
       {/* Right: Visual panel with floating cards */}
       <div className="hidden lg:flex lg:w-3/5 relative overflow-hidden" style={{ backgroundColor: '#e6f4fd' }}>
 
+        {/* Center: Psychologist photo */}
+        <div className="absolute inset-0 flex items-end justify-center pointer-events-none" style={{ zIndex: 5 }}>
+          <Image src="/psicologa.png" alt="Psicóloga BRS" width={420} height={540} className="object-contain h-[85%] w-auto" />
+        </div>
+
         {/* Card 1 – Reporte de Evaluación */}
         <div
           className="absolute top-16 left-12 w-64 bg-white rounded-2xl shadow-xl p-5 border border-gray-100"
