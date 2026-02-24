@@ -544,25 +544,6 @@ export default function HomePage() {
           </div>
         </div>
 
-        {/* Example calculation */}
-        <div className="mt-12 bg-white rounded-2xl border border-gray-100 shadow-sm p-6 max-w-2xl mx-auto">
-          <p className="text-sm font-semibold text-gray-900 mb-3 text-center">Ejemplo: 50 evaluaciones con plan Estándar</p>
-          <div className="grid grid-cols-3 gap-4 text-center">
-            <div>
-              <p className="text-2xl font-bold text-gray-900">$250.000</p>
-              <p className="text-xs text-gray-500">Costo plataforma</p>
-            </div>
-            <div>
-              <p className="text-2xl font-bold text-gray-900">$1.500.000</p>
-              <p className="text-xs text-gray-500">Facturas a tu cliente</p>
-            </div>
-            <div>
-              <p className="text-2xl font-bold text-emerald-600">83%</p>
-              <p className="text-xs text-gray-500">Tu margen de ganancia</p>
-            </div>
-          </div>
-        </div>
-
         {/* Pricing note */}
         <p className="text-center text-sm text-gray-400 mt-8">
           Todos los precios en COP. IVA no incluido. Sin compromisos de permanencia.
