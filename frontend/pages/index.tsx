@@ -384,33 +384,35 @@ export default function HomePage() {
       <section id="precios" className="max-w-screen-xl mx-auto px-8 lg:px-16 py-24" style={{ backgroundColor: '#e6f4fd' }}>
         <div className="text-center mb-16">
           <div className="inline-flex items-center gap-2 bg-white border border-gray-200 rounded-full px-4 py-1.5 mb-6 shadow-sm">
-            <span className="text-xs text-gray-600 font-medium">Precios simples y transparentes</span>
+            <span className="text-xs text-gray-600 font-medium">Paga solo por lo que usas</span>
           </div>
           <h2 className="text-3xl lg:text-4xl font-bold text-gray-900 mb-4">
-            Elige el plan que se ajuste a tu práctica
+            Sin mensualidades. Paga por evaluación realizada.
           </h2>
           <p className="text-gray-500 text-lg max-w-2xl mx-auto">
-            Paga solo por lo que necesitas. Todos los planes incluyen los 4 cuestionarios oficiales, cálculos automáticos y soporte.
+            A mayor volumen, menor costo por prueba. Todos los planes incluyen cuestionarios oficiales, cálculos automáticos y reportes PDF.
           </p>
         </div>
 
         <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-5">
-          {/* Plan Starter */}
+          {/* Plan Gratis */}
           <div className="bg-white rounded-2xl p-6 border border-gray-100 shadow-sm flex flex-col">
             <div className="mb-6">
-              <h3 className="text-lg font-bold text-gray-900 mb-1">Starter</h3>
-              <p className="text-sm text-gray-500">Para empezar a conocer la plataforma</p>
+              <h3 className="text-lg font-bold text-gray-900 mb-1">Gratis</h3>
+              <p className="text-sm text-gray-500">Para conocer la plataforma</p>
             </div>
-            <div className="mb-6">
-              <span className="text-4xl font-bold text-gray-900">Gratis</span>
+            <div className="mb-2">
+              <span className="text-4xl font-bold text-gray-900">$0</span>
+              <span className="text-sm text-gray-500 ml-1">/prueba</span>
             </div>
+            <p className="text-xs text-gray-400 mb-6">Primeras 5 evaluaciones sin costo</p>
             <ul className="space-y-3 mb-8 flex-1">
               {[
+                '5 evaluaciones incluidas',
                 '1 empresa',
-                'Hasta 20 participantes',
                 'Cuestionarios digitales',
                 'Cálculos automáticos',
-                'Reportes individuales',
+                'Reportes individuales PDF',
               ].map((item) => (
                 <li key={item} className="flex items-start gap-2 text-sm text-gray-600">
                   <svg className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -428,26 +430,27 @@ export default function HomePage() {
             </Link>
           </div>
 
-          {/* Plan Profesional */}
+          {/* Plan Estándar */}
           <div className="bg-white rounded-2xl p-6 border-2 border-gray-900 shadow-lg flex flex-col relative">
             <div className="absolute -top-3 left-1/2 -translate-x-1/2">
               <span className="bg-gray-900 text-white text-xs font-semibold px-3 py-1 rounded-full">Popular</span>
             </div>
             <div className="mb-6">
-              <h3 className="text-lg font-bold text-gray-900 mb-1">Profesional</h3>
+              <h3 className="text-lg font-bold text-gray-900 mb-1">Estándar</h3>
               <p className="text-sm text-gray-500">Para psicólogos independientes</p>
             </div>
-            <div className="mb-6">
-              <span className="text-4xl font-bold text-gray-900">$99.900</span>
-              <span className="text-sm text-gray-500 ml-1">/mes</span>
+            <div className="mb-2">
+              <span className="text-4xl font-bold text-gray-900">$5.000</span>
+              <span className="text-sm text-gray-500 ml-1">/prueba</span>
             </div>
+            <p className="text-xs text-gray-400 mb-6">Hasta 5 empresas</p>
             <ul className="space-y-3 mb-8 flex-1">
               {[
+                'Evaluaciones ilimitadas',
                 'Hasta 5 empresas',
-                'Hasta 150 participantes/mes',
-                'Reportes organizacionales',
+                'Reportes individuales PDF',
+                'Reportes organizacionales PDF',
                 'Dashboard de resultados',
-                'Exportar a PDF',
                 'Soporte por WhatsApp',
               ].map((item) => (
                 <li key={item} className="flex items-start gap-2 text-sm text-gray-600">
@@ -466,23 +469,24 @@ export default function HomePage() {
             </Link>
           </div>
 
-          {/* Plan Empresarial */}
+          {/* Plan Profesional */}
           <div className="bg-white rounded-2xl p-6 border border-gray-100 shadow-sm flex flex-col">
             <div className="mb-6">
-              <h3 className="text-lg font-bold text-gray-900 mb-1">Empresarial</h3>
+              <h3 className="text-lg font-bold text-gray-900 mb-1">Profesional</h3>
               <p className="text-sm text-gray-500">Para consultorios y firmas</p>
             </div>
-            <div className="mb-6">
-              <span className="text-4xl font-bold text-gray-900">$249.900</span>
-              <span className="text-sm text-gray-500 ml-1">/mes</span>
+            <div className="mb-2">
+              <span className="text-4xl font-bold text-gray-900">$3.500</span>
+              <span className="text-sm text-gray-500 ml-1">/prueba</span>
             </div>
+            <p className="text-xs text-gray-400 mb-6">Hasta 20 empresas</p>
             <ul className="space-y-3 mb-8 flex-1">
               {[
+                'Todo lo del plan Estándar',
                 'Hasta 20 empresas',
-                'Hasta 500 participantes/mes',
-                'Todo lo del plan Profesional',
                 'Múltiples evaluadores',
                 'Dashboard organizacional',
+                'Exportación de datos',
                 'Soporte prioritario',
               ].map((item) => (
                 <li key={item} className="flex items-start gap-2 text-sm text-gray-600">
@@ -507,17 +511,19 @@ export default function HomePage() {
               <h3 className="text-lg font-bold mb-1">Corporativo</h3>
               <p className="text-sm text-gray-400">Para grandes operaciones</p>
             </div>
-            <div className="mb-6">
-              <span className="text-4xl font-bold">A medida</span>
+            <div className="mb-2">
+              <span className="text-4xl font-bold">$2.000</span>
+              <span className="text-sm text-gray-400 ml-1">/prueba</span>
             </div>
+            <p className="text-xs text-gray-500 mb-6">Empresas ilimitadas</p>
             <ul className="space-y-3 mb-8 flex-1">
               {[
+                'Todo lo del plan Profesional',
                 'Empresas ilimitadas',
-                'Participantes ilimitados',
-                'Todo lo del plan Empresarial',
                 'API de integración',
-                'Marca blanca',
+                'Marca blanca disponible',
                 'Gerente de cuenta dedicado',
+                'Facturación personalizada',
               ].map((item) => (
                 <li key={item} className="flex items-start gap-2 text-sm text-gray-300">
                   <svg className="w-4 h-4 text-green-400 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -538,9 +544,28 @@ export default function HomePage() {
           </div>
         </div>
 
+        {/* Example calculation */}
+        <div className="mt-12 bg-white rounded-2xl border border-gray-100 shadow-sm p-6 max-w-2xl mx-auto">
+          <p className="text-sm font-semibold text-gray-900 mb-3 text-center">Ejemplo: 50 evaluaciones con plan Estándar</p>
+          <div className="grid grid-cols-3 gap-4 text-center">
+            <div>
+              <p className="text-2xl font-bold text-gray-900">$250.000</p>
+              <p className="text-xs text-gray-500">Costo plataforma</p>
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-gray-900">$1.500.000</p>
+              <p className="text-xs text-gray-500">Facturas a tu cliente</p>
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-emerald-600">83%</p>
+              <p className="text-xs text-gray-500">Tu margen de ganancia</p>
+            </div>
+          </div>
+        </div>
+
         {/* Pricing note */}
         <p className="text-center text-sm text-gray-400 mt-8">
-          Todos los precios en COP. IVA no incluido. Cancela cuando quieras.
+          Todos los precios en COP. IVA no incluido. Sin compromisos de permanencia.
         </p>
       </section>
 
