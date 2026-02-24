@@ -113,9 +113,9 @@ export default function Layout({ children, title }: LayoutProps) {
         sidebarOpen ? 'translate-x-0' : '-translate-x-full'
       }`}>
         <div className="flex items-center justify-between h-16 px-6 border-b border-gray-200">
-          <div className="flex items-center">
+          <a href="/" className="flex items-center">
             <img src="/logo.png" alt="BRS Digital" className="h-8 w-auto" />
-          </div>
+          </a>
           <button
             className="lg:hidden"
             onClick={() => setSidebarOpen(false)}

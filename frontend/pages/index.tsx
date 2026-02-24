@@ -1,10 +1,12 @@
-import { useEffect } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
 import Image from 'next/image';
 
 export default function HomePage() {
   const router = useRouter();
+  const [showVideo, setShowVideo] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
     const token = localStorage.getItem('token');
@@ -25,15 +27,62 @@ export default function HomePage() {
     }
   }, [router]);
 
+  // Close video modal on Escape
+  useEffect(() => {
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setShowVideo(false);
+    };
+    if (showVideo) {
+      document.addEventListener('keydown', handleEsc);
+      return () => document.removeEventListener('keydown', handleEsc);
+    }
+  }, [showVideo]);
+
+  // Pause video when modal closes
+  useEffect(() => {
+    if (!showVideo && videoRef.current) {
+      videoRef.current.pause();
+    }
+  }, [showVideo]);
+
   return (
     <div className="min-h-screen" style={{ backgroundColor: '#e6f4fd' }}>
+
+      {/* Video Modal */}
+      {showVideo && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"
+          onClick={() => setShowVideo(false)}
+        >
+          <div
+            className="relative w-full max-w-4xl mx-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              onClick={() => setShowVideo(false)}
+              className="absolute -top-10 right-0 text-white hover:text-gray-300 transition-colors"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+            <video
+              ref={videoRef}
+              src="/introVideo.mp4"
+              controls
+              autoPlay
+              className="w-full rounded-2xl shadow-2xl"
+            />
+          </div>
+        </div>
+      )}
 
       {/* Navbar */}
       <nav className="flex items-center justify-between px-8 lg:px-16 py-4 bg-white border-b border-gray-100 shadow-sm">
         {/* Logo */}
-        <div className="flex items-center">
+        <Link href="/" className="flex items-center">
           <Image src="/logo.png" alt="BRS Digital" width={210} height={60} className="h-[60px] w-auto" />
-        </div>
+        </Link>
 
         {/* Nav Links - hidden on mobile */}
         <div className="hidden md:flex items-center gap-8">
@@ -46,7 +95,7 @@ export default function HomePage() {
           <a href="#" className="text-sm text-gray-600 hover:text-gray-900 transition-colors">
             Recursos
           </a>
-          <a href="#" className="text-sm text-gray-600 hover:text-gray-900 transition-colors">
+          <a href="#precios" className="text-sm text-gray-600 hover:text-gray-900 transition-colors">
             Precios
           </a>
         </div>
@@ -59,12 +108,12 @@ export default function HomePage() {
           >
             Iniciar sesión
           </Link>
-          <a
-            href="#"
+          <button
+            onClick={() => setShowVideo(true)}
             className="text-sm font-medium text-white bg-gray-900 rounded-full px-5 py-2 hover:bg-gray-700 transition-colors"
           >
-            Solicitar demo
-          </a>
+            Ver demo
+          </button>
         </div>
       </nav>
 
@@ -99,8 +148,8 @@ export default function HomePage() {
                 <path strokeLinecap="round" strokeLinejoin="round" d="M17 8l4 4m0 0l-4 4m4-4H3" />
               </svg>
             </Link>
-            <a
-              href="#"
+            <button
+              onClick={() => setShowVideo(true)}
               className="inline-flex items-center justify-center gap-2 text-sm font-semibold text-gray-800 border border-gray-300 bg-white/60 rounded-full px-7 py-3.5 hover:bg-white hover:border-gray-400 transition-all"
             >
               <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -108,7 +157,7 @@ export default function HomePage() {
                 <path strokeLinecap="round" strokeLinejoin="round" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
               Ver demo
-            </a>
+            </button>
           </div>
 
           {/* Social proof */}
@@ -329,6 +378,170 @@ export default function HomePage() {
             </div>
           ))}
         </div>
+      </section>
+
+      {/* Pricing Section */}
+      <section id="precios" className="max-w-screen-xl mx-auto px-8 lg:px-16 py-24" style={{ backgroundColor: '#e6f4fd' }}>
+        <div className="text-center mb-16">
+          <div className="inline-flex items-center gap-2 bg-white border border-gray-200 rounded-full px-4 py-1.5 mb-6 shadow-sm">
+            <span className="text-xs text-gray-600 font-medium">Precios simples y transparentes</span>
+          </div>
+          <h2 className="text-3xl lg:text-4xl font-bold text-gray-900 mb-4">
+            Elige el plan que se ajuste a tu práctica
+          </h2>
+          <p className="text-gray-500 text-lg max-w-2xl mx-auto">
+            Paga solo por lo que necesitas. Todos los planes incluyen los 4 cuestionarios oficiales, cálculos automáticos y soporte.
+          </p>
+        </div>
+
+        <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-5">
+          {/* Plan Starter */}
+          <div className="bg-white rounded-2xl p-6 border border-gray-100 shadow-sm flex flex-col">
+            <div className="mb-6">
+              <h3 className="text-lg font-bold text-gray-900 mb-1">Starter</h3>
+              <p className="text-sm text-gray-500">Para empezar a conocer la plataforma</p>
+            </div>
+            <div className="mb-6">
+              <span className="text-4xl font-bold text-gray-900">Gratis</span>
+            </div>
+            <ul className="space-y-3 mb-8 flex-1">
+              {[
+                '1 empresa',
+                'Hasta 20 participantes',
+                'Cuestionarios digitales',
+                'Cálculos automáticos',
+                'Reportes individuales',
+              ].map((item) => (
+                <li key={item} className="flex items-start gap-2 text-sm text-gray-600">
+                  <svg className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                  </svg>
+                  {item}
+                </li>
+              ))}
+            </ul>
+            <Link
+              href="/auth/register"
+              className="inline-flex items-center justify-center text-sm font-semibold text-gray-800 border border-gray-300 rounded-full px-6 py-3 hover:bg-gray-50 transition-colors"
+            >
+              Comenzar gratis
+            </Link>
+          </div>
+
+          {/* Plan Profesional */}
+          <div className="bg-white rounded-2xl p-6 border-2 border-gray-900 shadow-lg flex flex-col relative">
+            <div className="absolute -top-3 left-1/2 -translate-x-1/2">
+              <span className="bg-gray-900 text-white text-xs font-semibold px-3 py-1 rounded-full">Popular</span>
+            </div>
+            <div className="mb-6">
+              <h3 className="text-lg font-bold text-gray-900 mb-1">Profesional</h3>
+              <p className="text-sm text-gray-500">Para psicólogos independientes</p>
+            </div>
+            <div className="mb-6">
+              <span className="text-4xl font-bold text-gray-900">$99.900</span>
+              <span className="text-sm text-gray-500 ml-1">/mes</span>
+            </div>
+            <ul className="space-y-3 mb-8 flex-1">
+              {[
+                'Hasta 5 empresas',
+                'Hasta 150 participantes/mes',
+                'Reportes organizacionales',
+                'Dashboard de resultados',
+                'Exportar a PDF',
+                'Soporte por WhatsApp',
+              ].map((item) => (
+                <li key={item} className="flex items-start gap-2 text-sm text-gray-600">
+                  <svg className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                  </svg>
+                  {item}
+                </li>
+              ))}
+            </ul>
+            <Link
+              href="/auth/register"
+              className="inline-flex items-center justify-center text-sm font-semibold text-white bg-gray-900 rounded-full px-6 py-3 hover:bg-gray-700 transition-colors"
+            >
+              Comenzar ahora
+            </Link>
+          </div>
+
+          {/* Plan Empresarial */}
+          <div className="bg-white rounded-2xl p-6 border border-gray-100 shadow-sm flex flex-col">
+            <div className="mb-6">
+              <h3 className="text-lg font-bold text-gray-900 mb-1">Empresarial</h3>
+              <p className="text-sm text-gray-500">Para consultorios y firmas</p>
+            </div>
+            <div className="mb-6">
+              <span className="text-4xl font-bold text-gray-900">$249.900</span>
+              <span className="text-sm text-gray-500 ml-1">/mes</span>
+            </div>
+            <ul className="space-y-3 mb-8 flex-1">
+              {[
+                'Hasta 20 empresas',
+                'Hasta 500 participantes/mes',
+                'Todo lo del plan Profesional',
+                'Múltiples evaluadores',
+                'Dashboard organizacional',
+                'Soporte prioritario',
+              ].map((item) => (
+                <li key={item} className="flex items-start gap-2 text-sm text-gray-600">
+                  <svg className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                  </svg>
+                  {item}
+                </li>
+              ))}
+            </ul>
+            <Link
+              href="/auth/register"
+              className="inline-flex items-center justify-center text-sm font-semibold text-gray-800 border border-gray-300 rounded-full px-6 py-3 hover:bg-gray-50 transition-colors"
+            >
+              Comenzar ahora
+            </Link>
+          </div>
+
+          {/* Plan Corporativo */}
+          <div className="rounded-2xl p-6 border border-gray-700 shadow-sm flex flex-col text-white" style={{ backgroundColor: '#0a2d4e' }}>
+            <div className="mb-6">
+              <h3 className="text-lg font-bold mb-1">Corporativo</h3>
+              <p className="text-sm text-gray-400">Para grandes operaciones</p>
+            </div>
+            <div className="mb-6">
+              <span className="text-4xl font-bold">A medida</span>
+            </div>
+            <ul className="space-y-3 mb-8 flex-1">
+              {[
+                'Empresas ilimitadas',
+                'Participantes ilimitados',
+                'Todo lo del plan Empresarial',
+                'API de integración',
+                'Marca blanca',
+                'Gerente de cuenta dedicado',
+              ].map((item) => (
+                <li key={item} className="flex items-start gap-2 text-sm text-gray-300">
+                  <svg className="w-4 h-4 text-green-400 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                  </svg>
+                  {item}
+                </li>
+              ))}
+            </ul>
+            <a
+              href="https://wa.me/573008021701?text=Hola%2C%20me%20interesa%20el%20plan%20Corporativo%20de%20BRS%20Digital"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center justify-center text-sm font-semibold text-white border border-gray-500 rounded-full px-6 py-3 hover:border-gray-300 transition-colors"
+            >
+              Contactar ventas
+            </a>
+          </div>
+        </div>
+
+        {/* Pricing note */}
+        <p className="text-center text-sm text-gray-400 mt-8">
+          Todos los precios en COP. IVA no incluido. Cancela cuando quieras.
+        </p>
       </section>
 
       {/* CTA Banner */}

@@ -89,7 +89,7 @@ export default function FlowLayout({
       <header className={`flex items-center justify-between py-4 bg-white border-b border-gray-100 shadow-sm ${paddingClass}`}>
         {/* Left: Logo + optional Back */}
         <div className="flex items-center gap-5">
-          <Link href={`/${user.role}/dashboard`} className="flex items-center">
+          <Link href="/" className="flex items-center">
             <Image src="/logo.png" alt="BRS Digital" width={210} height={60} className="h-[60px] w-auto" />
           </Link>
           {showBack && (
