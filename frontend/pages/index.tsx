@@ -55,7 +55,7 @@ export default function HomePage() {
           onClick={() => setShowVideo(false)}
         >
           <div
-            className="relative w-full max-w-4xl mx-4"
+            className="relative w-full max-w-7xl mx-4"
             onClick={(e) => e.stopPropagation()}
           >
             <button
