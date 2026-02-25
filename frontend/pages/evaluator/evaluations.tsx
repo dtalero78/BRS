@@ -10,7 +10,11 @@ import {
   CalendarIcon,
   UsersIcon,
   ClockIcon,
-  BuildingOfficeIcon
+  BuildingOfficeIcon,
+  ArrowUpTrayIcon,
+  DocumentArrowUpIcon,
+  CheckCircleIcon,
+  ExclamationTriangleIcon
 } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 
@@ -48,6 +52,13 @@ export default function EvaluatorEvaluations() {
     endDate: '',
     companyId: ''
   });
+
+  // Excel import state
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [importEvaluationId, setImportEvaluationId] = useState<number | null>(null);
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState<any>(null);
 
   useEffect(() => {
     fetchEvaluations();
@@ -169,6 +180,55 @@ export default function EvaluatorEvaluations() {
       console.error('Error:', error);
       toast.error('Error de conexión');
     }
+  };
+
+  const handleImportExcel = async () => {
+    if (!importEvaluationId || !importFile) return;
+
+    setImporting(true);
+    setImportResult(null);
+
+    try {
+      const token = localStorage.getItem('token');
+      const formData = new FormData();
+      formData.append('file', importFile);
+
+      const response = await fetch(`/api/evaluations/${importEvaluationId}/import-excel`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        },
+        body: formData
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        setImportResult(data);
+        if (data.totalCreated > 0) {
+          toast.success(`${data.totalCreated} participantes importados exitosamente`);
+          fetchEvaluations();
+        }
+        if (data.totalErrors > 0) {
+          toast.error(`${data.totalErrors} errores durante la importación`);
+        }
+      } else {
+        toast.error(data.error || 'Error al importar');
+        setImportResult({ error: data.error });
+      }
+    } catch (error) {
+      console.error('Import error:', error);
+      toast.error('Error de conexión al importar');
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const openImportModal = (evaluationId: number) => {
+    setImportEvaluationId(evaluationId);
+    setImportFile(null);
+    setImportResult(null);
+    setShowImportModal(true);
   };
 
   const getStatusBadge = (status: string) => {
@@ -394,6 +454,13 @@ export default function EvaluatorEvaluations() {
                       
                       <div className="flex items-center space-x-2">
                         <button
+                          onClick={() => openImportModal(evaluation.id)}
+                          className="text-gray-400 hover:text-green-600"
+                          title="Subir Excel"
+                        >
+                          <ArrowUpTrayIcon className="h-5 w-5" />
+                        </button>
+                        <button
                           onClick={() => handleEdit(evaluation)}
                           className="text-gray-400 hover:text-blue-600"
                           title="Editar"
@@ -523,6 +590,145 @@ export default function EvaluatorEvaluations() {
                   </button>
                 </div>
               </form>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Import Excel Modal */}
+      {showImportModal && (
+        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+          <div className="relative top-20 mx-auto p-5 border w-full max-w-lg shadow-lg rounded-md bg-white">
+            <div className="mt-3">
+              <div className="flex items-center justify-center mb-4">
+                <div className="h-12 w-12 flex items-center justify-center rounded-full bg-green-100">
+                  <DocumentArrowUpIcon className="h-6 w-6 text-green-600" />
+                </div>
+              </div>
+              <h3 className="text-lg font-medium text-gray-900 text-center mb-2">
+                Importar desde Excel
+              </h3>
+              <p className="text-sm text-gray-500 text-center mb-4">
+                Sube un archivo Excel con las hojas <strong>FA</strong> (Forma A) y/o <strong>FB</strong> (Forma B).
+                Se crearán los participantes, sus respuestas y se calcularán los resultados automáticamente.
+              </p>
+
+              {!importResult ? (
+                <div className="space-y-4">
+                  {/* File Input */}
+                  <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-green-400 transition-colors">
+                    <input
+                      type="file"
+                      accept=".xlsx,.xls"
+                      onChange={(e) => setImportFile(e.target.files?.[0] || null)}
+                      className="hidden"
+                      id="excel-upload"
+                    />
+                    <label htmlFor="excel-upload" className="cursor-pointer">
+                      <ArrowUpTrayIcon className="h-8 w-8 text-gray-400 mx-auto mb-2" />
+                      {importFile ? (
+                        <p className="text-sm font-medium text-green-600">{importFile.name}</p>
+                      ) : (
+                        <p className="text-sm text-gray-500">
+                          Click para seleccionar archivo Excel
+                        </p>
+                      )}
+                      <p className="text-xs text-gray-400 mt-1">
+                        .xlsx o .xls (máximo 10MB)
+                      </p>
+                    </label>
+                  </div>
+
+                  <div className="bg-blue-50 rounded-lg p-3">
+                    <p className="text-xs text-blue-700">
+                      <strong>Formato esperado:</strong> Columnas sociodemográficas (A-Y), seguidas de respuestas Intralaboral, Extralaboral y Estrés. Los valores deben ser numéricos (0-4 para intralaboral/extralaboral, 0-3 para estrés).
+                    </p>
+                  </div>
+
+                  <div className="flex justify-end space-x-3 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowImportModal(false)}
+                      className="px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      onClick={handleImportExcel}
+                      disabled={!importFile || importing}
+                      className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center"
+                    >
+                      {importing ? (
+                        <>
+                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                          Importando...
+                        </>
+                      ) : (
+                        <>
+                          <ArrowUpTrayIcon className="h-4 w-4 mr-2" />
+                          Importar
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {/* Import Results */}
+                  {importResult.error ? (
+                    <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                      <div className="flex items-center">
+                        <ExclamationTriangleIcon className="h-5 w-5 text-red-600 mr-2" />
+                        <p className="text-sm text-red-700 font-medium">Error en la importación</p>
+                      </div>
+                      <p className="text-sm text-red-600 mt-1">{importResult.error}</p>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="grid grid-cols-3 gap-3">
+                        <div className="bg-green-50 border border-green-200 rounded-lg p-3 text-center">
+                          <CheckCircleIcon className="h-6 w-6 text-green-600 mx-auto" />
+                          <p className="text-lg font-bold text-green-700">{importResult.totalCreated}</p>
+                          <p className="text-xs text-green-600">Creados</p>
+                        </div>
+                        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-center">
+                          <ExclamationTriangleIcon className="h-6 w-6 text-yellow-600 mx-auto" />
+                          <p className="text-lg font-bold text-yellow-700">{importResult.totalSkipped}</p>
+                          <p className="text-xs text-yellow-600">Omitidos</p>
+                        </div>
+                        <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-center">
+                          <ExclamationTriangleIcon className="h-6 w-6 text-red-600 mx-auto" />
+                          <p className="text-lg font-bold text-red-700">{importResult.totalErrors}</p>
+                          <p className="text-xs text-red-600">Errores</p>
+                        </div>
+                      </div>
+
+                      {importResult.errors && importResult.errors.length > 0 && (
+                        <div className="bg-red-50 rounded-lg p-3 max-h-32 overflow-y-auto">
+                          <p className="text-xs font-medium text-red-700 mb-1">Detalle de errores:</p>
+                          {importResult.errors.map((err: any, i: number) => (
+                            <p key={i} className="text-xs text-red-600">
+                              Fila {err.row} ({err.name}): {err.error}
+                            </p>
+                          ))}
+                        </div>
+                      )}
+                    </>
+                  )}
+
+                  <div className="flex justify-end pt-2">
+                    <button
+                      onClick={() => {
+                        setShowImportModal(false);
+                        setImportResult(null);
+                        setImportFile(null);
+                      }}
+                      className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700"
+                    >
+                      Cerrar
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>

@@ -4,6 +4,24 @@ const Joi = require('joi');
 const { auth, authorize, getOwnedCompanyIds } = require('../middleware/auth');
 const db = require('../config/database');
 const { v4: uuidv4 } = require('uuid');
+const multer = require('multer');
+const XLSX = require('xlsx');
+const calculateResults = require('../utils/calculate-results');
+
+// Multer config for Excel uploads (memory storage, max 10MB)
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
+        file.mimetype === 'application/vnd.ms-excel' ||
+        file.originalname.endsWith('.xlsx') || file.originalname.endsWith('.xls')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Solo se permiten archivos Excel (.xlsx, .xls)'));
+    }
+  }
+});
 
 // Validation schemas
 const createEvaluationSchema = Joi.object({
@@ -378,6 +396,415 @@ router.get('/dashboard', auth, async (req, res) => {
   } catch (error) {
     console.error('Dashboard error:', error);
     res.status(500).json({ error: 'Error interno del servidor' });
+  }
+});
+
+// ============================================================
+// IMPORT PARTICIPANTS FROM EXCEL
+// ============================================================
+
+/**
+ * Maps Excel demographic columns to the ficha_datos questionnaire format.
+ * The ficha_datos uses questionNumber-based responses that our report-data-aggregator reads.
+ * Q2=sexo, Q3=año nacimiento, Q4=estudios, Q5=estado civil, Q9=dependientes, etc.
+ */
+function buildFichaFromExcelRow(row) {
+  // row is array from Excel, cols 0-24 are sociodemographic
+  // Map Excel columns to ficha_datos question numbers
+  const fichaMap = {};
+
+  // Q1: Fecha de aplicación (col 1)
+  fichaMap['1'] = row[1] || '';
+  // Q2: Sexo (col 5) - text value like "FEMENINO", "MASCULINO"
+  fichaMap['2'] = row[5] || '';
+  // Q3: Año de nacimiento (col 6)
+  fichaMap['3'] = row[6] != null ? String(row[6]) : '';
+  // Q4: Último nivel de estudios (col 8)
+  fichaMap['4'] = row[8] || '';
+  // Q5: Estado civil (col 7)
+  fichaMap['5'] = row[7] || '';
+  // Q6: Ocupación o profesión (col 9)
+  fichaMap['6'] = row[9] || '';
+  // Q7: Ciudad de residencia (col 10)
+  fichaMap['7'] = row[10] || '';
+  // Q8: Estrato (col 12)
+  fichaMap['8'] = row[12] != null ? String(row[12]) : '';
+  // Q9: Número de personas que dependen económicamente (col 14)
+  fichaMap['9'] = row[14] != null ? String(row[14]) : '0';
+  // Q10: Tipo de vivienda (col 13)
+  fichaMap['10'] = row[13] || '';
+  // Q11: Ciudad donde trabaja (col 15)
+  fichaMap['11'] = row[15] || '';
+  // Q12: Hace cuantos años que trabaja en esta empresa (col 17)
+  fichaMap['12'] = row[17] || '';
+  // Q13: Nombre del cargo (col 18)
+  fichaMap['13'] = row[18] || '';
+  // Q14: Tipo de cargo (col 19)
+  fichaMap['14'] = row[19] || '';
+  // Q15: Hace cuantos años desempeña el cargo (col 20)
+  fichaMap['15'] = row[20] || '';
+  // Q16: Departamento de la empresa (col 21)
+  fichaMap['16'] = row[21] || '';
+  // Q17: Tipo de contrato (col 22)
+  fichaMap['17'] = row[22] || '';
+  // Q18: Horas de trabajo diarias (col 23)
+  fichaMap['18'] = row[23] != null ? String(row[23]) : '';
+
+  return fichaMap;
+}
+
+/**
+ * Determine the formType (A or B) based on the tipo de cargo field.
+ * Forma A: Jefes, profesionales, técnicos
+ * Forma B: Auxiliares, operarios
+ */
+function determineFormType(tipoCargo) {
+  if (!tipoCargo) return 'B'; // default to B if unknown
+  const upper = tipoCargo.toString().toUpperCase();
+  if (upper.includes('JEFATURA') || upper.includes('PROFESIONAL') || upper.includes('TÉCNICO') || upper.includes('TECNICO')) {
+    return 'A';
+  }
+  return 'B';
+}
+
+/**
+ * Map gender text from Excel to our standard values.
+ */
+function mapGender(sexo) {
+  if (!sexo) return 'Otro';
+  const upper = sexo.toString().toUpperCase().trim();
+  if (upper === 'FEMENINO' || upper === 'F') return 'Femenino';
+  if (upper === 'MASCULINO' || upper === 'M') return 'Masculino';
+  return 'Otro';
+}
+
+/**
+ * Map marital status from Excel to our valid enum values.
+ */
+function mapMaritalStatus(status) {
+  if (!status) return 'Soltero(a)';
+  const upper = status.toString().toUpperCase().trim();
+  if (upper.includes('SOLTERO')) return 'Soltero(a)';
+  if (upper.includes('CASADO')) return 'Casado(a)';
+  if (upper.includes('UNIÓN') || upper.includes('UNION')) return 'Unión libre';
+  if (upper.includes('SEPARADO')) return 'Separado(a)';
+  if (upper.includes('DIVORCIADO')) return 'Divorciado(a)';
+  if (upper.includes('VIUDO')) return 'Viudo(a)';
+  return 'Soltero(a)';
+}
+
+/**
+ * Convert an Excel serial date number to a JS Date string (YYYY-MM-DD).
+ */
+function excelDateToString(serial) {
+  if (!serial || typeof serial !== 'number') return new Date().toISOString().split('T')[0];
+  // Excel epoch starts 1900-01-01, but has a leap year bug at 1900-02-29
+  const utcDays = Math.floor(serial - 25569);
+  const d = new Date(utcDays * 86400 * 1000);
+  return d.toISOString().split('T')[0];
+}
+
+// POST /api/evaluations/:evaluationId/import-excel
+router.post('/:evaluationId/import-excel', auth, authorize('admin', 'evaluator'), upload.single('file'), async (req, res) => {
+  try {
+    const { evaluationId } = req.params;
+
+    // Validate evaluation exists and belongs to evaluator
+    const companyIds = await getOwnedCompanyIds(req.user.userId);
+    const evaluation = await db('evaluations')
+      .where('id', evaluationId)
+      .whereIn('company_id', companyIds)
+      .first();
+
+    if (!evaluation) {
+      return res.status(404).json({ error: 'Evaluación no encontrada' });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({ error: 'No se envió ningún archivo' });
+    }
+
+    // Parse Excel
+    const workbook = XLSX.read(req.file.buffer, { type: 'buffer' });
+    const sheetNames = workbook.SheetNames;
+
+    // Detect FA/FB sheets
+    const sheets = {};
+    for (const name of sheetNames) {
+      const upper = name.toUpperCase().trim();
+      if (upper.startsWith('FA')) sheets.FA = name;
+      else if (upper.startsWith('FB')) sheets.FB = name;
+    }
+
+    if (!sheets.FA && !sheets.FB) {
+      return res.status(400).json({
+        error: 'El archivo Excel debe tener hojas llamadas "FA" (Forma A) y/o "FB" (Forma B)'
+      });
+    }
+
+    // Column layout (based on analysis of the standard Excel format):
+    // Cols 0-24: Sociodemographic (25 columns)
+    // FA: Cols 25-147: Intralaboral A (123 items), Cols 148-178: Extralaboral (31), Cols 179-209: Estrés (31)
+    // FB: Cols 25-121: Intralaboral B (97 items), Cols 122-152: Extralaboral (31), Cols 153-183: Estrés (31)
+    const LAYOUT = {
+      FA: { intraStart: 25, intraCount: 123, extraStart: 148, extraCount: 31, stressStart: 179, stressCount: 31, type: 'intralaboral_a' },
+      FB: { intraStart: 25, intraCount: 97, extraStart: 122, extraCount: 31, stressStart: 153, stressCount: 31, type: 'intralaboral_b' }
+    };
+
+    const crypto = require('crypto');
+    let totalCreated = 0;
+    let totalSkipped = 0;
+    let totalErrors = 0;
+    const errors = [];
+    const created = [];
+
+    for (const [formKey, sheetName] of Object.entries(sheets)) {
+      const layout = LAYOUT[formKey];
+      const ws = workbook.Sheets[sheetName];
+      const data = XLSX.utils.sheet_to_json(ws, { header: 1 });
+
+      // Data starts at row index 2 (row 0 = section headers, row 1 = column headers)
+      for (let rowIdx = 2; rowIdx < data.length; rowIdx++) {
+        const row = data[rowIdx];
+        if (!row || row[0] === undefined || row[0] === '' || row[0] === null) continue;
+
+        const rowNum = rowIdx + 1; // 1-based for error messages
+        const nombre = (row[3] || '').toString().trim();
+        const docId = (row[2] || '').toString().trim();
+
+        if (!nombre && !docId) {
+          totalSkipped++;
+          continue;
+        }
+
+        try {
+          // Split nombre into firstName and lastName
+          const nameParts = nombre.split(' ');
+          const firstName = nameParts.slice(0, Math.ceil(nameParts.length / 2)).join(' ') || nombre;
+          const lastName = nameParts.slice(Math.ceil(nameParts.length / 2)).join(' ') || '';
+
+          const tipoCargo = row[19] || '';
+          const formType = formKey === 'FA' ? 'A' : 'B';
+          const gender = mapGender(row[5]);
+          const birthYear = parseInt(row[6]) || 1990;
+          const maritalStatus = mapMaritalStatus(row[7]);
+          const documentNumber = docId || `IMPORT_${rowIdx}`;
+
+          // Build demographic_data for participant record
+          const demographicData = {
+            firstName,
+            lastName,
+            documentType: 'CC',
+            documentNumber,
+            birthYear,
+            gender,
+            maritalStatus,
+            educationLevel: (row[8] || '').toString(),
+            department: (row[4] || '').toString(), // Área
+            position: (row[18] || '').toString(), // Cargo
+            contractType: (row[22] || '').toString(),
+            employmentType: (tipoCargo || '').toString(),
+            tenureMonths: 0,
+            salaryRange: (row[24] || '').toString(),
+            workHoursPerDay: parseInt(row[23]) || 8,
+            workDaysPerWeek: 5,
+            formType
+          };
+
+          // Use transaction for each participant to avoid partial state
+          await db.transaction(async (trx) => {
+            // 1. Create or find participant
+            const email = `cc_${documentNumber}@temp.com`.toLowerCase();
+            let participant = await trx('participants')
+              .where('email', email)
+              .where('company_id', evaluation.company_id)
+              .first();
+
+            if (!participant) {
+              [participant] = await trx('participants')
+                .insert({
+                  company_id: evaluation.company_id,
+                  email,
+                  demographic_data: JSON.stringify(demographicData),
+                  active: true
+                })
+                .returning('*');
+            }
+
+            // 2. Check if already assigned to this evaluation
+            const existingPE = await trx('participant_evaluations')
+              .where('evaluation_id', evaluationId)
+              .where('participant_id', participant.id)
+              .first();
+
+            if (existingPE) {
+              totalSkipped++;
+              return; // Skip this participant, already assigned
+            }
+
+            // 3. Create participant_evaluation with access token
+            const accessToken = crypto.randomBytes(32).toString('hex');
+            const tokenExpiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+
+            const [pe] = await trx('participant_evaluations')
+              .insert({
+                evaluation_id: parseInt(evaluationId),
+                participant_id: participant.id,
+                status: 'completed',
+                assigned_at: new Date(),
+                completed_at: new Date(),
+                access_token: accessToken,
+                token_expires_at: tokenExpiresAt
+              })
+              .returning('*');
+
+            // 4. Build and save responses
+
+            // 4a. Ficha de datos
+            const fichaData = buildFichaFromExcelRow(row);
+            await trx('responses').insert({
+              participant_evaluation_id: pe.id,
+              questionnaire_type: 'ficha_datos',
+              responses: JSON.stringify(fichaData),
+              completed_at: new Date()
+            });
+
+            // 4b. Intralaboral responses
+            const intraResponses = {};
+            for (let i = 0; i < layout.intraCount; i++) {
+              const val = row[layout.intraStart + i];
+              if (val !== undefined && val !== null && val !== '') {
+                intraResponses[String(i + 1)] = parseInt(val) || 0;
+              }
+            }
+            await trx('responses').insert({
+              participant_evaluation_id: pe.id,
+              questionnaire_type: layout.type,
+              responses: JSON.stringify(intraResponses),
+              completed_at: new Date()
+            });
+
+            // 4c. Extralaboral responses
+            const extraResponses = {};
+            for (let i = 0; i < layout.extraCount; i++) {
+              const val = row[layout.extraStart + i];
+              if (val !== undefined && val !== null && val !== '') {
+                extraResponses[String(i + 1)] = parseInt(val) || 0;
+              }
+            }
+            await trx('responses').insert({
+              participant_evaluation_id: pe.id,
+              questionnaire_type: 'extralaboral',
+              responses: JSON.stringify(extraResponses),
+              completed_at: new Date()
+            });
+
+            // 4d. Estrés responses
+            const stressResponses = {};
+            for (let i = 0; i < layout.stressCount; i++) {
+              const val = row[layout.stressStart + i];
+              if (val !== undefined && val !== null && val !== '') {
+                stressResponses[String(i + 1)] = parseInt(val) || 0;
+              }
+            }
+            await trx('responses').insert({
+              participant_evaluation_id: pe.id,
+              questionnaire_type: 'estres',
+              responses: JSON.stringify(stressResponses),
+              completed_at: new Date()
+            });
+
+            // 5. Calculate results using the BRS engine
+            const occupationalGroup = formType === 'B' ? 'auxiliares' : 'jefes';
+            const allResults = [];
+
+            // Calculate intralaboral
+            const intraFormatted = Object.entries(intraResponses).map(([qn, rv]) => ({
+              question_number: parseInt(qn), response_value: parseInt(rv)
+            }));
+            if (intraFormatted.length > 0) {
+              const intraResults = await calculateResults(layout.type, intraFormatted, { occupationalGroup });
+              allResults.push(...intraResults);
+            }
+
+            // Calculate extralaboral
+            const extraFormatted = Object.entries(extraResponses).map(([qn, rv]) => ({
+              question_number: parseInt(qn), response_value: parseInt(rv)
+            }));
+            if (extraFormatted.length > 0) {
+              const extraResults = await calculateResults('extralaboral', extraFormatted, { occupationalGroup });
+              allResults.push(...extraResults);
+            }
+
+            // Calculate estrés
+            const stressFormatted = Object.entries(stressResponses).map(([qn, rv]) => ({
+              question_number: parseInt(qn), response_value: parseInt(rv)
+            }));
+            if (stressFormatted.length > 0) {
+              const stressResults = await calculateResults('estres', stressFormatted, { occupationalGroup });
+              allResults.push(...stressResults);
+            }
+
+            // Group and save results
+            const resultsByType = {};
+            allResults.forEach(r => {
+              if (!resultsByType[r.questionnaireType]) resultsByType[r.questionnaireType] = [];
+              resultsByType[r.questionnaireType].push({
+                dimension: r.dimension,
+                rawScore: r.rawScore,
+                transformedScore: r.transformedScore,
+                percentile: r.percentile,
+                riskLevel: r.riskLevel
+              });
+            });
+
+            const resultInserts = Object.entries(resultsByType).map(([qt, typeResults]) => ({
+              participant_evaluation_id: pe.id,
+              questionnaire_type: qt,
+              results: JSON.stringify(typeResults),
+              calculated_at: new Date()
+            }));
+
+            if (resultInserts.length > 0) {
+              await trx('results').insert(resultInserts);
+            }
+
+            totalCreated++;
+            created.push({ row: rowNum, name: nombre, form: formKey });
+          });
+
+        } catch (err) {
+          totalErrors++;
+          errors.push({ row: rowNum, name: nombre, error: err.message });
+          console.error(`Import error row ${rowNum} (${nombre}):`, err.message);
+        }
+      }
+    }
+
+    // Log the import
+    await db('audit_logs').insert({
+      user_id: req.user.userId,
+      action: 'import_excel',
+      table_name: 'evaluations',
+      record_id: parseInt(evaluationId),
+      new_values: JSON.stringify({ totalCreated, totalSkipped, totalErrors, fileName: req.file.originalname })
+    });
+
+    res.json({
+      message: `Importación completada: ${totalCreated} participantes creados, ${totalSkipped} omitidos, ${totalErrors} errores`,
+      totalCreated,
+      totalSkipped,
+      totalErrors,
+      errors: errors.slice(0, 20), // Limit error detail
+      created: created.slice(0, 20)
+    });
+
+  } catch (error) {
+    console.error('Import Excel error:', error);
+    if (error.message && error.message.includes('Solo se permiten archivos Excel')) {
+      return res.status(400).json({ error: error.message });
+    }
+    res.status(500).json({ error: 'Error al importar archivo Excel: ' + error.message });
   }
 });
 
