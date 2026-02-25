@@ -335,7 +335,7 @@ router.get('/', auth, async (req, res) => {
 router.get('/evaluation/:evaluationId', auth, async (req, res) => {
   try {
     const { evaluationId } = req.params;
-    const { page = 1, limit = 10, status } = req.query;
+    const { page = 1, limit = 1000, status } = req.query;
     const offset = (page - 1) * limit;
 
     // Check if evaluation belongs to evaluator's companies
@@ -372,12 +372,13 @@ router.get('/evaluation/:evaluationId', auth, async (req, res) => {
 
     const results = await db('results')
       .whereIn('participant_evaluation_id', participantIds)
-      .select('participant_evaluation_id', 'questionnaire_type');
+      .select('participant_evaluation_id', 'questionnaire_type', 'results');
 
     // Group responses and results by participant_evaluation_id
     const responsesByParticipant = {};
     const resultsByParticipant = {};
-    
+    const overallRiskByParticipant = {};
+
     responses.forEach(response => {
       if (!responsesByParticipant[response.participant_evaluation_id]) {
         responsesByParticipant[response.participant_evaluation_id] = [];
@@ -390,6 +391,16 @@ router.get('/evaluation/:evaluationId', auth, async (req, res) => {
         resultsByParticipant[result.participant_evaluation_id] = [];
       }
       resultsByParticipant[result.participant_evaluation_id].push(result.questionnaire_type);
+
+      // Extract overall risk level from intralaboral results (puntaje_total)
+      try {
+        const parsed = typeof result.results === 'string' ? JSON.parse(result.results) : (result.results || []);
+        for (const dim of parsed) {
+          if (dim.dimension && dim.dimension.startsWith('puntaje_total_intralaboral')) {
+            overallRiskByParticipant[result.participant_evaluation_id] = dim.riskLevel;
+          }
+        }
+      } catch (e) {}
     });
 
     // Get total count
@@ -440,6 +451,7 @@ router.get('/evaluation/:evaluationId', auth, async (req, res) => {
           status: p.status || 'assigned',
           completed_questionnaires: completedQuestionnaires,
           hasResults: hasResults,
+          overall_risk_level: overallRiskByParticipant[p.pe_id] || null,
           completionPercentage: 0,
           startedAt: p.assigned_at,
           completedAt: p.completed_at,

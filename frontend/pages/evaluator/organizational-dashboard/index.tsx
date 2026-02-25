@@ -114,6 +114,13 @@ export default function OrganizationalDashboard() {
     fetchOrganizationalData();
   }, []);
 
+  // Pre-select evaluation from query string
+  useEffect(() => {
+    if (router.query.evaluationId && !selectedEvaluation) {
+      setSelectedEvaluation(parseInt(router.query.evaluationId as string));
+    }
+  }, [router.query.evaluationId]);
+
   useEffect(() => {
     if (selectedEvaluation) {
       fetchEvaluationMetrics(selectedEvaluation);
@@ -144,8 +151,10 @@ export default function OrganizationalDashboard() {
               { headers: { Authorization: `Bearer ${token}` } }
             );
 
-            const completionRate = evaluation.total_participants > 0 
-              ? (evaluation.completed_participants / evaluation.total_participants) * 100 
+            const totalParts = evaluation.totalParticipants || evaluation.total_participants || 0;
+            const completedParts = evaluation.completedParticipants || evaluation.completed_participants || 0;
+            const completionRate = totalParts > 0
+              ? (completedParts / totalParts) * 100
               : 0;
 
             // Calculate average risk level from statistics
@@ -175,21 +184,21 @@ export default function OrganizationalDashboard() {
             return {
               id: evaluation.id,
               name: evaluation.name,
-              totalParticipants: evaluation.total_participants || 0,
-              completedParticipants: evaluation.completed_participants || 0,
+              totalParticipants: totalParts,
+              completedParticipants: completedParts,
               completionRate: Math.round(completionRate),
               averageRiskLevel,
               criticalParticipants: Math.round(criticalParticipants / (dimensionCount || 1)),
-              startDate: evaluation.start_date,
-              endDate: evaluation.end_date
+              startDate: evaluation.startDate || evaluation.start_date,
+              endDate: evaluation.endDate || evaluation.end_date
             };
           } catch (error) {
             console.error(`Error fetching results for evaluation ${evaluation.id}:`, error);
             return {
               id: evaluation.id,
               name: evaluation.name,
-              totalParticipants: evaluation.total_participants || 0,
-              completedParticipants: evaluation.completed_participants || 0,
+              totalParticipants: evaluation.totalParticipants || evaluation.total_participants || 0,
+              completedParticipants: evaluation.completedParticipants || evaluation.completed_participants || 0,
               completionRate: 0,
               averageRiskLevel: 'sin_riesgo',
               criticalParticipants: 0,
@@ -225,14 +234,49 @@ export default function OrganizationalDashboard() {
       );
 
       const statistics = resultsResponse.data.statistics || [];
-      
-      // Calculate organizational metrics
+
+      // Risk distribution: use only puntaje_total_intralaboral (overall participant risk)
       const riskDistribution = {
         sin_riesgo: 0,
         riesgo_bajo: 0,
         riesgo_medio: 0,
         riesgo_alto: 0,
         riesgo_muy_alto: 0
+      };
+
+      // Display names for dimensions
+      const DIMENSION_NAMES: Record<string, string> = {
+        'caracteristicas_liderazgo': 'Características del Liderazgo',
+        'relaciones_sociales_trabajo': 'Relaciones Sociales en el Trabajo',
+        'retroalimentacion_desempeño': 'Retroalimentación del Desempeño',
+        'relacion_colaboradores': 'Relación con Colaboradores',
+        'claridad_rol': 'Claridad del Rol',
+        'capacitacion': 'Capacitación',
+        'participacion_manejo_cambio': 'Participación y Manejo del Cambio',
+        'oportunidades_desarrollo': 'Oportunidades de Desarrollo',
+        'control_autonomia': 'Control y Autonomía',
+        'demandas_cuantitativas': 'Demandas Cuantitativas',
+        'demandas_carga_mental': 'Demandas de Carga Mental',
+        'demandas_emocionales': 'Demandas Emocionales',
+        'exigencias_responsabilidad': 'Exigencias de Responsabilidad',
+        'demandas_ambientales': 'Demandas Ambientales',
+        'demandas_jornada': 'Demandas de la Jornada',
+        'consistencia_rol': 'Consistencia del Rol',
+        'influencia_trabajo_entorno': 'Influencia del Trabajo sobre el Entorno',
+        'reconocimiento_compensacion': 'Reconocimiento y Compensación',
+        'recompensas_pertenencia': 'Recompensas y Pertenencia',
+        'tiempo_fuera_trabajo': 'Tiempo Fuera del Trabajo',
+        'relaciones_familiares': 'Relaciones Familiares',
+        'comunicacion_relaciones': 'Comunicación y Relaciones',
+        'comunicacion_relaciones_interpersonales': 'Comunicación y Relaciones Interpersonales',
+        'situacion_economica': 'Situación Económica',
+        'caracteristicas_vivienda': 'Características de la Vivienda',
+        'influencia_entorno_extralaboral': 'Influencia del Entorno Extralaboral',
+        'influencia_entorno_trabajo': 'Influencia del Entorno sobre el Trabajo',
+        'desplazamiento_vivienda_trabajo': 'Desplazamiento Vivienda-Trabajo',
+        'capacitacion': 'Capacitación',
+        'relacion_colaboradores': 'Relación con Colaboradores',
+        'retroalimentacion_desempeño': 'Retroalimentación del Desempeño',
       };
 
       const dimensionScores: Array<{
@@ -246,13 +290,23 @@ export default function OrganizationalDashboard() {
       let completedEvaluations = 0;
 
       statistics.forEach((stat: any) => {
-        // Aggregate risk distribution
-        Object.keys(riskDistribution).forEach(riskLevel => {
-          riskDistribution[riskLevel as keyof typeof riskDistribution] += 
-            stat.riskLevels?.[riskLevel] || 0;
-        });
+        const dim = stat.dimension || '';
 
-        // Collect dimension data
+        // For overall risk distribution chart: only use puntaje_total_intralaboral
+        if (dim.startsWith('puntaje_total_intralaboral')) {
+          Object.keys(riskDistribution).forEach(riskLevel => {
+            riskDistribution[riskLevel as keyof typeof riskDistribution] +=
+              stat.riskLevels?.[riskLevel] || 0;
+          });
+        }
+
+        // Skip _total and puntaje_total dimensions for the detailed dimension list
+        if (dim.endsWith('_total') || dim.startsWith('puntaje_total')) {
+          totalParticipants = Math.max(totalParticipants, stat.totalParticipants || 0);
+          return;
+        }
+
+        // Collect individual dimension data
         const avgScore = stat.averageScore || 0;
         let riskLevel = 'sin_riesgo';
         if (avgScore > 40) riskLevel = 'riesgo_muy_alto';
@@ -260,33 +314,70 @@ export default function OrganizationalDashboard() {
         else if (avgScore > 20) riskLevel = 'riesgo_medio';
         else if (avgScore > 10) riskLevel = 'riesgo_bajo';
 
+        const displayName = DIMENSION_NAMES[dim] || dim.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+
+        const affected = (stat.riskLevels?.riesgo_alto || 0) + (stat.riskLevels?.riesgo_muy_alto || 0);
+
         dimensionScores.push({
-          dimension: stat.dimension,
+          dimension: displayName,
           averageScore: avgScore,
           riskLevel,
-          affectedParticipants: stat.totalParticipants || 0
+          affectedParticipants: affected
         });
 
         totalParticipants = Math.max(totalParticipants, stat.totalParticipants || 0);
-        completedEvaluations = totalParticipants;
       });
+
+      completedEvaluations = totalParticipants;
 
       // Sort dimensions by risk level and score
       dimensionScores.sort((a, b) => {
-        const riskOrder = { 
-          'riesgo_muy_alto': 4, 
-          'riesgo_alto': 3, 
-          'riesgo_medio': 2, 
-          'riesgo_bajo': 1, 
-          'sin_riesgo': 0 
+        const riskOrder = {
+          'riesgo_muy_alto': 4,
+          'riesgo_alto': 3,
+          'riesgo_medio': 2,
+          'riesgo_bajo': 1,
+          'sin_riesgo': 0
         };
-        return riskOrder[b.riskLevel as keyof typeof riskOrder] - 
+        return riskOrder[b.riskLevel as keyof typeof riskOrder] -
+               riskOrder[a.riskLevel as keyof typeof riskOrder] ||
+               b.averageScore - a.averageScore;
+      });
+
+      // Deduplicate dimensions (same dimension from forma A and B): merge by averaging
+      const mergedDimensions: typeof dimensionScores = [];
+      const seen = new Map<string, number>();
+      dimensionScores.forEach(d => {
+        const existing = seen.get(d.dimension);
+        if (existing !== undefined) {
+          const prev = mergedDimensions[existing];
+          prev.averageScore = (prev.averageScore + d.averageScore) / 2;
+          prev.affectedParticipants = prev.affectedParticipants + d.affectedParticipants;
+          // Recalculate risk level from merged average
+          if (prev.averageScore > 40) prev.riskLevel = 'riesgo_muy_alto';
+          else if (prev.averageScore > 30) prev.riskLevel = 'riesgo_alto';
+          else if (prev.averageScore > 20) prev.riskLevel = 'riesgo_medio';
+          else if (prev.averageScore > 10) prev.riskLevel = 'riesgo_bajo';
+          else prev.riskLevel = 'sin_riesgo';
+        } else {
+          seen.set(d.dimension, mergedDimensions.length);
+          mergedDimensions.push({ ...d });
+        }
+      });
+
+      // Re-sort after merge
+      mergedDimensions.sort((a, b) => {
+        const riskOrder = {
+          'riesgo_muy_alto': 4, 'riesgo_alto': 3, 'riesgo_medio': 2,
+          'riesgo_bajo': 1, 'sin_riesgo': 0
+        };
+        return riskOrder[b.riskLevel as keyof typeof riskOrder] -
                riskOrder[a.riskLevel as keyof typeof riskOrder] ||
                b.averageScore - a.averageScore;
       });
 
       // Identify critical areas
-      const criticalAreas = dimensionScores
+      const criticalAreas = mergedDimensions
         .filter(d => d.riskLevel === 'riesgo_alto' || d.riskLevel === 'riesgo_muy_alto')
         .slice(0, 5)
         .map(d => d.dimension);
@@ -297,7 +388,7 @@ export default function OrganizationalDashboard() {
         averageCompletionRate: totalParticipants > 0 ? 100 : 0,
         riskDistribution,
         criticalAreas,
-        topDimensions: dimensionScores.slice(0, 10)
+        topDimensions: mergedDimensions.slice(0, 10)
       };
 
       setMetrics(organizationalMetrics);
@@ -341,7 +432,7 @@ export default function OrganizationalDashboard() {
     if (!metrics) return [];
     
     return metrics.topDimensions.slice(0, 8).map(dim => ({
-      name: dim.dimension.replace(/_/g, ' ').substring(0, 15),
+      name: dim.dimension.substring(0, 15),
       score: dim.averageScore,
       participants: dim.affectedParticipants,
       fill: getRiskColor(dim.riskLevel)
@@ -478,7 +569,7 @@ export default function OrganizationalDashboard() {
                       {metrics.criticalAreas.map((area, index) => (
                         <div key={index} className="bg-white rounded p-3 border border-red-200">
                           <span className="text-sm font-medium text-red-800">
-                            {area.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                            {area}
                           </span>
                         </div>
                       ))}
@@ -568,7 +659,7 @@ export default function OrganizationalDashboard() {
                         {metrics.topDimensions.map((dimension, index) => (
                           <tr key={index} className="hover:bg-gray-50">
                             <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                              {dimension.dimension.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                              {dimension.dimension}
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                               {dimension.averageScore.toFixed(1)}%
@@ -582,12 +673,17 @@ export default function OrganizationalDashboard() {
                               {dimension.affectedParticipants}
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap">
-                              {index < 3 && (dimension.riskLevel === 'riesgo_alto' || dimension.riskLevel === 'riesgo_muy_alto') ? (
+                              {dimension.riskLevel === 'riesgo_muy_alto' ? (
                                 <span className="inline-flex items-center px-2 py-1 text-xs font-medium bg-red-100 text-red-800 rounded">
                                   <AlertTriangle className="h-3 w-3 mr-1" />
                                   Crítica
                                 </span>
-                              ) : index < 5 && dimension.riskLevel === 'riesgo_medio' ? (
+                              ) : dimension.riskLevel === 'riesgo_alto' ? (
+                                <span className="inline-flex items-center px-2 py-1 text-xs font-medium bg-orange-100 text-orange-800 rounded">
+                                  <AlertTriangle className="h-3 w-3 mr-1" />
+                                  Alta
+                                </span>
+                              ) : dimension.riskLevel === 'riesgo_medio' ? (
                                 <span className="inline-flex items-center px-2 py-1 text-xs font-medium bg-yellow-100 text-yellow-800 rounded">
                                   <TrendingUp className="h-3 w-3 mr-1" />
                                   Media

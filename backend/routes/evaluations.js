@@ -59,7 +59,12 @@ router.get('/', auth, async (req, res) => {
     const evaluations = await query
       .limit(limit)
       .offset(offset)
-      .select('evaluations.*', 'companies.name as company_name');
+      .select(
+        'evaluations.*',
+        'companies.name as company_name',
+        db.raw('(SELECT COUNT(*) FROM participant_evaluations pe WHERE pe.evaluation_id = evaluations.id) as total_participants'),
+        db.raw("(SELECT COUNT(*) FROM participant_evaluations pe WHERE pe.evaluation_id = evaluations.id AND pe.status = 'completed') as completed_participants")
+      );
 
     // Get total count
     const totalQuery = db('evaluations')
@@ -73,23 +78,25 @@ router.get('/', auth, async (req, res) => {
     const [{ count }] = await totalQuery;
 
     res.json({
-      evaluations: evaluations.map(evaluation => ({
-        id: evaluation.id,
-        companyId: evaluation.company_id,
-        companyName: evaluation.company_name,
-        name: evaluation.name,
-        description: evaluation.description,
-        startDate: evaluation.start_date,
-        endDate: evaluation.end_date,
-        status: evaluation.status,
-        totalParticipants: evaluation.total_participants,
-        completedParticipants: evaluation.completed_participants,
-        progress: evaluation.total_participants > 0
-          ? Math.round((evaluation.completed_participants / evaluation.total_participants) * 100)
-          : 0,
-        createdAt: evaluation.created_at,
-        updatedAt: evaluation.updated_at
-      })),
+      evaluations: evaluations.map(evaluation => {
+        const total = parseInt(evaluation.total_participants) || 0;
+        const completed = parseInt(evaluation.completed_participants) || 0;
+        return {
+          id: evaluation.id,
+          companyId: evaluation.company_id,
+          companyName: evaluation.company_name,
+          name: evaluation.name,
+          description: evaluation.description,
+          startDate: evaluation.start_date,
+          endDate: evaluation.end_date,
+          status: evaluation.status,
+          totalParticipants: total,
+          completedParticipants: completed,
+          progress: total > 0 ? Math.round((completed / total) * 100) : 0,
+          createdAt: evaluation.created_at,
+          updatedAt: evaluation.updated_at
+        };
+      }),
       pagination: {
         page: parseInt(page),
         limit: parseInt(limit),
@@ -119,6 +126,17 @@ router.get('/:id', auth, async (req, res) => {
       return res.status(404).json({ error: 'Evaluación no encontrada' });
     }
 
+    // Get participant counts from participant_evaluations
+    const peCounts = await db('participant_evaluations')
+      .where('evaluation_id', id)
+      .select(
+        db.raw('COUNT(*) as total'),
+        db.raw("COUNT(CASE WHEN status = 'completed' THEN 1 END) as completed")
+      )
+      .first();
+    const total = parseInt(peCounts.total) || 0;
+    const completed = parseInt(peCounts.completed) || 0;
+
     // Get participants
     const participants = await db('participants')
       .where('evaluation_id', id)
@@ -131,10 +149,10 @@ router.get('/:id', auth, async (req, res) => {
       startDate: evaluation.start_date,
       endDate: evaluation.end_date,
       status: evaluation.status,
-      totalParticipants: evaluation.total_participants,
-      completedParticipants: evaluation.completed_participants,
-      progress: evaluation.total_participants > 0 
-        ? Math.round((evaluation.completed_participants / evaluation.total_participants) * 100)
+      totalParticipants: total,
+      completedParticipants: completed,
+      progress: total > 0
+        ? Math.round((completed / total) * 100)
         : 0,
       createdAt: evaluation.created_at,
       updatedAt: evaluation.updated_at,
@@ -256,6 +274,17 @@ router.put('/:id', auth, authorize('admin', 'evaluator'), async (req, res) => {
       new_values: updateData
     });
 
+    // Get participant counts from participant_evaluations
+    const peCountsUpdate = await db('participant_evaluations')
+      .where('evaluation_id', id)
+      .select(
+        db.raw('COUNT(*) as total'),
+        db.raw("COUNT(CASE WHEN status = 'completed' THEN 1 END) as completed")
+      )
+      .first();
+    const totalUpdate = parseInt(peCountsUpdate.total) || 0;
+    const completedUpdate = parseInt(peCountsUpdate.completed) || 0;
+
     res.json({
       id: evaluation.id,
       name: evaluation.name,
@@ -263,10 +292,10 @@ router.put('/:id', auth, authorize('admin', 'evaluator'), async (req, res) => {
       startDate: evaluation.start_date,
       endDate: evaluation.end_date,
       status: evaluation.status,
-      totalParticipants: evaluation.total_participants,
-      completedParticipants: evaluation.completed_participants,
-      progress: evaluation.total_participants > 0 
-        ? Math.round((evaluation.completed_participants / evaluation.total_participants) * 100)
+      totalParticipants: totalUpdate,
+      completedParticipants: completedUpdate,
+      progress: totalUpdate > 0
+        ? Math.round((completedUpdate / totalUpdate) * 100)
         : 0,
       createdAt: evaluation.created_at,
       updatedAt: evaluation.updated_at
@@ -558,17 +587,31 @@ router.post('/:evaluationId/import-excel', auth, authorize('admin', 'evaluator')
     const errors = [];
     const created = [];
 
+    // Pre-fetch existing participants and assignments in bulk (avoids per-row DB queries)
+    const existingParticipants = await db('participants')
+      .where('company_id', evaluation.company_id)
+      .select('id', 'email');
+    const participantsByEmail = {};
+    existingParticipants.forEach(p => { participantsByEmail[p.email] = p; });
+
+    const existingPEs = await db('participant_evaluations')
+      .where('evaluation_id', evaluationId)
+      .select('participant_id');
+    const assignedParticipantIds = new Set(existingPEs.map(pe => pe.participant_id));
+
+    // Collect all rows to process
+    const rowsToProcess = [];
+
     for (const [formKey, sheetName] of Object.entries(sheets)) {
       const layout = LAYOUT[formKey];
       const ws = workbook.Sheets[sheetName];
       const data = XLSX.utils.sheet_to_json(ws, { header: 1 });
 
-      // Data starts at row index 2 (row 0 = section headers, row 1 = column headers)
       for (let rowIdx = 2; rowIdx < data.length; rowIdx++) {
         const row = data[rowIdx];
         if (!row || row[0] === undefined || row[0] === '' || row[0] === null) continue;
 
-        const rowNum = rowIdx + 1; // 1-based for error messages
+        const rowNum = rowIdx + 1;
         const nombre = (row[3] || '').toString().trim();
         const docId = (row[2] || '').toString().trim();
 
@@ -577,208 +620,209 @@ router.post('/:evaluationId/import-excel', auth, authorize('admin', 'evaluator')
           continue;
         }
 
-        try {
-          // Split nombre into firstName and lastName
-          const nameParts = nombre.split(' ');
-          const firstName = nameParts.slice(0, Math.ceil(nameParts.length / 2)).join(' ') || nombre;
-          const lastName = nameParts.slice(Math.ceil(nameParts.length / 2)).join(' ') || '';
+        const documentNumber = docId || `IMPORT_${rowIdx}`;
+        const email = `cc_${documentNumber}@temp.com`.toLowerCase();
 
-          const tipoCargo = row[19] || '';
+        // Check if already assigned using pre-fetched data
+        const existingP = participantsByEmail[email];
+        if (existingP && assignedParticipantIds.has(existingP.id)) {
+          totalSkipped++;
+          continue;
+        }
+
+        rowsToProcess.push({ row, rowNum, nombre, docId, documentNumber, email, formKey, layout });
+      }
+    }
+
+    // Process new participants in a single transaction with batch inserts
+    if (rowsToProcess.length > 0) {
+      await db.transaction(async (trx) => {
+        // Batch: create all new participants at once
+        const newParticipantInserts = [];
+        const existingEmailSet = new Set(Object.keys(participantsByEmail));
+
+        for (const item of rowsToProcess) {
+          if (!existingEmailSet.has(item.email)) {
+            const nameParts = item.nombre.split(' ');
+            const firstName = nameParts.slice(0, Math.ceil(nameParts.length / 2)).join(' ') || item.nombre;
+            const lastName = nameParts.slice(Math.ceil(nameParts.length / 2)).join(' ') || '';
+            const formType = item.formKey === 'FA' ? 'A' : 'B';
+
+            newParticipantInserts.push({
+              company_id: evaluation.company_id,
+              email: item.email,
+              demographic_data: JSON.stringify({
+                firstName, lastName,
+                documentType: 'CC',
+                documentNumber: item.documentNumber,
+                birthYear: parseInt(item.row[6]) || 1990,
+                gender: mapGender(item.row[5]),
+                maritalStatus: mapMaritalStatus(item.row[7]),
+                educationLevel: (item.row[8] || '').toString(),
+                department: (item.row[4] || '').toString(),
+                position: (item.row[18] || '').toString(),
+                contractType: (item.row[22] || '').toString(),
+                employmentType: (item.row[19] || '').toString(),
+                tenureMonths: 0,
+                salaryRange: (item.row[24] || '').toString(),
+                workHoursPerDay: parseInt(item.row[23]) || 8,
+                workDaysPerWeek: 5,
+                formType
+              }),
+              active: true
+            });
+            existingEmailSet.add(item.email);
+          }
+        }
+
+        if (newParticipantInserts.length > 0) {
+          const inserted = await trx('participants').insert(newParticipantInserts).returning('*');
+          inserted.forEach(p => { participantsByEmail[p.email] = p; });
+        }
+
+        // Batch: create all participant_evaluations at once
+        const peInserts = rowsToProcess.map(item => ({
+          evaluation_id: parseInt(evaluationId),
+          participant_id: participantsByEmail[item.email].id,
+          status: 'completed',
+          assigned_at: new Date(),
+          completed_at: new Date(),
+          access_token: crypto.randomBytes(32).toString('hex'),
+          token_expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+        }));
+
+        const insertedPEs = await trx('participant_evaluations').insert(peInserts).returning('*');
+
+        // Build a map from participant_id to pe.id
+        const peByParticipantId = {};
+        insertedPEs.forEach(pe => { peByParticipantId[pe.participant_id] = pe; });
+
+        // Batch: build all responses and results, then insert in bulk
+        const allResponseInserts = [];
+        const allResultInserts = [];
+
+        for (const item of rowsToProcess) {
+          const participant = participantsByEmail[item.email];
+          const pe = peByParticipantId[participant.id];
+          if (!pe) continue;
+
+          const { row, layout, formKey } = item;
           const formType = formKey === 'FA' ? 'A' : 'B';
-          const gender = mapGender(row[5]);
-          const birthYear = parseInt(row[6]) || 1990;
-          const maritalStatus = mapMaritalStatus(row[7]);
-          const documentNumber = docId || `IMPORT_${rowIdx}`;
+          const occupationalGroup = formType === 'B' ? 'auxiliares' : 'jefes';
 
-          // Build demographic_data for participant record
-          const demographicData = {
-            firstName,
-            lastName,
-            documentType: 'CC',
-            documentNumber,
-            birthYear,
-            gender,
-            maritalStatus,
-            educationLevel: (row[8] || '').toString(),
-            department: (row[4] || '').toString(), // Área
-            position: (row[18] || '').toString(), // Cargo
-            contractType: (row[22] || '').toString(),
-            employmentType: (tipoCargo || '').toString(),
-            tenureMonths: 0,
-            salaryRange: (row[24] || '').toString(),
-            workHoursPerDay: parseInt(row[23]) || 8,
-            workDaysPerWeek: 5,
-            formType
-          };
-
-          // Use transaction for each participant to avoid partial state
-          await db.transaction(async (trx) => {
-            // 1. Create or find participant
-            const email = `cc_${documentNumber}@temp.com`.toLowerCase();
-            let participant = await trx('participants')
-              .where('email', email)
-              .where('company_id', evaluation.company_id)
-              .first();
-
-            if (!participant) {
-              [participant] = await trx('participants')
-                .insert({
-                  company_id: evaluation.company_id,
-                  email,
-                  demographic_data: JSON.stringify(demographicData),
-                  active: true
-                })
-                .returning('*');
-            }
-
-            // 2. Check if already assigned to this evaluation
-            const existingPE = await trx('participant_evaluations')
-              .where('evaluation_id', evaluationId)
-              .where('participant_id', participant.id)
-              .first();
-
-            if (existingPE) {
-              totalSkipped++;
-              return; // Skip this participant, already assigned
-            }
-
-            // 3. Create participant_evaluation with access token
-            const accessToken = crypto.randomBytes(32).toString('hex');
-            const tokenExpiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
-
-            const [pe] = await trx('participant_evaluations')
-              .insert({
-                evaluation_id: parseInt(evaluationId),
-                participant_id: participant.id,
-                status: 'completed',
-                assigned_at: new Date(),
-                completed_at: new Date(),
-                access_token: accessToken,
-                token_expires_at: tokenExpiresAt
-              })
-              .returning('*');
-
-            // 4. Build and save responses
-
-            // 4a. Ficha de datos
-            const fichaData = buildFichaFromExcelRow(row);
-            await trx('responses').insert({
+          try {
+            // Ficha de datos
+            allResponseInserts.push({
               participant_evaluation_id: pe.id,
               questionnaire_type: 'ficha_datos',
-              responses: JSON.stringify(fichaData),
+              responses: JSON.stringify(buildFichaFromExcelRow(row)),
               completed_at: new Date()
             });
 
-            // 4b. Intralaboral responses
+            // Intralaboral (Excel: Siempre=0..Nunca=4 → BRS: Siempre=4..Nunca=0)
             const intraResponses = {};
             for (let i = 0; i < layout.intraCount; i++) {
               const val = row[layout.intraStart + i];
               if (val !== undefined && val !== null && val !== '') {
-                intraResponses[String(i + 1)] = parseInt(val) || 0;
+                intraResponses[String(i + 1)] = 4 - (parseInt(val) || 0);
               }
             }
-            await trx('responses').insert({
+            allResponseInserts.push({
               participant_evaluation_id: pe.id,
               questionnaire_type: layout.type,
               responses: JSON.stringify(intraResponses),
               completed_at: new Date()
             });
 
-            // 4c. Extralaboral responses
+            // Extralaboral (Excel: Siempre=0..Nunca=4 → BRS: Siempre=4..Nunca=0)
             const extraResponses = {};
             for (let i = 0; i < layout.extraCount; i++) {
               const val = row[layout.extraStart + i];
               if (val !== undefined && val !== null && val !== '') {
-                extraResponses[String(i + 1)] = parseInt(val) || 0;
+                extraResponses[String(i + 1)] = 4 - (parseInt(val) || 0);
               }
             }
-            await trx('responses').insert({
+            allResponseInserts.push({
               participant_evaluation_id: pe.id,
               questionnaire_type: 'extralaboral',
               responses: JSON.stringify(extraResponses),
               completed_at: new Date()
             });
 
-            // 4d. Estrés responses
+            // Estrés (Excel: Siempre=0..Nunca=3 → BRS: Siempre=3..Nunca=0)
             const stressResponses = {};
             for (let i = 0; i < layout.stressCount; i++) {
               const val = row[layout.stressStart + i];
               if (val !== undefined && val !== null && val !== '') {
-                stressResponses[String(i + 1)] = parseInt(val) || 0;
+                stressResponses[String(i + 1)] = 3 - (parseInt(val) || 0);
               }
             }
-            await trx('responses').insert({
+            allResponseInserts.push({
               participant_evaluation_id: pe.id,
               questionnaire_type: 'estres',
               responses: JSON.stringify(stressResponses),
               completed_at: new Date()
             });
 
-            // 5. Calculate results using the BRS engine
-            const occupationalGroup = formType === 'B' ? 'auxiliares' : 'jefes';
+            // Calculate results (CPU-only, no DB)
             const allResults = [];
-
-            // Calculate intralaboral
             const intraFormatted = Object.entries(intraResponses).map(([qn, rv]) => ({
               question_number: parseInt(qn), response_value: parseInt(rv)
             }));
             if (intraFormatted.length > 0) {
-              const intraResults = await calculateResults(layout.type, intraFormatted, { occupationalGroup });
-              allResults.push(...intraResults);
+              const r = await calculateResults(layout.type, intraFormatted, { occupationalGroup });
+              allResults.push(...r);
             }
-
-            // Calculate extralaboral
             const extraFormatted = Object.entries(extraResponses).map(([qn, rv]) => ({
               question_number: parseInt(qn), response_value: parseInt(rv)
             }));
             if (extraFormatted.length > 0) {
-              const extraResults = await calculateResults('extralaboral', extraFormatted, { occupationalGroup });
-              allResults.push(...extraResults);
+              const r = await calculateResults('extralaboral', extraFormatted, { occupationalGroup });
+              allResults.push(...r);
             }
-
-            // Calculate estrés
             const stressFormatted = Object.entries(stressResponses).map(([qn, rv]) => ({
               question_number: parseInt(qn), response_value: parseInt(rv)
             }));
             if (stressFormatted.length > 0) {
-              const stressResults = await calculateResults('estres', stressFormatted, { occupationalGroup });
-              allResults.push(...stressResults);
+              const r = await calculateResults('estres', stressFormatted, { occupationalGroup });
+              allResults.push(...r);
             }
 
-            // Group and save results
+            // Group results by type
             const resultsByType = {};
             allResults.forEach(r => {
               if (!resultsByType[r.questionnaireType]) resultsByType[r.questionnaireType] = [];
               resultsByType[r.questionnaireType].push({
-                dimension: r.dimension,
-                rawScore: r.rawScore,
-                transformedScore: r.transformedScore,
-                percentile: r.percentile,
-                riskLevel: r.riskLevel
+                dimension: r.dimension, rawScore: r.rawScore,
+                transformedScore: r.transformedScore, percentile: r.percentile, riskLevel: r.riskLevel
+              });
+            });
+            Object.entries(resultsByType).forEach(([qt, typeResults]) => {
+              allResultInserts.push({
+                participant_evaluation_id: pe.id,
+                questionnaire_type: qt,
+                results: JSON.stringify(typeResults),
+                calculated_at: new Date()
               });
             });
 
-            const resultInserts = Object.entries(resultsByType).map(([qt, typeResults]) => ({
-              participant_evaluation_id: pe.id,
-              questionnaire_type: qt,
-              results: JSON.stringify(typeResults),
-              calculated_at: new Date()
-            }));
-
-            if (resultInserts.length > 0) {
-              await trx('results').insert(resultInserts);
-            }
-
             totalCreated++;
-            created.push({ row: rowNum, name: nombre, form: formKey });
-          });
-
-        } catch (err) {
-          totalErrors++;
-          errors.push({ row: rowNum, name: nombre, error: err.message });
-          console.error(`Import error row ${rowNum} (${nombre}):`, err.message);
+            created.push({ row: item.rowNum, name: item.nombre, form: formKey });
+          } catch (err) {
+            totalErrors++;
+            errors.push({ row: item.rowNum, name: item.nombre, error: err.message });
+            console.error(`Import error row ${item.rowNum} (${item.nombre}):`, err.message);
+          }
         }
-      }
+
+        // Batch insert all responses (in chunks of 100 to avoid query size limits)
+        for (let i = 0; i < allResponseInserts.length; i += 100) {
+          await trx('responses').insert(allResponseInserts.slice(i, i + 100));
+        }
+        for (let i = 0; i < allResultInserts.length; i += 100) {
+          await trx('results').insert(allResultInserts.slice(i, i + 100));
+        }
+      });
     }
 
     // Log the import
@@ -795,7 +839,7 @@ router.post('/:evaluationId/import-excel', auth, authorize('admin', 'evaluator')
       totalCreated,
       totalSkipped,
       totalErrors,
-      errors: errors.slice(0, 20), // Limit error detail
+      errors: errors.slice(0, 20),
       created: created.slice(0, 20)
     });
 
