@@ -2,6 +2,7 @@ import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
 import Image from 'next/image';
+import Head from 'next/head';
 
 export default function HomePage() {
   const router = useRouter();
@@ -45,8 +46,149 @@ export default function HomePage() {
     }
   }, [showVideo]);
 
+  const siteUrl = 'https://brs-abaxh.ondigitalocean.app';
+  const pageTitle = 'BRS Digital | Software Bateria de Riesgo Psicosocial Colombia';
+  const pageDescription = 'Plataforma digital para psicologos ocupacionales en Colombia. Aplica la Bateria de Riesgo Psicosocial del Ministerio de Proteccion Social: cuestionarios digitales, calculos automaticos con baremos oficiales y reportes PDF. Cumple Resolucion 2646 de 2008 y Resolucion 2764 de 2022.';
+
+  const faqItems = [
+    {
+      question: 'Que es la Bateria de Riesgo Psicosocial?',
+      answer: 'La Bateria de Riesgo Psicosocial es un conjunto de instrumentos validados por el Ministerio de la Proteccion Social de Colombia y la Pontificia Universidad Javeriana para evaluar factores de riesgo psicosocial en el trabajo. Incluye cuestionarios intralaborales (Forma A y B), extralaborales, de estres y ficha de datos sociodemograficos. Su aplicacion es obligatoria segun la Resolucion 2646 de 2008.',
+    },
+    {
+      question: 'Quien puede aplicar la Bateria de Riesgo Psicosocial en Colombia?',
+      answer: 'Segun la normativa colombiana (Resolucion 2646 de 2008 y Resolucion 2764 de 2022), la bateria debe ser aplicada por un psicologo profesional con licencia vigente en Seguridad y Salud en el Trabajo (SST), o con especializacion en salud ocupacional o factores psicosociales laborales.',
+    },
+    {
+      question: 'Que incluye el software BRS Digital?',
+      answer: 'BRS Digital incluye los 4 cuestionarios oficiales digitalizados (282 preguntas), motor de calculo automatico con los baremos oficiales del Ministerio (Tablas 29-34), clasificacion en 5 niveles de riesgo para 45 dimensiones y 10 dominios, generacion de reportes PDF individuales y organizacionales, y gestion multi-empresa para psicologos independientes.',
+    },
+    {
+      question: 'BRS Digital cumple con la Resolucion 2764 de 2022?',
+      answer: 'Si. BRS Digital implementa fielmente la Bateria de Instrumentos para la Evaluacion de Factores de Riesgo Psicosocial adoptada por la Resolucion 2764 de 2022 del Ministerio del Trabajo, que actualiza y unifica la normativa de la Resolucion 2646 de 2008. Los baremos, items invertidos y factores de transformacion son los oficiales del documento de validacion.',
+    },
+    {
+      question: 'Cuanto cuesta usar BRS Digital?',
+      answer: 'BRS Digital ofrece un plan gratuito con 5 evaluaciones incluidas para conocer la plataforma. Los planes de pago empiezan desde $5.000 COP por prueba (plan Estandar) hasta $2.000 COP por prueba (plan Corporativo). No hay mensualidades ni compromisos de permanencia. Se paga solo por evaluacion realizada.',
+    },
+    {
+      question: 'Que diferencia hay entre Forma A y Forma B del cuestionario intralaboral?',
+      answer: 'La Forma A esta disenada para trabajadores con cargos de jefatura, profesionales o tecnicos (123 items, 19 dimensiones). La Forma B aplica a trabajadores con cargos auxiliares u operarios (97 items, 16 dimensiones). La principal diferencia es que la Forma A incluye dimensiones adicionales de liderazgo y relaciones sociales propias de cargos con responsabilidad sobre otros.',
+    },
+  ];
+
+  const jsonLd = {
+    '@context': 'https://schema.org',
+    '@graph': [
+      {
+        '@type': 'SoftwareApplication',
+        name: 'BRS Digital',
+        applicationCategory: 'BusinessApplication',
+        operatingSystem: 'Web',
+        description: pageDescription,
+        url: siteUrl,
+        offers: [
+          {
+            '@type': 'Offer',
+            price: '0',
+            priceCurrency: 'COP',
+            name: 'Plan Gratis',
+            description: '5 evaluaciones incluidas sin costo',
+          },
+          {
+            '@type': 'Offer',
+            price: '5000',
+            priceCurrency: 'COP',
+            name: 'Plan Estandar',
+            description: 'Evaluaciones ilimitadas, hasta 5 empresas',
+            priceSpecification: {
+              '@type': 'UnitPriceSpecification',
+              price: '5000',
+              priceCurrency: 'COP',
+              unitText: 'por prueba',
+            },
+          },
+        ],
+        featureList: [
+          '282 preguntas oficiales del Ministerio de Proteccion Social',
+          'Baremos oficiales Tablas 29-34',
+          '45 dimensiones y 10 dominios evaluados',
+          '5 niveles de riesgo psicosocial',
+          'Reportes PDF individuales y organizacionales',
+          'Gestion multi-empresa para psicologos',
+        ],
+      },
+      {
+        '@type': 'Organization',
+        name: 'BRS Digital',
+        url: siteUrl,
+        logo: `${siteUrl}/logo.png`,
+        description: 'Plataforma SaaS para la evaluacion de factores de riesgo psicosocial en Colombia',
+        areaServed: {
+          '@type': 'Country',
+          name: 'Colombia',
+        },
+      },
+      {
+        '@type': 'FAQPage',
+        mainEntity: faqItems.map((item) => ({
+          '@type': 'Question',
+          name: item.question,
+          acceptedAnswer: {
+            '@type': 'Answer',
+            text: item.answer,
+          },
+        })),
+      },
+      {
+        '@type': 'WebPage',
+        name: pageTitle,
+        description: pageDescription,
+        url: siteUrl,
+        inLanguage: 'es-CO',
+        isPartOf: {
+          '@type': 'WebSite',
+          name: 'BRS Digital',
+          url: siteUrl,
+        },
+      },
+    ],
+  };
+
   return (
     <div className="min-h-screen" style={{ backgroundColor: '#e6f4fd' }}>
+      <Head>
+        <title>{pageTitle}</title>
+        <meta name="description" content={pageDescription} />
+        <meta name="keywords" content="bateria riesgo psicosocial, software riesgo psicosocial Colombia, bateria psicosocial digital, resolucion 2646 2008, resolucion 2764 2022, evaluacion psicosocial laboral, riesgo psicosocial empresas, psicologo ocupacional Colombia, cuestionario intralaboral, cuestionario extralaboral, estres laboral Colombia, SST Colombia, seguridad salud trabajo" />
+        <link rel="canonical" href={siteUrl} />
+
+        {/* Open Graph */}
+        <meta property="og:type" content="website" />
+        <meta property="og:locale" content="es_CO" />
+        <meta property="og:site_name" content="BRS Digital" />
+        <meta property="og:title" content={pageTitle} />
+        <meta property="og:description" content={pageDescription} />
+        <meta property="og:url" content={siteUrl} />
+        <meta property="og:image" content={`${siteUrl}/logo.png`} />
+        <meta property="og:image:alt" content="BRS Digital - Software Bateria de Riesgo Psicosocial" />
+
+        {/* Twitter Card */}
+        <meta name="twitter:card" content="summary_large_image" />
+        <meta name="twitter:title" content={pageTitle} />
+        <meta name="twitter:description" content={pageDescription} />
+        <meta name="twitter:image" content={`${siteUrl}/logo.png`} />
+
+        {/* Geo targeting Colombia */}
+        <meta name="geo.region" content="CO" />
+        <meta name="geo.placename" content="Colombia" />
+
+        {/* JSON-LD Structured Data */}
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+        />
+      </Head>
 
       {/* Video Modal */}
       {showVideo && (
@@ -81,7 +223,7 @@ export default function HomePage() {
       <nav className="flex items-center justify-between px-8 lg:px-16 py-4 bg-white border-b border-gray-100 shadow-sm">
         {/* Logo */}
         <Link href="/" className="flex items-center">
-          <Image src="/logo.png" alt="BRS Digital" width={210} height={60} className="h-[60px] w-auto" />
+          <Image src="/logo.png" alt="BRS Digital - Software Bateria de Riesgo Psicosocial Colombia" width={210} height={60} className="h-[60px] w-auto" />
         </Link>
 
         {/* Spacer */}
@@ -569,12 +711,53 @@ export default function HomePage() {
         </div>
       </section>
 
+      {/* FAQ Section - AEO Optimized */}
+      <section className="max-w-screen-xl mx-auto px-8 lg:px-16 py-24" style={{ backgroundColor: '#e6f4fd' }}>
+        <div className="text-center mb-16">
+          <h2 className="text-3xl lg:text-4xl font-bold text-gray-900 mb-4">
+            Preguntas frecuentes sobre la Bateria de Riesgo Psicosocial
+          </h2>
+          <p className="text-gray-500 text-lg max-w-2xl mx-auto">
+            Resolvemos las dudas mas comunes de psicologos ocupacionales sobre la aplicacion digital de la BRS en Colombia.
+          </p>
+        </div>
+
+        <div className="max-w-3xl mx-auto space-y-4">
+          {faqItems.map((item, index) => (
+            <details
+              key={index}
+              className="group bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden"
+            >
+              <summary className="flex items-center justify-between cursor-pointer px-6 py-5 text-left">
+                <h3 className="text-base font-semibold text-gray-900 pr-4">
+                  {item.question}
+                </h3>
+                <svg
+                  className="w-5 h-5 text-gray-400 flex-shrink-0 transition-transform group-open:rotate-180"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                </svg>
+              </summary>
+              <div className="px-6 pb-5">
+                <p className="text-sm text-gray-600 leading-relaxed">
+                  {item.answer}
+                </p>
+              </div>
+            </details>
+          ))}
+        </div>
+      </section>
+
       {/* Footer */}
       <footer style={{ borderTop: '1px solid #b3d4ed', backgroundColor: '#daeefa' }} className="px-8 lg:px-16 py-8">
         <div className="max-w-screen-xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
           <span className="font-ibrand text-lg text-gray-700">BRS Digital</span>
           <p className="text-xs text-gray-400 text-center">
-            Basado en la Batería de Riesgo Psicosocial — Resolución 2646 de 2008 — Ministerio de la Protección Social de Colombia
+            Software basado en la Bateria de Riesgo Psicosocial del Ministerio de la Proteccion Social de Colombia — Resolucion 2646 de 2008 — Resolucion 2764 de 2022
           </p>
           <div className="flex items-center gap-6">
             <a href="#" className="text-xs text-gray-400 hover:text-gray-700 transition-colors">Privacidad</a>
