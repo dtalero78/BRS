@@ -123,6 +123,7 @@ export default function HomePage() {
         name: 'BRS Digital',
         url: siteUrl,
         logo: `${siteUrl}/logo.png`,
+        image: `${siteUrl}/seoImagen.png`,
         description: 'Plataforma SaaS para la evaluacion de factores de riesgo psicosocial en Colombia',
         areaServed: {
           '@type': 'Country',
@@ -170,14 +171,16 @@ export default function HomePage() {
         <meta property="og:title" content={pageTitle} />
         <meta property="og:description" content={pageDescription} />
         <meta property="og:url" content={siteUrl} />
-        <meta property="og:image" content={`${siteUrl}/logo.png`} />
-        <meta property="og:image:alt" content="BRS Digital - Software Bateria de Riesgo Psicosocial" />
+        <meta property="og:image" content={`${siteUrl}/seoImagen.png`} />
+        <meta property="og:image:width" content="1200" />
+        <meta property="og:image:height" content="630" />
+        <meta property="og:image:alt" content="BRS Digital - Software Bateria de Riesgo Psicosocial Colombia" />
 
         {/* Twitter Card */}
         <meta name="twitter:card" content="summary_large_image" />
         <meta name="twitter:title" content={pageTitle} />
         <meta name="twitter:description" content={pageDescription} />
-        <meta name="twitter:image" content={`${siteUrl}/logo.png`} />
+        <meta name="twitter:image" content={`${siteUrl}/seoImagen.png`} />
 
         {/* Geo targeting Colombia */}
         <meta name="geo.region" content="CO" />
