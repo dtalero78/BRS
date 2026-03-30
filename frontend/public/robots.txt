@@ -1,7 +1,7 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://brs-abaxh.ondigitalocean.app/sitemap.xml
+Sitemap: https://bateriariesgopsicosocial.com/sitemap.xml
 
 # Allow AI crawlers
 User-agent: GPTBot

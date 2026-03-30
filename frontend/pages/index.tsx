@@ -46,7 +46,7 @@ export default function HomePage() {
     }
   }, [showVideo]);
 
-  const siteUrl = 'https://brs-abaxh.ondigitalocean.app';
+  const siteUrl = 'https://bateriariesgopsicosocial.com';
   const pageTitle = 'BRS Digital | Software Bateria de Riesgo Psicosocial Colombia';
   const pageDescription = 'Plataforma digital para psicologos ocupacionales en Colombia. Aplica la Bateria de Riesgo Psicosocial del Ministerio de Proteccion Social: cuestionarios digitales, calculos automaticos con baremos oficiales y reportes PDF. Cumple Resolucion 2646 de 2008 y Resolucion 2764 de 2022.';
 
