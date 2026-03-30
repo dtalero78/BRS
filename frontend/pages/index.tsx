@@ -235,6 +235,12 @@ export default function HomePage() {
         {/* CTA Buttons */}
         <div className="flex items-center gap-3">
           <Link
+            href="/blog"
+            className="text-sm font-medium text-gray-600 hover:text-gray-900 transition-colors"
+          >
+            Blog
+          </Link>
+          <Link
             href="/auth/login"
             className="text-sm font-medium text-gray-800 border border-gray-400 rounded-full px-5 py-2 hover:border-gray-700 hover:bg-white transition-all"
           >
@@ -763,6 +769,7 @@ export default function HomePage() {
             Software basado en la Bateria de Riesgo Psicosocial del Ministerio de la Proteccion Social de Colombia — Resolucion 2646 de 2008 — Resolucion 2764 de 2022
           </p>
           <div className="flex items-center gap-6">
+            <Link href="/blog" className="text-xs text-gray-400 hover:text-gray-700 transition-colors">Blog</Link>
             <a href="#" className="text-xs text-gray-400 hover:text-gray-700 transition-colors">Privacidad</a>
             <a href="#" className="text-xs text-gray-400 hover:text-gray-700 transition-colors">Términos</a>
             <a href="#" className="text-xs text-gray-400 hover:text-gray-700 transition-colors">Contacto</a>
