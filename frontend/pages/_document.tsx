@@ -10,6 +10,9 @@ export default function Document() {
         <link rel="apple-touch-icon" href="/logo.png" />
         <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
+        {/* Google Analytics - inline in head for static export compatibility */}
+        <script async src="https://www.googletagmanager.com/gtag/js?id=G-KT5D58PW0N" />
+        <script dangerouslySetInnerHTML={{ __html: `window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}gtag('js',new Date());gtag('config','G-KT5D58PW0N');` }} />
       </Head>
       <body>
         <Main />
