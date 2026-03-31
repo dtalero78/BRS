@@ -281,7 +281,7 @@ export default function HomePage() {
               href="/auth/register"
               className="inline-flex items-center justify-center gap-2 text-sm font-semibold text-white bg-gray-900 rounded-full px-7 py-3.5 hover:bg-gray-700 transition-colors"
             >
-              Comenzar gratis
+              Prueba gratis hoy
               <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M17 8l4 4m0 0l-4 4m4-4H3" />
               </svg>
@@ -515,6 +515,97 @@ export default function HomePage() {
               <p className="text-sm text-gray-500 leading-relaxed">{feature.description}</p>
             </div>
           ))}
+        </div>
+      </section>
+
+      {/* Cómo funciona - Steps */}
+      <section className="max-w-screen-xl mx-auto px-8 lg:px-16 py-24" style={{ backgroundColor: '#e6f4fd' }}>
+        <div className="text-center mb-16">
+          <h2 className="text-3xl lg:text-4xl font-bold text-gray-900 mb-4">
+            Crea tu primera evaluación en 3 pasos
+          </h2>
+          <p className="text-gray-500 text-lg max-w-xl mx-auto">
+            Sin configuraciones complicadas. Regístrate y empieza a evaluar en minutos.
+          </p>
+        </div>
+
+        <div className="grid md:grid-cols-3 gap-8 max-w-4xl mx-auto">
+          {[
+            {
+              step: '1',
+              title: 'Regístrate gratis',
+              description: 'Crea tu cuenta en segundos. Sin tarjeta de crédito ni compromisos.',
+              icon: (
+                <svg xmlns="http://www.w3.org/2000/svg" className="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 7.5v3m0 0v3m0-3h3m-3 0h-3m-2.25-4.125a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zM4 19.235v-.11a6.375 6.375 0 0112.75 0v.109A12.318 12.318 0 0110.374 21c-2.331 0-4.512-.645-6.374-1.766z" />
+                </svg>
+              ),
+            },
+            {
+              step: '2',
+              title: 'Crea tu evaluación',
+              description: 'Agrega tu empresa, participantes y asigna los cuestionarios oficiales.',
+              icon: (
+                <svg xmlns="http://www.w3.org/2000/svg" className="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 002.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 00-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 00.75-.75 2.25 2.25 0 00-.1-.664m-5.8 0A2.251 2.251 0 0113.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m0 0H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V9.375c0-.621-.504-1.125-1.125-1.125H8.25zM6.75 12h.008v.008H6.75V12zm0 3h.008v.008H6.75V15zm0 3h.008v.008H6.75V18z" />
+                </svg>
+              ),
+            },
+            {
+              step: '3',
+              title: 'Genera el reporte',
+              description: 'Obtén reportes PDF profesionales con resultados y plan de intervención.',
+              icon: (
+                <svg xmlns="http://www.w3.org/2000/svg" className="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+                </svg>
+              ),
+            },
+          ].map((item) => (
+            <div key={item.step} className="text-center">
+              <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-white border border-gray-200 shadow-sm mb-5 text-gray-900">
+                {item.icon}
+              </div>
+              <div className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-gray-900 text-white text-xs font-bold mb-3 -ml-6 -mt-12 relative z-10">
+                {item.step}
+              </div>
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">{item.title}</h3>
+              <p className="text-sm text-gray-500 leading-relaxed">{item.description}</p>
+            </div>
+          ))}
+        </div>
+
+        <div className="text-center mt-10">
+          <Link
+            href="/auth/register"
+            className="inline-flex items-center justify-center gap-2 text-sm font-semibold text-white bg-gray-900 rounded-full px-8 py-3.5 hover:bg-gray-700 transition-colors"
+          >
+            Comenzar ahora — es gratis
+          </Link>
+        </div>
+      </section>
+
+      {/* Video Demo Section */}
+      <section style={{ backgroundColor: '#cce5f8' }} className="py-20">
+        <div className="max-w-screen-xl mx-auto px-8 lg:px-16">
+          <div className="text-center mb-10">
+            <h2 className="text-3xl lg:text-4xl font-bold text-gray-900 mb-4">
+              Mira cómo funciona en 2 minutos
+            </h2>
+            <p className="text-gray-500 text-lg max-w-xl mx-auto">
+              Desde la creación de la evaluación hasta la generación del reporte PDF profesional.
+            </p>
+          </div>
+          <div className="max-w-4xl mx-auto">
+            <video
+              controls
+              preload="metadata"
+              poster="/seoImagen.png"
+              className="w-full rounded-2xl shadow-2xl border border-gray-200"
+            >
+              <source src="/introVideo.mp4" type="video/mp4" />
+            </video>
+          </div>
         </div>
       </section>
 
@@ -760,6 +851,20 @@ export default function HomePage() {
           ))}
         </div>
       </section>
+
+      {/* WhatsApp Floating Button */}
+      <a
+        href="https://wa.me/573008021701?text=Hola%2C%20quiero%20información%20sobre%20BRS%20Digital"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="fixed bottom-6 right-6 z-40 flex items-center gap-2 bg-green-500 hover:bg-green-600 text-white rounded-full pl-4 pr-5 py-3 shadow-lg hover:shadow-xl transition-all group"
+        aria-label="Contactar por WhatsApp"
+      >
+        <svg className="w-6 h-6" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
+        </svg>
+        <span className="text-sm font-semibold hidden sm:inline">WhatsApp</span>
+      </a>
 
       {/* Footer */}
       <footer style={{ borderTop: '1px solid #b3d4ed', backgroundColor: '#daeefa' }} className="px-8 lg:px-16 py-8">
