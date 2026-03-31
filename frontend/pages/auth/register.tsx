@@ -50,6 +50,12 @@ export default function RegisterPage() {
       const result = await response.json();
 
       if (response.ok) {
+        // Google Analytics conversion event
+        if (typeof window !== 'undefined' && (window as any).gtag) {
+          (window as any).gtag('event', 'sign_up', {
+            method: 'email',
+          });
+        }
         toast.success('Cuenta creada exitosamente');
         router.push('/auth/login');
       } else {
