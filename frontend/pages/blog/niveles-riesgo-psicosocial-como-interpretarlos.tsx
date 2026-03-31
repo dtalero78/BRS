@@ -11,12 +11,12 @@ export default function NivelesRiesgo() {
       keywords="niveles riesgo psicosocial, interpretar resultados bateria psicosocial, sin riesgo riesgo bajo medio alto muy alto, clasificacion riesgo psicosocial, baremos bateria psicosocial"
     >
       <p>
-        Despues de aplicar la <strong>Bateria de Riesgo Psicosocial</strong>, los puntajes transformados se clasifican en 5 niveles de riesgo. Entender que significa cada nivel y que acciones tomar es fundamental para que la evaluacion tenga impacto real en la organizacion.
+        Despues de <a href="/blog/guia-aplicar-bateria-riesgo-psicosocial">aplicar la Bateria de Riesgo Psicosocial</a>, los puntajes transformados se clasifican en 5 niveles de riesgo. Entender que significa cada nivel y que acciones tomar es fundamental para que la evaluacion tenga impacto real en la organizacion.
       </p>
 
       <h2>Los 5 niveles de riesgo</h2>
       <p>
-        La clasificacion se basa en los <strong>baremos oficiales del Ministerio de la Proteccion Social</strong> (Tablas 29 a 34 del documento de validacion). Cada nivel tiene un significado especifico y requiere acciones diferentes:
+        La clasificacion se basa en los <strong><a href="/blog/baremos-oficiales-bateria-riesgo-psicosocial">baremos oficiales del Ministerio de la Proteccion Social</a></strong> (Tablas 29 a 34 del documento de validacion). Cada nivel tiene un significado especifico y requiere acciones diferentes:
       </p>
 
       <h3>Nivel 1: Sin riesgo o riesgo despreciable</h3>
@@ -118,7 +118,7 @@ export default function NivelesRiesgo() {
 
       <h2>El plan de intervencion basado en niveles</h2>
       <p>
-        La Resolucion 2764 de 2022 exige un plan de intervencion documentado. La prioridad debe ser:
+        La <a href="/blog/resolucion-2764-de-2022-que-cambio">Resolucion 2764 de 2022</a> exige un <a href="/blog/plan-intervencion-riesgo-psicosocial">plan de intervencion</a> documentado. La prioridad debe ser:
       </p>
       <ol>
         <li><strong>Riesgo muy alto</strong>: Intervencion inmediata (primeros 3 meses)</li>
@@ -129,7 +129,7 @@ export default function NivelesRiesgo() {
 
       <h2>Automatizar la clasificacion</h2>
       <p>
-        Clasificar manualmente 45 dimensiones para decenas o cientos de trabajadores es un proceso tedioso y propenso a errores. <strong>BRS Digital</strong> calcula automaticamente los puntajes transformados, los compara contra los baremos oficiales (Tablas 29-34) y clasifica cada dimension en su nivel de riesgo correspondiente, generando graficas y reportes listos para entregar.
+        Clasificar manualmente 45 dimensiones para decenas o cientos de trabajadores es un proceso tedioso y propenso a errores. <strong><a href="/">BRS Digital</a></strong> calcula automaticamente los puntajes transformados, los compara contra los baremos oficiales (Tablas 29-34) y clasifica cada dimension en su nivel de riesgo correspondiente, generando graficas y reportes listos para entregar.
       </p>
     </BlogLayout>
   );

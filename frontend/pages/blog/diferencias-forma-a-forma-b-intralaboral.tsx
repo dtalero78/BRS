@@ -11,7 +11,7 @@ export default function DiferenciasFormaAB() {
       keywords="forma A forma B intralaboral, diferencias forma A forma B, cuestionario intralaboral bateria psicosocial, cuando usar forma A, cuando usar forma B, dimensiones intralaborales"
     >
       <p>
-        Una de las preguntas mas frecuentes al aplicar la <strong>Bateria de Riesgo Psicosocial</strong> es: ¿cuando uso la Forma A y cuando la Forma B del cuestionario intralaboral? La eleccion correcta es crucial porque usar la forma equivocada invalida los resultados del trabajador evaluado.
+        Una de las preguntas mas frecuentes al <a href="/blog/guia-aplicar-bateria-riesgo-psicosocial">aplicar la Bateria de Riesgo Psicosocial</a> es: ¿cuando uso la Forma A y cuando la Forma B del cuestionario intralaboral? La eleccion correcta es crucial porque usar la forma equivocada invalida los resultados del trabajador evaluado.
       </p>
 
       <h2>La regla basica</h2>
@@ -147,7 +147,7 @@ export default function DiferenciasFormaAB() {
 
       <h2>Recomendacion practica</h2>
       <p>
-        Al preparar la evaluacion, solicita a la empresa un listado completo de trabajadores con su cargo y clasificalos antes de empezar. Un <strong>software como BRS Digital</strong> permite asignar la forma correcta a cada participante al momento de crear la evaluacion, y automaticamente aplica los baremos e items invertidos correspondientes a cada forma, eliminando errores de clasificacion.
+        Al preparar la evaluacion, solicita a la empresa un listado completo de trabajadores con su cargo y clasificalos antes de empezar. Un <strong>software como <a href="/">BRS Digital</a></strong> permite asignar la forma correcta a cada participante al momento de crear la evaluacion, y automaticamente aplica los <a href="/blog/baremos-oficiales-bateria-riesgo-psicosocial">baremos</a> e items invertidos correspondientes a cada forma, eliminando errores de clasificacion. Conoce las <a href="/blog/dimensiones-dominios-bateria-riesgo-psicosocial">45 dimensiones y 10 dominios</a> que evalua cada forma.
       </p>
     </BlogLayout>
   );

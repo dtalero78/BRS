@@ -11,7 +11,7 @@ export default function SoftwareVsExcel() {
       keywords="software bateria psicosocial, excel bateria riesgo psicosocial, digitalizar bateria psicosocial, software vs excel psicosocial, herramienta bateria psicosocial, automatizar bateria riesgo"
     >
       <p>
-        Muchos psicologos ocupacionales en Colombia todavia aplican la <strong>Bateria de Riesgo Psicosocial</strong> usando hojas de calculo en Excel. Si bien esto fue la unica opcion durante anos, la realidad es que Excel no fue disenado para este tipo de evaluaciones y genera problemas que pueden costar tiempo, dinero y hasta la validez de los resultados.
+        Muchos psicologos ocupacionales en Colombia todavia aplican la <strong><a href="/blog/guia-aplicar-bateria-riesgo-psicosocial">Bateria de Riesgo Psicosocial</a></strong> usando hojas de calculo en Excel. Si bien esto fue la unica opcion durante anos, la realidad es que Excel no fue disenado para este tipo de evaluaciones y genera problemas que pueden costar tiempo, dinero y hasta la validez de los resultados.
       </p>
 
       <h2>Como funciona la aplicacion con Excel</h2>
@@ -148,7 +148,7 @@ export default function SoftwareVsExcel() {
       </p>
       <ul>
         <li><strong>282 preguntas oficiales</strong> del Ministerio (sin modificaciones)</li>
-        <li><strong>Baremos oficiales</strong> de las Tablas 29-34 del documento de validacion</li>
+        <li><strong><a href="/blog/baremos-oficiales-bateria-riesgo-psicosocial">Baremos oficiales</a></strong> de las Tablas 29-34 del documento de validacion</li>
         <li><strong>Items invertidos</strong> correctamente implementados (Tablas 21, 22 y 11)</li>
         <li><strong>Baremos duales</strong> para extralaboral y estres (jefes vs auxiliares)</li>
         <li><strong>Factores de transformacion</strong> oficiales (Tablas 25, 26 y 14)</li>
@@ -157,7 +157,7 @@ export default function SoftwareVsExcel() {
         <li><strong>Gestion multi-empresa</strong> si atiendes varios clientes</li>
       </ul>
       <p>
-        <strong>BRS Digital</strong> cumple con todos estos criterios: implementa fielmente los instrumentos del Ministerio, calcula con los baremos oficiales y genera reportes profesionales en PDF, todo desde una plataforma web que puedes usar desde cualquier dispositivo.
+        <strong><a href="/">BRS Digital</a></strong> cumple con todos estos criterios: implementa fielmente los instrumentos del Ministerio, calcula con los baremos oficiales y genera reportes profesionales en PDF, todo desde una plataforma web que puedes usar desde cualquier dispositivo.
       </p>
     </BlogLayout>
   );

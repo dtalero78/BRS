@@ -120,17 +120,17 @@ export default function Resolucion2764() {
 
       <h3>3. Aplicar la bateria completa</h3>
       <p>
-        Los 4 instrumentos deben aplicarse a todos los trabajadores: cuestionario intralaboral (Forma A o B segun cargo), extralaboral, estres y ficha sociodemografica.
+        Los 4 instrumentos deben aplicarse a todos los trabajadores: cuestionario intralaboral (<a href="/blog/diferencias-forma-a-forma-b-intralaboral">Forma A o B segun cargo</a>), extralaboral, <a href="/blog/cuestionario-estres-laboral-bateria-psicosocial">estres</a> y ficha sociodemografica. Consulta nuestra <a href="/blog/guia-aplicar-bateria-riesgo-psicosocial">guia completa de aplicacion</a> para mas detalles.
       </p>
 
       <h3>4. Usar los baremos oficiales</h3>
       <p>
-        Los baremos de las Tablas 29 a 34 del documento de validacion son los unicos validos para clasificar los niveles de riesgo. No se pueden usar baremos de otros paises ni adaptaciones propias.
+        Los <a href="/blog/baremos-oficiales-bateria-riesgo-psicosocial">baremos de las Tablas 29 a 34</a> del documento de validacion son los unicos validos para clasificar los <a href="/blog/niveles-riesgo-psicosocial-como-interpretarlos">niveles de riesgo</a>. No se pueden usar baremos de otros paises ni adaptaciones propias.
       </p>
 
       <h3>5. Documentar el plan de intervencion</h3>
       <p>
-        Con los resultados, elaborar un plan de intervencion que priorice las dimensiones en riesgo alto y muy alto. El plan debe incluir acciones concretas, responsables, plazos y mecanismos de seguimiento.
+        Con los resultados, elaborar un <a href="/blog/plan-intervencion-riesgo-psicosocial">plan de intervencion</a> que priorice las dimensiones en riesgo alto y muy alto. El plan debe incluir acciones concretas, responsables, plazos y mecanismos de seguimiento.
       </p>
 
       <h3>6. Custodiar los resultados</h3>
@@ -145,7 +145,7 @@ export default function Resolucion2764() {
 
       <h2>Herramientas para cumplir</h2>
       <p>
-        La aplicacion digital de la bateria esta permitida por la Resolucion 2764 de 2022. Plataformas como <strong>BRS Digital</strong> permiten aplicar los cuestionarios de forma digital, calcular automaticamente con los baremos oficiales del Ministerio y generar reportes PDF individuales y organizacionales, facilitando el cumplimiento normativo completo.
+        La aplicacion digital de la bateria esta permitida por la Resolucion 2764 de 2022. Plataformas como <strong><a href="/">BRS Digital</a></strong> permiten aplicar los cuestionarios de forma digital, calcular automaticamente con los baremos oficiales del Ministerio y generar reportes PDF individuales y organizacionales, facilitando el cumplimiento normativo completo.
       </p>
     </BlogLayout>
   );

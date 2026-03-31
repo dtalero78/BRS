@@ -11,7 +11,7 @@ export default function GuiaAplicarBateria() {
       keywords="como aplicar bateria riesgo psicosocial, guia bateria psicosocial Colombia, paso a paso bateria riesgo psicosocial, aplicar bateria psicosocial 2026, cuestionarios riesgo psicosocial"
     >
       <p>
-        La <strong>Bateria de Riesgo Psicosocial</strong> es el instrumento oficial en Colombia para evaluar los factores de riesgo psicosocial en el trabajo. Su aplicacion es obligatoria para todas las empresas del pais segun la Resolucion 2646 de 2008 y la Resolucion 2764 de 2022 del Ministerio del Trabajo. En esta guia te explicamos paso a paso como aplicarla correctamente.
+        La <strong>Bateria de Riesgo Psicosocial</strong> es el instrumento oficial en Colombia para evaluar los factores de <a href="/blog/que-es-riesgo-psicosocial-laboral">riesgo psicosocial laboral</a>. Su aplicacion es obligatoria para todas las empresas del pais segun la Resolucion 2646 de 2008 y la <a href="/blog/resolucion-2764-de-2022-que-cambio">Resolucion 2764 de 2022</a> del Ministerio del Trabajo. En esta guia te explicamos paso a paso como aplicarla correctamente.
       </p>
 
       <h2>Que es la Bateria de Riesgo Psicosocial</h2>
@@ -46,7 +46,7 @@ export default function GuiaAplicarBateria() {
         <li><strong>Forma B</strong>: Para auxiliares y operarios (97 items, 16 dimensiones)</li>
       </ul>
       <p>
-        La seleccion de la forma correcta depende del cargo del trabajador, no de su nivel educativo.
+        La seleccion de la forma correcta depende del cargo del trabajador, no de su nivel educativo. Conoce mas en nuestra guia sobre <a href="/blog/diferencias-forma-a-forma-b-intralaboral">diferencias entre Forma A y Forma B</a>.
       </p>
 
       <h3>2. Cuestionario de factores de riesgo psicosocial extralaboral</h3>
@@ -95,7 +95,7 @@ export default function GuiaAplicarBateria() {
 
       <h3>Paso 4: Clasificacion del nivel de riesgo</h3>
       <p>
-        Los puntajes transformados se comparan contra los <strong>baremos oficiales (Tablas 29-34)</strong> para clasificar cada dimension en uno de 5 niveles:
+        Los puntajes transformados se comparan contra los <strong><a href="/blog/baremos-oficiales-bateria-riesgo-psicosocial">baremos oficiales (Tablas 29-34)</a></strong> para clasificar cada dimension en uno de <a href="/blog/niveles-riesgo-psicosocial-como-interpretarlos">5 niveles de riesgo</a>:
       </p>
       <table>
         <thead>
@@ -138,10 +138,10 @@ export default function GuiaAplicarBateria() {
 
       <h2>Digitalizar la aplicacion: la alternativa moderna</h2>
       <p>
-        Aplicar la bateria de forma manual implica tabular cientos de respuestas, aplicar formulas complejas y generar graficas. Un <strong>software especializado como BRS Digital</strong> automatiza todo el proceso: los participantes responden digitalmente, el sistema calcula automaticamente con los baremos oficiales y genera reportes PDF profesionales en minutos.
+        Aplicar la bateria de forma manual implica tabular cientos de respuestas, aplicar formulas complejas y generar graficas. Un <strong>software especializado como <a href="/">BRS Digital</a></strong> automatiza todo el proceso: los participantes responden digitalmente, el sistema calcula automaticamente con los baremos oficiales y genera reportes PDF profesionales en minutos.
       </p>
       <p>
-        Esto reduce el tiempo de procesamiento de semanas a horas y elimina los errores de calculo manual que pueden invalidar los resultados de la evaluacion.
+        Esto reduce el tiempo de procesamiento de semanas a horas y elimina los errores de calculo manual que pueden invalidar los resultados de la evaluacion. Conoce mas sobre las ventajas en nuestra comparativa de <a href="/blog/software-vs-excel-bateria-psicosocial">software vs Excel para la bateria psicosocial</a>.
       </p>
     </BlogLayout>
   );

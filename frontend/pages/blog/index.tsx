@@ -4,6 +4,20 @@ import Image from 'next/image';
 
 const articles = [
   {
+    slug: 'baremos-oficiales-bateria-riesgo-psicosocial',
+    title: 'Baremos oficiales de la Bateria de Riesgo Psicosocial: Tablas 29 a 34',
+    description: 'Explicacion completa de los baremos oficiales (Tablas 29-34) de la bateria de riesgo psicosocial. Como usarlos, baremos duales para extralaboral y estres, y errores comunes.',
+    date: '2026-03-30',
+    readTime: '9 min',
+  },
+  {
+    slug: 'que-es-riesgo-psicosocial-laboral',
+    title: 'Que es el riesgo psicosocial laboral y por que importa en Colombia',
+    description: 'Definicion del riesgo psicosocial laboral, tipos de factores de riesgo, consecuencias para trabajadores y empresas, y obligaciones legales en Colombia.',
+    date: '2026-03-29',
+    readTime: '8 min',
+  },
+  {
     slug: 'guia-aplicar-bateria-riesgo-psicosocial',
     title: 'Guia completa: Como aplicar la Bateria de Riesgo Psicosocial en 2026',
     description: 'Paso a paso para aplicar la bateria de riesgo psicosocial en Colombia. Requisitos, cuestionarios, baremos oficiales y como interpretar los resultados.',
@@ -11,11 +25,32 @@ const articles = [
     readTime: '10 min',
   },
   {
+    slug: 'cuestionario-estres-laboral-bateria-psicosocial',
+    title: 'Cuestionario de estres laboral: Guia completa de la bateria psicosocial',
+    description: 'Todo sobre el cuestionario de estres de la bateria de riesgo psicosocial: escala de 4 puntos, sintomas, calificacion ponderada e interpretacion de resultados.',
+    date: '2026-03-27',
+    readTime: '8 min',
+  },
+  {
+    slug: 'plan-intervencion-riesgo-psicosocial',
+    title: 'Como elaborar un plan de intervencion de riesgo psicosocial efectivo',
+    description: 'Guia practica para construir un plan de intervencion de riesgo psicosocial a partir de los resultados de la bateria. Tipos de intervencion y priorizacion.',
+    date: '2026-03-26',
+    readTime: '9 min',
+  },
+  {
     slug: 'resolucion-2764-de-2022-que-cambio',
     title: 'Resolucion 2764 de 2022: Que cambio y como cumplir',
     description: 'Analisis de la Resolucion 2764 de 2022 del Ministerio del Trabajo. Cambios respecto a la Resolucion 2646 de 2008 y como cumplir con la normativa actualizada.',
     date: '2026-03-25',
     readTime: '8 min',
+  },
+  {
+    slug: 'dimensiones-dominios-bateria-riesgo-psicosocial',
+    title: 'Las 45 dimensiones y 10 dominios de la Bateria de Riesgo Psicosocial',
+    description: 'Lista completa de las 45 dimensiones y 10 dominios de la bateria de riesgo psicosocial. Que mide cada dimension, a que forma pertenece y ejemplos practicos.',
+    date: '2026-03-24',
+    readTime: '10 min',
   },
   {
     slug: 'diferencias-forma-a-forma-b-intralaboral',

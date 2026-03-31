@@ -2,6 +2,19 @@ import Head from 'next/head';
 import Link from 'next/link';
 import Image from 'next/image';
 
+const allArticles = [
+  { slug: 'baremos-oficiales-bateria-riesgo-psicosocial', title: 'Baremos oficiales de la Bateria de Riesgo Psicosocial: Tablas 29 a 34', date: '2026-03-30', readTime: '8 min' },
+  { slug: 'que-es-riesgo-psicosocial-laboral', title: 'Que es el riesgo psicosocial laboral y por que importa en Colombia', date: '2026-03-29', readTime: '7 min' },
+  { slug: 'guia-aplicar-bateria-riesgo-psicosocial', title: 'Guia completa: Como aplicar la Bateria de Riesgo Psicosocial en 2026', date: '2026-03-28', readTime: '10 min' },
+  { slug: 'cuestionario-estres-laboral-bateria-psicosocial', title: 'Cuestionario de estres laboral: Guia completa de la bateria psicosocial', date: '2026-03-27', readTime: '7 min' },
+  { slug: 'plan-intervencion-riesgo-psicosocial', title: 'Como elaborar un plan de intervencion de riesgo psicosocial efectivo', date: '2026-03-26', readTime: '8 min' },
+  { slug: 'resolucion-2764-de-2022-que-cambio', title: 'Resolucion 2764 de 2022: Que cambio y como cumplir', date: '2026-03-25', readTime: '8 min' },
+  { slug: 'dimensiones-dominios-bateria-riesgo-psicosocial', title: 'Las 45 dimensiones y 10 dominios de la Bateria de Riesgo Psicosocial', date: '2026-03-24', readTime: '9 min' },
+  { slug: 'diferencias-forma-a-forma-b-intralaboral', title: 'Diferencias entre Forma A y Forma B del cuestionario intralaboral', date: '2026-03-22', readTime: '7 min' },
+  { slug: 'niveles-riesgo-psicosocial-como-interpretarlos', title: 'Los 5 niveles de riesgo psicosocial: Como interpretarlos', date: '2026-03-19', readTime: '6 min' },
+  { slug: 'software-vs-excel-bateria-psicosocial', title: 'Software vs Excel: Por que digitalizar la bateria psicosocial', date: '2026-03-16', readTime: '5 min' },
+];
+
 interface BlogLayoutProps {
   title: string;
   description: string;
@@ -123,6 +136,28 @@ export default function BlogLayout({ title, description, slug, date, readTime, k
           {children}
         </div>
       </article>
+
+      {/* Related Articles */}
+      <section className="max-w-3xl mx-auto px-6 pb-12">
+        <h2 className="text-xl font-bold text-gray-900 mb-6">Articulos relacionados</h2>
+        <div className="grid md:grid-cols-3 gap-4">
+          {allArticles
+            .filter((a) => a.slug !== slug)
+            .slice(0, 3)
+            .map((article) => (
+              <Link
+                key={article.slug}
+                href={`/blog/${article.slug}`}
+                className="bg-gray-50 rounded-xl p-4 border border-gray-100 hover:shadow-md transition-shadow group"
+              >
+                <p className="text-xs text-gray-400 mb-2">{article.readTime}</p>
+                <h3 className="text-sm font-semibold text-gray-900 group-hover:text-blue-700 transition-colors leading-snug">
+                  {article.title}
+                </h3>
+              </Link>
+            ))}
+        </div>
+      </section>
 
       {/* CTA */}
       <section className="max-w-3xl mx-auto px-6 pb-16">
