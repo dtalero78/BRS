@@ -53,6 +53,66 @@ if (process.env.NODE_ENV === 'development') {
   app.use(morgan('combined'));
 }
 
+// --- Visitor WhatsApp notification ---
+const visitedIPs = new Map(); // IP -> timestamp
+const VISIT_COOLDOWN_MS = 60 * 60 * 1000; // 1 hour per IP
+
+const visitNotifyLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 5,
+  message: 'Too many requests',
+  validate: { trustProxy: false }
+});
+
+app.post('/api/visitor-notify', visitNotifyLimiter, async (req, res) => {
+  try {
+    const WHAPI_TOKEN = process.env.WHAPI_TOKEN;
+    const NOTIFY_NUMBER = process.env.VISITOR_NOTIFY_NUMBER || '573008021701';
+    if (!WHAPI_TOKEN) return res.status(200).json({ ok: true });
+
+    const ip = req.ip || req.connection.remoteAddress || 'unknown';
+    const now = Date.now();
+    const lastVisit = visitedIPs.get(ip);
+    if (lastVisit && (now - lastVisit) < VISIT_COOLDOWN_MS) {
+      return res.status(200).json({ ok: true });
+    }
+    visitedIPs.set(ip, now);
+
+    // Clean old entries every 100 visits
+    if (visitedIPs.size > 500) {
+      for (const [key, ts] of visitedIPs) {
+        if (now - ts > VISIT_COOLDOWN_MS) visitedIPs.delete(key);
+      }
+    }
+
+    const { page, referrer } = req.body || {};
+    const userAgent = req.headers['user-agent'] || '';
+    const isBot = /bot|crawl|spider|slurp|google|bing|yandex/i.test(userAgent);
+    if (isBot) return res.status(200).json({ ok: true });
+
+    const fecha = new Date().toLocaleString('es-CO', { timeZone: 'America/Bogota' });
+    const msg = `🟢 *Nueva visita a BRS Digital*\n\n📄 Pagina: ${page || '/'}\n🔗 Referido: ${referrer || 'directo'}\n🕐 ${fecha}`;
+
+    const fetch = (await import('node-fetch')).default;
+    let formattedNumber = NOTIFY_NUMBER.replace(/[+\-\s]/g, '') + '@s.whatsapp.net';
+
+    fetch('https://gate.whapi.cloud/messages/text', {
+      method: 'POST',
+      headers: {
+        'accept': 'application/json',
+        'authorization': `Bearer ${WHAPI_TOKEN}`,
+        'content-type': 'application/json'
+      },
+      body: JSON.stringify({ typing_time: 0, to: formattedNumber, body: msg })
+    }).catch(err => console.error('WhatsApp notify error:', err.message));
+
+    res.status(200).json({ ok: true });
+  } catch (err) {
+    console.error('Visitor notify error:', err.message);
+    res.status(200).json({ ok: true });
+  }
+});
+
 // Health check endpoint
 app.get('/health', (req, res) => {
   res.status(200).json({

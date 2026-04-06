@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import Head from 'next/head';
 import Link from 'next/link';
 import Image from 'next/image';
@@ -26,6 +27,17 @@ interface BlogLayoutProps {
 }
 
 export default function BlogLayout({ title, description, slug, date, readTime, keywords, children }: BlogLayoutProps) {
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (sessionStorage.getItem('v_notified')) return;
+    sessionStorage.setItem('v_notified', '1');
+    fetch('/api/visitor-notify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ page: window.location.pathname, referrer: document.referrer || '' })
+    }).catch(() => {});
+  }, []);
+
   const siteUrl = 'https://bateriariesgopsicosocial.com';
   const fullUrl = `${siteUrl}/blog/${slug}/`;
 

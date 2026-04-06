@@ -28,6 +28,18 @@ export default function HomePage() {
     }
   }, [router]);
 
+  // Notify visitor (once per session)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (sessionStorage.getItem('v_notified')) return;
+    sessionStorage.setItem('v_notified', '1');
+    fetch('/api/visitor-notify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ page: window.location.pathname, referrer: document.referrer || '' })
+    }).catch(() => {});
+  }, []);
+
   // Close video modal on Escape
   useEffect(() => {
     const handleEsc = (e: KeyboardEvent) => {
