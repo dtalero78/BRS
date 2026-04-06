@@ -16,9 +16,9 @@ app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", "'unsafe-inline'", "https://www.googletagmanager.com", "https://www.clarity.ms"],
-      connectSrc: ["'self'", "https://www.google-analytics.com", "https://*.google-analytics.com", "https://*.analytics.google.com", "https://*.googletagmanager.com", "https://*.clarity.ms"],
-      imgSrc: ["'self'", "data:", "https://www.googletagmanager.com", "https://www.google-analytics.com", "https://*.clarity.ms"],
+      scriptSrc: ["'self'", "'unsafe-inline'", "https://www.googletagmanager.com", "https://www.clarity.ms", "https://*.clarity.ms"],
+      connectSrc: ["'self'", "https://www.google-analytics.com", "https://*.google-analytics.com", "https://*.analytics.google.com", "https://*.googletagmanager.com", "https://*.clarity.ms", "https://*.bing.com"],
+      imgSrc: ["'self'", "data:", "https://www.googletagmanager.com", "https://www.google-analytics.com", "https://*.clarity.ms", "https://*.bing.com"],
       styleSrc: ["'self'", "'unsafe-inline'"],
       fontSrc: ["'self'", "data:"],
     },
