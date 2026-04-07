@@ -76,7 +76,7 @@ app.post('/api/visitor-notify', visitNotifyLimiter, async (req, res) => {
     const NOTIFY_NUMBER = process.env.VISITOR_NOTIFY_NUMBER || '573008021701';
     if (!WHAPI_TOKEN) return res.status(200).json({ ok: true });
 
-    const ip = req.ip || req.connection.remoteAddress || 'unknown';
+    const ip = req.headers['cf-connecting-ip'] || req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.ip || 'unknown';
     const now = Date.now();
     const lastVisit = visitedIPs.get(ip);
     if (lastVisit && (now - lastVisit) < VISIT_COOLDOWN_MS) {
