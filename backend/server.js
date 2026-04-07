@@ -277,13 +277,12 @@ app.use('/uploads', express.static('uploads'));
 
 // Serve frontend static files (built by Next.js export)
 const frontendPath = path.join(__dirname, '..', 'frontend', 'out');
-// Cache _next/ assets for 1 year (they have hashed filenames)
-app.use('/_next', express.static(path.join(frontendPath, '_next'), {
-  maxAge: '365d',
-  immutable: true,
-}));
 app.use(express.static(frontendPath, {
-  maxAge: '1h',
+  setHeaders: (res, filePath) => {
+    if (filePath.includes('/_next/')) {
+      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    }
+  },
 }));
 
 // Error handling middleware
@@ -367,6 +366,11 @@ app.use('*', (req, res) => {
   // If it's an API route that wasn't matched, return 404 JSON
   if (req.originalUrl.startsWith('/api/')) {
     return res.status(404).json({ error: 'Endpoint no encontrado' });
+  }
+
+  // Don't serve index.html for static asset requests
+  if (req.originalUrl.startsWith('/_next/') || req.originalUrl.match(/\.(js|css|map|png|jpg|svg|ico|mp4|woff|woff2|otf)$/)) {
+    return res.status(404).end();
   }
 
   const urlPath = req.originalUrl.replace(/\/$/, '') || '/index';
