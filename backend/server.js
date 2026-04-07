@@ -281,6 +281,8 @@ app.use(express.static(frontendPath, {
   setHeaders: (res, filePath) => {
     if (filePath.includes('/_next/')) {
       res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    } else if (filePath.endsWith('.html')) {
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
     }
   },
 }));
