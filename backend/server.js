@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
+const compression = require('compression');
 const morgan = require('morgan');
 const path = require('path');
 const rateLimit = require('express-rate-limit');
@@ -10,6 +11,9 @@ const app = express();
 
 // Trust proxy for rate limiting behind reverse proxy
 app.set('trust proxy', 1);
+
+// Gzip compression - must be before static files
+app.use(compression());
 
 // Security middleware
 app.use(helmet({
@@ -271,7 +275,14 @@ app.use('/uploads', express.static('uploads'));
 
 // Serve frontend static files (built by Next.js export)
 const frontendPath = path.join(__dirname, '..', 'frontend', 'out');
-app.use(express.static(frontendPath));
+// Cache _next/ assets for 1 year (they have hashed filenames)
+app.use('/_next', express.static(path.join(frontendPath, '_next'), {
+  maxAge: '365d',
+  immutable: true,
+}));
+app.use(express.static(frontendPath, {
+  maxAge: '1h',
+}));
 
 // Error handling middleware
 app.use((err, req, res, next) => {

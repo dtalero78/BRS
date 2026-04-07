@@ -611,7 +611,7 @@ export default function HomePage() {
           <div className="max-w-4xl mx-auto">
             <video
               controls
-              preload="metadata"
+              preload="none"
               poster="/seoImagen.png"
               className="w-full rounded-2xl shadow-2xl border border-gray-200"
             >

@@ -151,7 +151,7 @@ export default function RegisterPage() {
 
         {/* Center: Psychologist photo */}
         <div className="absolute inset-0 flex items-end justify-center pointer-events-none" style={{ zIndex: 5 }}>
-          <Image src="/psicologa.png" alt="Psicóloga BRS" width={420} height={540} className="object-contain h-[85%] w-auto" />
+          <Image src="/psicologa.jpg" alt="Psicóloga BRS" width={420} height={540} className="object-contain h-[85%] w-auto" />
         </div>
 
         {/* Card 1 – Reporte de Evaluación */}
