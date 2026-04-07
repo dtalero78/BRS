@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
 import Image from 'next/image';
+import Head from 'next/head';
 import { useForm } from 'react-hook-form';
 import { yupResolver } from '@hookform/resolvers/yup';
 import * as yup from 'yup';
@@ -62,6 +63,10 @@ export default function LoginPage() {
   };
 
   return (
+    <>
+    <Head>
+      <meta name="robots" content="noindex, nofollow" />
+    </Head>
     <div className="min-h-screen flex">
 
       {/* Left: Form panel */}
@@ -251,5 +256,6 @@ export default function LoginPage() {
       </div>
 
     </div>
+    </>
   );
 }

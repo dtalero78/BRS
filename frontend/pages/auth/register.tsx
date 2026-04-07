@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
 import Image from 'next/image';
+import Head from 'next/head';
 import { useForm } from 'react-hook-form';
 import { yupResolver } from '@hookform/resolvers/yup';
 import * as yup from 'yup';
@@ -71,6 +72,10 @@ export default function RegisterPage() {
   const inputClass = "w-full rounded-lg border border-gray-200 px-4 py-2.5 text-sm text-gray-900 focus:outline-none focus:ring-2";
 
   return (
+    <>
+    <Head>
+      <meta name="robots" content="noindex, nofollow" />
+    </Head>
     <div className="min-h-screen flex">
 
       {/* Left: Form panel */}
@@ -261,5 +266,6 @@ export default function RegisterPage() {
       </div>
 
     </div>
+    </>
   );
 }

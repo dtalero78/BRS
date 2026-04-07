@@ -191,7 +191,9 @@ export default function BlogLayout({ title, description, slug, date, readTime, k
           </p>
           <div className="flex items-center gap-6">
             <Link href="/blog" className="text-xs text-gray-400 hover:text-gray-700 transition-colors">Blog</Link>
-            <a href="#" className="text-xs text-gray-400 hover:text-gray-700 transition-colors">Contacto</a>
+            <Link href="/contacto" className="text-xs text-gray-400 hover:text-gray-700 transition-colors">Contacto</Link>
+            <Link href="/privacidad" className="text-xs text-gray-400 hover:text-gray-700 transition-colors">Privacidad</Link>
+            <Link href="/terminos" className="text-xs text-gray-400 hover:text-gray-700 transition-colors">Terminos</Link>
           </div>
         </div>
       </footer>

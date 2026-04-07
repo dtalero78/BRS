@@ -59,33 +59,33 @@ export default function HomePage() {
   }, [showVideo]);
 
   const siteUrl = 'https://bateriariesgopsicosocial.com';
-  const pageTitle = 'BRS Digital | Software Bateria de Riesgo Psicosocial Colombia';
-  const pageDescription = 'Plataforma digital para psicologos ocupacionales en Colombia. Aplica la Bateria de Riesgo Psicosocial del Ministerio de Proteccion Social: cuestionarios digitales, calculos automaticos con baremos oficiales y reportes PDF. Cumple Resolucion 2646 de 2008 y Resolucion 2764 de 2022.';
+  const pageTitle = 'BRS Digital | Software Batería de Riesgo Psicosocial Colombia';
+  const pageDescription = 'Plataforma digital para psicólogos ocupacionales en Colombia. Aplica la Batería de Riesgo Psicosocial del Ministerio de Protección Social: cuestionarios digitales, cálculos automáticos con baremos oficiales y reportes PDF. Cumple Resolución 2646 de 2008 y Resolución 2764 de 2022.';
 
   const faqItems = [
     {
-      question: 'Que es la Bateria de Riesgo Psicosocial?',
-      answer: 'La Bateria de Riesgo Psicosocial es un conjunto de instrumentos validados por el Ministerio de la Proteccion Social de Colombia y la Pontificia Universidad Javeriana para evaluar factores de riesgo psicosocial en el trabajo. Incluye cuestionarios intralaborales (Forma A y B), extralaborales, de estres y ficha de datos sociodemograficos. Su aplicacion es obligatoria segun la Resolucion 2646 de 2008.',
+      question: '¿Qué es la Batería de Riesgo Psicosocial?',
+      answer: 'La Batería de Riesgo Psicosocial es un conjunto de instrumentos validados por el Ministerio de la Protección Social de Colombia y la Pontificia Universidad Javeriana para evaluar factores de riesgo psicosocial en el trabajo. Incluye cuestionarios intralaborales (Forma A y B), extralaborales, de estrés y ficha de datos sociodemográficos. Su aplicación es obligatoria según la Resolución 2646 de 2008.',
     },
     {
-      question: 'Quien puede aplicar la Bateria de Riesgo Psicosocial en Colombia?',
-      answer: 'Segun la normativa colombiana (Resolucion 2646 de 2008 y Resolucion 2764 de 2022), la bateria debe ser aplicada por un psicologo profesional con licencia vigente en Seguridad y Salud en el Trabajo (SST), o con especializacion en salud ocupacional o factores psicosociales laborales.',
+      question: '¿Quién puede aplicar la Batería de Riesgo Psicosocial en Colombia?',
+      answer: 'Según la normativa colombiana (Resolución 2646 de 2008 y Resolución 2764 de 2022), la batería debe ser aplicada por un psicólogo profesional con licencia vigente en Seguridad y Salud en el Trabajo (SST), o con especialización en salud ocupacional o factores psicosociales laborales.',
     },
     {
-      question: 'Que incluye el software BRS Digital?',
-      answer: 'BRS Digital incluye los 4 cuestionarios oficiales digitalizados (282 preguntas), motor de calculo automatico con los baremos oficiales del Ministerio (Tablas 29-34), clasificacion en 5 niveles de riesgo para 45 dimensiones y 10 dominios, generacion de reportes PDF individuales y organizacionales, y gestion multi-empresa para psicologos independientes.',
+      question: '¿Qué incluye el software BRS Digital?',
+      answer: 'BRS Digital incluye los 4 cuestionarios oficiales digitalizados (282 preguntas), motor de cálculo automático con los baremos oficiales del Ministerio (Tablas 29-34), clasificación en 5 niveles de riesgo para 45 dimensiones y 10 dominios, generación de reportes PDF individuales y organizacionales, y gestión multi-empresa para psicólogos independientes.',
     },
     {
-      question: 'BRS Digital cumple con la Resolucion 2764 de 2022?',
-      answer: 'Si. BRS Digital implementa fielmente la Bateria de Instrumentos para la Evaluacion de Factores de Riesgo Psicosocial adoptada por la Resolucion 2764 de 2022 del Ministerio del Trabajo, que actualiza y unifica la normativa de la Resolucion 2646 de 2008. Los baremos, items invertidos y factores de transformacion son los oficiales del documento de validacion.',
+      question: '¿BRS Digital cumple con la Resolución 2764 de 2022?',
+      answer: 'Sí. BRS Digital implementa fielmente la Batería de Instrumentos para la Evaluación de Factores de Riesgo Psicosocial adoptada por la Resolución 2764 de 2022 del Ministerio del Trabajo, que actualiza y unifica la normativa de la Resolución 2646 de 2008. Los baremos, ítems invertidos y factores de transformación son los oficiales del documento de validación.',
     },
     {
-      question: 'Cuanto cuesta usar BRS Digital?',
-      answer: 'BRS Digital ofrece un plan gratuito con 5 evaluaciones incluidas para conocer la plataforma. Los planes de pago empiezan desde $5.000 COP por prueba (plan Estandar) hasta $2.000 COP por prueba (plan Corporativo). No hay mensualidades ni compromisos de permanencia. Se paga solo por evaluacion realizada.',
+      question: '¿Cuánto cuesta usar BRS Digital?',
+      answer: 'BRS Digital ofrece un plan gratuito con 5 evaluaciones incluidas para conocer la plataforma. Los planes de pago empiezan desde $5.000 COP por prueba (plan Estándar) hasta $2.000 COP por prueba (plan Corporativo). No hay mensualidades ni compromisos de permanencia. Se paga solo por evaluación realizada.',
     },
     {
-      question: 'Que diferencia hay entre Forma A y Forma B del cuestionario intralaboral?',
-      answer: 'La Forma A esta disenada para trabajadores con cargos de jefatura, profesionales o tecnicos (123 items, 19 dimensiones). La Forma B aplica a trabajadores con cargos auxiliares u operarios (97 items, 16 dimensiones). La principal diferencia es que la Forma A incluye dimensiones adicionales de liderazgo y relaciones sociales propias de cargos con responsabilidad sobre otros.',
+      question: '¿Qué diferencia hay entre Forma A y Forma B del cuestionario intralaboral?',
+      answer: 'La Forma A está diseñada para trabajadores con cargos de jefatura, profesionales o técnicos (123 ítems, 19 dimensiones). La Forma B aplica a trabajadores con cargos auxiliares u operarios (97 ítems, 16 dimensiones). La principal diferencia es que la Forma A incluye dimensiones adicionales de liderazgo y relaciones sociales propias de cargos con responsabilidad sobre otros.',
     },
   ];
 
@@ -186,7 +186,7 @@ export default function HomePage() {
         <meta property="og:image" content={`${siteUrl}/seoImagen.png`} />
         <meta property="og:image:width" content="1200" />
         <meta property="og:image:height" content="630" />
-        <meta property="og:image:alt" content="BRS Digital - Software Bateria de Riesgo Psicosocial Colombia" />
+        <meta property="og:image:alt" content="Demo del software BRS Digital para la Batería de Riesgo Psicosocial en Colombia" />
 
         {/* Twitter Card */}
         <meta name="twitter:card" content="summary_large_image" />
@@ -238,7 +238,7 @@ export default function HomePage() {
       <nav className="flex items-center justify-between px-8 lg:px-16 py-4 bg-white border-b border-gray-100 shadow-sm">
         {/* Logo */}
         <Link href="/" className="flex items-center">
-          <Image src="/logo.png" alt="BRS Digital - Software Bateria de Riesgo Psicosocial Colombia" width={210} height={60} className="h-[60px] w-auto" />
+          <Image src="/logo.png" alt="BRS Digital - Software Batería de Riesgo Psicosocial Colombia" width={210} height={60} className="h-[60px] w-auto" />
         </Link>
 
         {/* Spacer */}
@@ -281,7 +281,7 @@ export default function HomePage() {
           </div>
 
           <h1 className="text-5xl lg:text-6xl xl:text-7xl font-bold text-gray-900 leading-[1.05] tracking-tight mb-6">
-            Aplica la BRS a la velocidad que exigen tus clientes
+            Software para aplicar la Batería de Riesgo Psicosocial en Colombia
           </h1>
 
           <p className="text-lg text-gray-500 leading-relaxed mb-10 max-w-lg">
@@ -828,10 +828,10 @@ export default function HomePage() {
       <section className="max-w-screen-xl mx-auto px-8 lg:px-16 py-24" style={{ backgroundColor: '#e6f4fd' }}>
         <div className="text-center mb-16">
           <h2 className="text-3xl lg:text-4xl font-bold text-gray-900 mb-4">
-            Preguntas frecuentes sobre la Bateria de Riesgo Psicosocial
+            Preguntas frecuentes sobre la Batería de Riesgo Psicosocial
           </h2>
           <p className="text-gray-500 text-lg max-w-2xl mx-auto">
-            Resolvemos las dudas mas comunes de psicologos ocupacionales sobre la aplicacion digital de la BRS en Colombia.
+            Resolvemos las dudas más comunes de psicólogos ocupacionales sobre la aplicación digital de la BRS en Colombia.
           </p>
         </div>
 
@@ -889,9 +889,9 @@ export default function HomePage() {
           </p>
           <div className="flex items-center gap-6">
             <Link href="/blog" className="text-xs text-gray-400 hover:text-gray-700 transition-colors">Blog</Link>
-            <a href="#" className="text-xs text-gray-400 hover:text-gray-700 transition-colors">Privacidad</a>
-            <a href="#" className="text-xs text-gray-400 hover:text-gray-700 transition-colors">Términos</a>
-            <a href="#" className="text-xs text-gray-400 hover:text-gray-700 transition-colors">Contacto</a>
+            <Link href="/privacidad" className="text-xs text-gray-400 hover:text-gray-700 transition-colors">Privacidad</Link>
+            <Link href="/terminos" className="text-xs text-gray-400 hover:text-gray-700 transition-colors">Términos</Link>
+            <Link href="/contacto" className="text-xs text-gray-400 hover:text-gray-700 transition-colors">Contacto</Link>
           </div>
         </div>
       </footer>
