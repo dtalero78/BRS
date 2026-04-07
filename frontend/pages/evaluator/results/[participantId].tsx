@@ -210,7 +210,7 @@ export default function ParticipantResults() {
             </div>
             <div>
               <span className="text-gray-500">Tipo de Forma:</span>
-              <p className="font-semibold">{resultsData.participant.formType === 'forma_a' ? 'Forma A' : 'Forma B'}</p>
+              <p className="font-semibold">{resultsData.participant.formType === 'A' || resultsData.participant.formType === 'forma_a' ? 'Forma A' : 'Forma B'}</p>
             </div>
           </div>
         </div>
