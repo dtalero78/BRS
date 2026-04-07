@@ -27,6 +27,8 @@ app.use(helmet({
       fontSrc: ["'self'", "data:"],
       workerSrc: ["'self'", "blob:"],
       childSrc: ["'self'", "blob:"],
+      frameSrc: ["'self'", "https://*.clarity.ms"],
+      scriptSrcAttr: ["'unsafe-inline'"],
     },
   },
 }));
