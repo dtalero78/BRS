@@ -20,11 +20,13 @@ app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", "'unsafe-inline'", "https://www.googletagmanager.com", "https://*.googletagmanager.com", "https://www.google-analytics.com", "https://*.google-analytics.com", "https://www.clarity.ms", "https://*.clarity.ms"],
+      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'", "https://www.googletagmanager.com", "https://*.googletagmanager.com", "https://www.google-analytics.com", "https://*.google-analytics.com", "https://www.clarity.ms", "https://*.clarity.ms"],
       connectSrc: ["'self'", "https://www.google-analytics.com", "https://*.google-analytics.com", "https://*.analytics.google.com", "https://*.googletagmanager.com", "https://*.clarity.ms", "https://*.bing.com", "https://*.g.doubleclick.net"],
-      imgSrc: ["'self'", "data:", "https://www.googletagmanager.com", "https://www.google-analytics.com", "https://*.google-analytics.com", "https://*.clarity.ms", "https://*.bing.com", "https://*.g.doubleclick.net"],
+      imgSrc: ["'self'", "data:", "blob:", "https://www.googletagmanager.com", "https://www.google-analytics.com", "https://*.google-analytics.com", "https://*.clarity.ms", "https://*.bing.com", "https://*.g.doubleclick.net"],
       styleSrc: ["'self'", "'unsafe-inline'"],
       fontSrc: ["'self'", "data:"],
+      workerSrc: ["'self'", "blob:"],
+      childSrc: ["'self'", "blob:"],
     },
   },
 }));
