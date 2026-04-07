@@ -173,12 +173,20 @@ router.get('/:token/questionnaires', async (req, res) => {
       .join('participants', 'participant_evaluations.participant_id', 'participants.id')
       .where('participant_evaluations.access_token', token)
       .where('participant_evaluations.token_expires_at', '>', new Date())
-      .select('participants.*')
+      .select('participants.*', 'participant_evaluations.id as participant_evaluation_id')
       .first();
 
     if (!participantEvaluation) {
       return res.status(404).json({ error: 'Token inválido o expirado' });
     }
+
+    // Get completed questionnaires
+    const completedResponses = await db('responses')
+      .where('participant_evaluation_id', participantEvaluation.participant_evaluation_id)
+      .whereNotNull('completed_at')
+      .select('questionnaire_type');
+
+    const completedTypes = completedResponses.map(r => r.questionnaire_type);
 
     // Parse demographic data to get form type
     let demographicData = {};
@@ -205,14 +213,25 @@ router.get('/:token/questionnaires', async (req, res) => {
       return res.status(500).json({ error: 'No se pudieron cargar los datos de cuestionarios' });
     }
 
-    // All participants must start with demographic questionnaire  
+    // Map frontend IDs to database questionnaire_type
+    const idToType = {
+      'ficha-datos': 'ficha_datos',
+      'forma-a': 'intralaboral_a',
+      'forma-b': 'intralaboral_b',
+      'extralaboral': 'extralaboral',
+      'estres': 'estres',
+      'coping': 'coping',
+    };
+
+    // All participants must start with demographic questionnaire
     const available = [];
-    
+
     available.push({
       id: 'ficha-datos',
       name: questionnairesData.cuestionarios.ficha_datos_generales?.nombre || 'Ficha de Datos Generales',
       description: 'Información demográfica y laboral',
-      totalQuestions: questionnairesData.cuestionarios.ficha_datos_generales?.campos?.length || 18
+      totalQuestions: questionnairesData.cuestionarios.ficha_datos_generales?.campos?.length || 18,
+      completed: completedTypes.includes(idToType['ficha-datos']),
     });
 
     // Determine available questionnaires based on form type
@@ -221,14 +240,16 @@ router.get('/:token/questionnaires', async (req, res) => {
         id: 'forma-a',
         name: questionnairesData.cuestionarios.forma_a_intralaboral.nombre,
         description: 'Para jefes, profesionales y técnicos',
-        totalQuestions: questionnairesData.cuestionarios.forma_a_intralaboral.total_preguntas
+        totalQuestions: questionnairesData.cuestionarios.forma_a_intralaboral.total_preguntas,
+        completed: completedTypes.includes(idToType['forma-a']),
       });
     } else {
       available.push({
         id: 'forma-b',
         name: questionnairesData.cuestionarios.forma_b_intralaboral?.nombre || 'Cuestionario Forma B',
         description: 'Para auxiliares y operarios',
-        totalQuestions: questionnairesData.cuestionarios.forma_b_intralaboral?.total_preguntas || 97
+        totalQuestions: questionnairesData.cuestionarios.forma_b_intralaboral?.total_preguntas || 97,
+        completed: completedTypes.includes(idToType['forma-b']),
       });
     }
 
@@ -237,21 +258,24 @@ router.get('/:token/questionnaires', async (req, res) => {
       id: 'extralaboral',
       name: questionnairesData.cuestionarios.extralaboral?.nombre || 'Cuestionario Extralaboral',
       description: 'Factores externos al trabajo',
-      totalQuestions: questionnairesData.cuestionarios.extralaboral?.total_preguntas || 31
+      totalQuestions: questionnairesData.cuestionarios.extralaboral?.total_preguntas || 31,
+      completed: completedTypes.includes(idToType['extralaboral']),
     });
 
     available.push({
       id: 'estres',
       name: questionnairesData.cuestionarios.estres?.nombre || 'Cuestionario de Estrés',
       description: 'Síntomas de estrés ocupacional',
-      totalQuestions: questionnairesData.cuestionarios.estres?.total_preguntas || 31
+      totalQuestions: questionnairesData.cuestionarios.estres?.total_preguntas || 31,
+      completed: completedTypes.includes(idToType['estres']),
     });
 
     available.push({
       id: 'coping',
       name: questionnairesData.cuestionarios.coping?.nombre || 'Brief COPE - Estrategias de Afrontamiento',
       description: 'Estrategias de afrontamiento al estrés',
-      totalQuestions: questionnairesData.cuestionarios.coping?.total_preguntas || 28
+      totalQuestions: questionnairesData.cuestionarios.coping?.total_preguntas || 28,
+      completed: completedTypes.includes(idToType['coping']),
     });
 
     res.json({

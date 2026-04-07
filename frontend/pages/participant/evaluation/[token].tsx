@@ -741,24 +741,59 @@ const ParticipantEvaluationPage = () => {
               </div>
             </div>
 
+            {/* Progress summary */}
+            {availableQuestionnaires.some(q => q.completed) && (
+              <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-6">
+                <div className="flex items-center gap-2">
+                  <svg className="w-5 h-5 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <p className="text-green-800 font-medium">
+                    {availableQuestionnaires.filter(q => q.completed).length} de {availableQuestionnaires.length} cuestionarios completados
+                  </p>
+                </div>
+                {availableQuestionnaires.every(q => q.completed) && (
+                  <p className="text-green-700 mt-2 text-sm">
+                    ¡Has completado todos los cuestionarios! Ya puedes cerrar esta página. Tu evaluador revisará los resultados.
+                  </p>
+                )}
+              </div>
+            )}
+
             <div className="grid gap-6 md:grid-cols-2">
               {availableQuestionnaires.map((questionnaire) => (
-                <div key={questionnaire.id} className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-                  <h3 className="text-lg font-medium text-gray-900 mb-2">
-                    {questionnaire.name}
-                  </h3>
+                <div key={questionnaire.id} className={`bg-white rounded-lg shadow-sm border p-6 ${questionnaire.completed ? 'border-green-300 bg-green-50/30' : 'border-gray-200'}`}>
+                  <div className="flex items-start justify-between mb-2">
+                    <h3 className="text-lg font-medium text-gray-900">
+                      {questionnaire.name}
+                    </h3>
+                    {questionnaire.completed && (
+                      <span className="inline-flex items-center gap-1 bg-green-100 text-green-700 text-xs font-semibold px-2.5 py-1 rounded-full">
+                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                        </svg>
+                        Completado
+                      </span>
+                    )}
+                  </div>
                   <p className="text-gray-600 mb-4">
                     {questionnaire.description}
                   </p>
                   <p className="text-sm text-gray-500 mb-4">
                     Total de preguntas: {questionnaire.totalQuestions}
                   </p>
-                  <button
-                    onClick={() => loadQuestionnaire(questionnaire.id)}
-                    className="w-full bg-blue-600 text-white py-2 px-4 rounded-lg font-medium hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition duration-200"
-                  >
-                    Comenzar Cuestionario
-                  </button>
+                  {questionnaire.completed ? (
+                    <div className="w-full bg-green-100 text-green-700 py-2 px-4 rounded-lg font-medium text-center cursor-not-allowed">
+                      ✓ Cuestionario completado
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => loadQuestionnaire(questionnaire.id)}
+                      className="w-full bg-blue-600 text-white py-2 px-4 rounded-lg font-medium hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition duration-200"
+                    >
+                      Comenzar Cuestionario
+                    </button>
+                  )}
                 </div>
               ))}
             </div>
