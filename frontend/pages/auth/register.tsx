@@ -25,6 +25,8 @@ export default function RegisterPage() {
   const router = useRouter();
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [honeypot, setHoneypot] = useState('');
+  const [formStartTime] = useState(Date.now());
 
   const {
     register,
@@ -35,6 +37,22 @@ export default function RegisterPage() {
   });
 
   const onSubmit = async (data: RegisterForm) => {
+    // Anti-spam: honeypot field should be empty for real users
+    if (honeypot) {
+      // Silently pretend it succeeded so bots don't learn
+      toast.success('Cuenta creada exitosamente');
+      router.push('/auth/login');
+      return;
+    }
+
+    // Anti-spam: form filled too fast (under 3 seconds = likely bot)
+    const timeSpent = Date.now() - formStartTime;
+    if (timeSpent < 3000) {
+      toast.success('Cuenta creada exitosamente');
+      router.push('/auth/login');
+      return;
+    }
+
     setIsLoading(true);
     try {
       const response = await fetch(`/api/auth/register`, {
@@ -45,6 +63,8 @@ export default function RegisterPage() {
           lastName: data.lastName,
           email: data.email,
           password: data.password,
+          _hp: honeypot,
+          _ts: timeSpent,
         }),
       });
 
@@ -91,6 +111,18 @@ export default function RegisterPage() {
           <p className="text-sm text-gray-500 mb-8">Regístrate como psicólogo evaluador</p>
 
           <form className="space-y-4" onSubmit={handleSubmit(onSubmit)}>
+            {/* Honeypot field - hidden from users, bots will fill it */}
+            <input
+              type="text"
+              name="website"
+              tabIndex={-1}
+              autoComplete="off"
+              value={honeypot}
+              onChange={(e) => setHoneypot(e.target.value)}
+              style={{ position: 'absolute', left: '-9999px', width: '1px', height: '1px', opacity: 0 }}
+              aria-hidden="true"
+            />
+
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Nombre</label>

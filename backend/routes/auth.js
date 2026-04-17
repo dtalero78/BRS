@@ -22,10 +22,35 @@ const loginSchema = Joi.object({
 // Register evaluator (self-service, no company required)
 router.post('/register', async (req, res) => {
   try {
-    const { error } = registerSchema.validate(req.body);
+    // Anti-spam: honeypot field should be empty
+    if (req.body._hp) {
+      return res.status(201).json({ message: 'Cuenta creada exitosamente.' });
+    }
+
+    // Anti-spam: form must take at least 3 seconds to fill
+    if (req.body._ts !== undefined && req.body._ts < 3000) {
+      return res.status(201).json({ message: 'Cuenta creada exitosamente.' });
+    }
+
+    // Anti-spam: detect suspicious email patterns (random dots/chars)
+    const email = (req.body.email || '').toLowerCase();
+    const localPart = email.split('@')[0] || '';
+    const dotCount = (localPart.match(/\./g) || []).length;
+    const hasManyDots = dotCount >= 4;
+    const looksRandom = /^[a-z]{1,3}(\.[a-z0-9]{1,3}){3,}/i.test(localPart);
+    if (hasManyDots && looksRandom) {
+      return res.status(201).json({ message: 'Cuenta creada exitosamente.' });
+    }
+
+    const { error } = registerSchema.validate({
+      email: req.body.email,
+      password: req.body.password,
+      firstName: req.body.firstName,
+      lastName: req.body.lastName,
+    });
     if (error) return res.status(400).json({ error: error.details[0].message });
 
-    const { email, password, firstName, lastName } = req.body;
+    const { password, firstName, lastName } = req.body;
 
     // Check if user already exists
     const existingUser = await db('users').where('email', email).first();
