@@ -541,7 +541,7 @@ export default function EvaluatorParticipants() {
               )}
             </div>
           ) : (
-            <div className="overflow-auto max-h-[70vh]">
+            <div className="overflow-auto h-[calc(100vh-260px)] min-h-[300px]">
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50 sticky top-0 z-10 shadow-sm">
                   <tr>

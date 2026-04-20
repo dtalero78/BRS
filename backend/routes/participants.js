@@ -677,9 +677,9 @@ router.delete('/:id', auth, authorize('admin', 'evaluator'), async (req, res) =>
     await db('audit_logs').insert({
       user_id: req.user.userId,
       action: 'delete_participant',
-      entity_type: 'participant',
-      entity_id: id,
-      details: {
+      table_name: 'participants',
+      record_id: id,
+      old_values: {
         name: `${demographicData.firstName || 'N/A'} ${demographicData.lastName || 'N/A'}`,
         evaluationId: participant.evaluation_id
       }
