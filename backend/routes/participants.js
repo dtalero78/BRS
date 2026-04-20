@@ -618,18 +618,22 @@ router.put('/:id', auth, authorize('admin', 'evaluator'), async (req, res) => {
 });
 
 // Delete participant
-router.delete('/:id', auth, authorize('admin'), async (req, res) => {
+router.delete('/:id', auth, authorize('admin', 'evaluator'), async (req, res) => {
   try {
     const { id } = req.params;
 
-    // Check if participant exists and belongs to evaluator's companies
-    const ownedIds = await getOwnedCompanyIds(req.user.userId);
-    const participant = await db('participants')
+    // Admins can delete any participant; evaluators only their own companies'.
+    const query = db('participants')
       .leftJoin('participant_evaluations as pe', 'participants.id', 'pe.participant_id')
       .where('participants.id', id)
-      .whereIn('participants.company_id', ownedIds)
-      .select('participants.*', 'pe.evaluation_id', 'pe.status as evaluation_status')
-      .first();
+      .select('participants.*', 'pe.evaluation_id', 'pe.status as evaluation_status');
+
+    if (req.user.role !== 'admin') {
+      const ownedIds = await getOwnedCompanyIds(req.user.userId);
+      query.whereIn('participants.company_id', ownedIds);
+    }
+
+    const participant = await query.first();
 
     if (!participant) {
       return res.status(404).json({ error: 'Participante no encontrado' });
