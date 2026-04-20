@@ -183,51 +183,76 @@ function detectLayout(headers, sectionBanners = {}) {
     warnings: [],
   };
 
-  headers.forEach((rawHeader, i) => {
-    if (rawHeader == null || rawHeader === '') return;
-    const headerText = String(rawHeader);
-
-    // 1) Filter columns — skip entirely
-    if (isFilterHeader(headerText)) {
+  // Pre-classify each column once so we don't re-evaluate filter / item /
+  // banner state in every pass.
+  const cells = headers.map((rawHeader, i) => {
+    if (rawHeader == null || rawHeader === '') return null;
+    const text = String(rawHeader);
+    if (isFilterHeader(text)) {
       layout.filterCols.push(i);
-      return;
+      return null;
     }
+    return {
+      i,
+      text,
+      itemNum: extractItemNumber(text),
+      bannerSection: sectionAtCol(sectionBanners, i),
+      // Headers like "13. ¿Cuál es el nombre del cargo?" carry a leading
+      // question number and belong to the official sociodemographic form.
+      // Plain metadata columns like "PUESTO DE TRABAJO" do not.
+      hasSocioQuestionPrefix: /^\s*\d{1,2}\.?\s+\S/.test(text) && !/^\d+\.\d/.test(text),
+    };
+  });
 
-    // 2) Sociodemographic fields — match by known header patterns.
-    //    We only assign once per field; first match wins.
-    //    Skip this if a section banner already places this col outside socio.
-    const bannerSection = sectionAtCol(sectionBanners, i);
-    if (bannerSection === null || bannerSection === 'socio') {
-      let matched = false;
-      for (const [field, pattern] of SOCIO_PATTERNS) {
-        if (layout.socio[field] === undefined && pattern.test(headerText)) {
-          layout.socio[field] = i;
-          matched = true;
-          break;
-        }
+  // Pass 1: assign socio fields where the header is the official
+  // sociodemographic question (has "N." prefix). This ensures the question
+  // wins over loose metadata aliases like "PUESTO DE TRABAJO".
+  for (const c of cells) {
+    if (!c) continue;
+    if (!c.hasSocioQuestionPrefix) continue;
+    if (c.bannerSection && c.bannerSection !== 'socio') continue;
+    for (const [field, pattern] of SOCIO_PATTERNS) {
+      if (layout.socio[field] === undefined && pattern.test(c.text)) {
+        layout.socio[field] = c.i;
+        c.assigned = 'socio';
+        break;
       }
-      if (matched) return;
     }
+  }
 
-    // 3) Questionnaire items — classify by section, key by item number.
-    const itemNum = extractItemNumber(headerText);
-    if (itemNum === null) return;
+  // Pass 2: fill remaining socio fields using any matching header
+  // (metadata columns, free-text labels, etc.).
+  for (const c of cells) {
+    if (!c || c.assigned) continue;
+    if (c.bannerSection && c.bannerSection !== 'socio') continue;
+    for (const [field, pattern] of SOCIO_PATTERNS) {
+      if (layout.socio[field] === undefined && pattern.test(c.text)) {
+        layout.socio[field] = c.i;
+        c.assigned = 'socio';
+        break;
+      }
+    }
+  }
 
-    // Prefer banner section; fall back to keyword in the header text.
-    let section = bannerSection;
+  // Pass 3: assign questionnaire items. Skip cols already used for socio.
+  for (const c of cells) {
+    if (!c || c.assigned) continue;
+    if (c.itemNum === null) continue;
+
+    let section = c.bannerSection;
     if (section === 'socio' || section === null) {
-      section = classifySection(headerText);
+      section = classifySection(c.text);
     }
-    if (section === 'ghq') return; // GHQ12 not imported
+    if (section === 'ghq') continue;
 
     const targetMap = section === 'stress' ? layout.stress
                     : section === 'extra'  ? layout.extra
                     : layout.intra;
 
-    if (targetMap[itemNum] === undefined) {
-      targetMap[itemNum] = i;
+    if (targetMap[c.itemNum] === undefined) {
+      targetMap[c.itemNum] = c.i;
     }
-  });
+  }
 
   // Emit warnings for missing critical fields
   const critical = ['documento', 'nombre'];
