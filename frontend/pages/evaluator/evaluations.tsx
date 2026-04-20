@@ -59,6 +59,9 @@ export default function EvaluatorEvaluations() {
   const [importFile, setImportFile] = useState<File | null>(null);
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState<any>(null);
+  const [importStep, setImportStep] = useState<'select' | 'preview' | 'result'>('select');
+  const [previewing, setPreviewing] = useState(false);
+  const [previewData, setPreviewData] = useState<any>(null);
 
   useEffect(() => {
     fetchEvaluations();
@@ -182,6 +185,39 @@ export default function EvaluatorEvaluations() {
     }
   };
 
+  const handlePreviewExcel = async () => {
+    if (!importEvaluationId || !importFile) return;
+
+    setPreviewing(true);
+    setPreviewData(null);
+
+    try {
+      const token = localStorage.getItem('token');
+      const formData = new FormData();
+      formData.append('file', importFile);
+
+      const response = await fetch(`/api/evaluations/${importEvaluationId}/preview-excel`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` },
+        body: formData
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        setPreviewData(data);
+        setImportStep('preview');
+      } else {
+        toast.error(data.error || 'Error al analizar archivo');
+      }
+    } catch (error) {
+      console.error('Preview error:', error);
+      toast.error('Error de conexión al analizar archivo');
+    } finally {
+      setPreviewing(false);
+    }
+  };
+
   const handleImportExcel = async () => {
     if (!importEvaluationId || !importFile) return;
 
@@ -205,6 +241,7 @@ export default function EvaluatorEvaluations() {
 
       if (response.ok) {
         setImportResult(data);
+        setImportStep('result');
         if (data.totalCreated > 0) {
           toast.success(`${data.totalCreated} participantes importados exitosamente`);
           fetchEvaluations();
@@ -215,6 +252,7 @@ export default function EvaluatorEvaluations() {
       } else {
         toast.error(data.error || 'Error al importar');
         setImportResult({ error: data.error });
+        setImportStep('result');
       }
     } catch (error) {
       console.error('Import error:', error);
@@ -224,10 +262,20 @@ export default function EvaluatorEvaluations() {
     }
   };
 
+  const resetImportModal = () => {
+    setShowImportModal(false);
+    setImportFile(null);
+    setImportResult(null);
+    setPreviewData(null);
+    setImportStep('select');
+  };
+
   const openImportModal = (evaluationId: number) => {
     setImportEvaluationId(evaluationId);
     setImportFile(null);
     setImportResult(null);
+    setPreviewData(null);
+    setImportStep('select');
     setShowImportModal(true);
   };
 
@@ -597,7 +645,7 @@ export default function EvaluatorEvaluations() {
       {/* Import Excel Modal */}
       {showImportModal && (
         <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
-          <div className="relative top-20 mx-auto p-5 border w-full max-w-lg shadow-lg rounded-md bg-white">
+          <div className={`relative top-10 mx-auto p-5 border w-full ${importStep === 'preview' ? 'max-w-3xl' : 'max-w-lg'} shadow-lg rounded-md bg-white mb-10`}>
             <div className="mt-3">
               <div className="flex items-center justify-center mb-4">
                 <div className="h-12 w-12 flex items-center justify-center rounded-full bg-green-100">
@@ -605,16 +653,19 @@ export default function EvaluatorEvaluations() {
                 </div>
               </div>
               <h3 className="text-lg font-medium text-gray-900 text-center mb-2">
-                Importar desde Excel
+                {importStep === 'select'  && 'Importar desde Excel'}
+                {importStep === 'preview' && 'Previsualización del archivo'}
+                {importStep === 'result'  && 'Resultado de la importación'}
               </h3>
-              <p className="text-sm text-gray-500 text-center mb-4">
-                Sube un archivo Excel con las hojas <strong>FA</strong> (Forma A) y/o <strong>FB</strong> (Forma B).
-                Se crearán los participantes, sus respuestas y se calcularán los resultados automáticamente.
-              </p>
 
-              {!importResult ? (
+              {/* STEP: select file */}
+              {importStep === 'select' && (
                 <div className="space-y-4">
-                  {/* File Input */}
+                  <p className="text-sm text-gray-500 text-center mb-2">
+                    Sube un archivo Excel con las hojas <strong>FA</strong> (Forma A) y/o <strong>FB</strong> (Forma B).
+                    El sistema detectará automáticamente las columnas y mostrará una previsualización antes de importar.
+                  </p>
+
                   <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-green-400 transition-colors">
                     <input
                       type="file"
@@ -628,52 +679,219 @@ export default function EvaluatorEvaluations() {
                       {importFile ? (
                         <p className="text-sm font-medium text-green-600">{importFile.name}</p>
                       ) : (
-                        <p className="text-sm text-gray-500">
-                          Click para seleccionar archivo Excel
-                        </p>
+                        <p className="text-sm text-gray-500">Click para seleccionar archivo Excel</p>
                       )}
-                      <p className="text-xs text-gray-400 mt-1">
-                        .xlsx o .xls (máximo 10MB)
-                      </p>
+                      <p className="text-xs text-gray-400 mt-1">.xlsx o .xls (máximo 10MB)</p>
                     </label>
                   </div>
 
                   <div className="bg-blue-50 rounded-lg p-3">
                     <p className="text-xs text-blue-700">
-                      <strong>Formato esperado:</strong> Columnas sociodemográficas (A-Y), seguidas de respuestas Intralaboral, Extralaboral y Estrés. Los valores deben ser numéricos (0-4 para intralaboral/extralaboral, 0-3 para estrés).
+                      <strong>Acepta dos formatos:</strong> valores numéricos (0-4) o etiquetas de texto
+                      ("Siempre", "Casi siempre", "Algunas veces", "Casi nunca", "Nunca"). El detector
+                      identifica las columnas por el nombre del header, no por posición.
                     </p>
                   </div>
 
                   <div className="flex justify-end space-x-3 pt-2">
                     <button
                       type="button"
-                      onClick={() => setShowImportModal(false)}
+                      onClick={resetImportModal}
                       className="px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
                     >
                       Cancelar
                     </button>
                     <button
-                      onClick={handleImportExcel}
-                      disabled={!importFile || importing}
-                      className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center"
+                      onClick={handlePreviewExcel}
+                      disabled={!importFile || previewing}
+                      className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center"
                     >
-                      {importing ? (
+                      {previewing ? (
                         <>
                           <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                          Importando...
+                          Analizando...
                         </>
                       ) : (
                         <>
-                          <ArrowUpTrayIcon className="h-4 w-4 mr-2" />
-                          Importar
+                          <EyeIcon className="h-4 w-4 mr-2" />
+                          Previsualizar
                         </>
                       )}
                     </button>
                   </div>
                 </div>
-              ) : (
+              )}
+
+              {/* STEP: preview */}
+              {importStep === 'preview' && previewData && (
                 <div className="space-y-4">
-                  {/* Import Results */}
+                  <p className="text-sm text-gray-500 text-center">
+                    Revisa lo que se detectó en <strong>{importFile?.name}</strong>. Si algo no coincide,
+                    cancela y corrige el Excel antes de importar.
+                  </p>
+
+                  {previewData.previews.map((p: any) => (
+                    <div key={p.formKey} className="border border-gray-200 rounded-lg overflow-hidden">
+                      <div className="bg-gray-50 px-4 py-2 border-b border-gray-200 flex items-center justify-between">
+                        <h4 className="font-semibold text-gray-700">
+                          Hoja {p.formKey}: <span className="font-normal text-gray-500">"{p.sheetName}"</span>
+                        </h4>
+                        <span className="text-xs text-gray-500">
+                          Header en fila {p.headerRow}, datos desde fila {p.dataStartRow}
+                        </span>
+                      </div>
+
+                      <div className="p-4 space-y-3">
+                        {/* Counts */}
+                        <div className="grid grid-cols-4 gap-2">
+                          <div className="bg-blue-50 rounded p-2 text-center">
+                            <p className="text-xl font-bold text-blue-700">{p.totalDataRows}</p>
+                            <p className="text-xs text-blue-600">Participantes</p>
+                          </div>
+                          <div className={`rounded p-2 text-center ${p.layout.intraItemCount === p.expected.intra ? 'bg-green-50' : 'bg-yellow-50'}`}>
+                            <p className={`text-xl font-bold ${p.layout.intraItemCount === p.expected.intra ? 'text-green-700' : 'text-yellow-700'}`}>
+                              {p.layout.intraItemCount}/{p.expected.intra}
+                            </p>
+                            <p className={`text-xs ${p.layout.intraItemCount === p.expected.intra ? 'text-green-600' : 'text-yellow-600'}`}>Intralaboral</p>
+                          </div>
+                          <div className={`rounded p-2 text-center ${p.layout.extraItemCount === p.expected.extra ? 'bg-green-50' : 'bg-yellow-50'}`}>
+                            <p className={`text-xl font-bold ${p.layout.extraItemCount === p.expected.extra ? 'text-green-700' : 'text-yellow-700'}`}>
+                              {p.layout.extraItemCount}/{p.expected.extra}
+                            </p>
+                            <p className={`text-xs ${p.layout.extraItemCount === p.expected.extra ? 'text-green-600' : 'text-yellow-600'}`}>Extralaboral</p>
+                          </div>
+                          <div className={`rounded p-2 text-center ${p.layout.stressItemCount === p.expected.stress ? 'bg-green-50' : 'bg-yellow-50'}`}>
+                            <p className={`text-xl font-bold ${p.layout.stressItemCount === p.expected.stress ? 'text-green-700' : 'text-yellow-700'}`}>
+                              {p.layout.stressItemCount}/{p.expected.stress}
+                            </p>
+                            <p className={`text-xs ${p.layout.stressItemCount === p.expected.stress ? 'text-green-600' : 'text-yellow-600'}`}>Estrés</p>
+                          </div>
+                        </div>
+
+                        <div className="text-xs text-gray-600">
+                          <span className="font-medium">{p.newRows}</span> nuevos · <span className="font-medium">{p.duplicateRows}</span> ya importados (se omitirán)
+                          {p.layout.filterCols.length > 0 && (
+                            <> · <span className="font-medium">{p.layout.filterCols.length}</span> columna(s) filtro detectada(s) (se ignorarán)</>
+                          )}
+                        </div>
+
+                        {/* Warnings */}
+                        {p.warnings && p.warnings.length > 0 && (
+                          <div className="bg-red-50 border border-red-200 rounded p-2">
+                            <p className="text-xs font-medium text-red-700 mb-1">⚠ Advertencias:</p>
+                            {p.warnings.map((w: string, i: number) => (
+                              <p key={i} className="text-xs text-red-600">• {w}</p>
+                            ))}
+                          </div>
+                        )}
+
+                        {p.missingIntraItems && p.missingIntraItems.length > 0 && (
+                          <div className="bg-yellow-50 border border-yellow-200 rounded p-2">
+                            <p className="text-xs text-yellow-700">
+                              <strong>Items intralaboral faltantes:</strong> {p.missingIntraItems.join(', ')}
+                              <br/><span className="text-yellow-600">(probablemente headers mal numerados en el Excel)</span>
+                            </p>
+                          </div>
+                        )}
+
+                        {/* Sample participants */}
+                        {p.sampleParticipants && p.sampleParticipants.length > 0 && (
+                          <div>
+                            <p className="text-xs font-medium text-gray-700 mb-1">Vista previa de los primeros participantes:</p>
+                            <div className="overflow-x-auto">
+                              <table className="min-w-full text-xs border border-gray-200">
+                                <thead className="bg-gray-50">
+                                  <tr>
+                                    <th className="px-2 py-1 text-left text-gray-600">Fila</th>
+                                    <th className="px-2 py-1 text-left text-gray-600">Documento</th>
+                                    <th className="px-2 py-1 text-left text-gray-600">Nombre</th>
+                                    <th className="px-2 py-1 text-left text-gray-600">Sexo</th>
+                                    <th className="px-2 py-1 text-left text-gray-600">Año</th>
+                                    <th className="px-2 py-1 text-left text-gray-600">Cargo</th>
+                                    <th className="px-2 py-1 text-center text-gray-600">Intra</th>
+                                    <th className="px-2 py-1 text-center text-gray-600">Extra</th>
+                                    <th className="px-2 py-1 text-center text-gray-600">Estrés</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {p.sampleParticipants.map((sp: any, i: number) => (
+                                    <tr key={i} className="border-t border-gray-200">
+                                      <td className="px-2 py-1 text-gray-500">{sp.rowIndex}</td>
+                                      <td className="px-2 py-1 text-gray-800">{sp.documento || '—'}</td>
+                                      <td className="px-2 py-1 text-gray-800">{sp.nombre || '—'}</td>
+                                      <td className="px-2 py-1 text-gray-600">{sp.sexo || '—'}</td>
+                                      <td className="px-2 py-1 text-gray-600">{sp.birthYear || '—'}</td>
+                                      <td className="px-2 py-1 text-gray-600">{sp.cargo ? sp.cargo.slice(0, 25) : '—'}</td>
+                                      <td className="px-2 py-1 text-center">
+                                        <span className={sp.intralaboral.invalid > 0 ? 'text-yellow-700' : 'text-green-700'}>
+                                          {sp.intralaboral.ok}{sp.intralaboral.invalid > 0 ? `/${sp.intralaboral.invalid}✗` : ''}
+                                        </span>
+                                      </td>
+                                      <td className="px-2 py-1 text-center">
+                                        <span className={sp.extralaboral.invalid > 0 ? 'text-yellow-700' : 'text-green-700'}>
+                                          {sp.extralaboral.ok}
+                                        </span>
+                                      </td>
+                                      <td className="px-2 py-1 text-center">
+                                        <span className={sp.estres.invalid > 0 ? 'text-yellow-700' : 'text-green-700'}>
+                                          {sp.estres.ok}
+                                        </span>
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+
+                  <div className="flex justify-between items-center pt-2 border-t border-gray-200">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setImportStep('select');
+                        setPreviewData(null);
+                      }}
+                      className="px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
+                    >
+                      ← Cambiar archivo
+                    </button>
+                    <div className="flex space-x-3">
+                      <button
+                        type="button"
+                        onClick={resetImportModal}
+                        className="px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
+                      >
+                        Cancelar
+                      </button>
+                      <button
+                        onClick={handleImportExcel}
+                        disabled={importing}
+                        className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 disabled:bg-gray-300 flex items-center"
+                      >
+                        {importing ? (
+                          <>
+                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                            Importando...
+                          </>
+                        ) : (
+                          <>
+                            <CheckCircleIcon className="h-4 w-4 mr-2" />
+                            Confirmar e importar
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* STEP: result */}
+              {importStep === 'result' && importResult && (
+                <div className="space-y-4">
                   {importResult.error ? (
                     <div className="bg-red-50 border border-red-200 rounded-lg p-4">
                       <div className="flex items-center">
@@ -717,11 +935,7 @@ export default function EvaluatorEvaluations() {
 
                   <div className="flex justify-end pt-2">
                     <button
-                      onClick={() => {
-                        setShowImportModal(false);
-                        setImportResult(null);
-                        setImportFile(null);
-                      }}
+                      onClick={resetImportModal}
                       className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700"
                     >
                       Cerrar

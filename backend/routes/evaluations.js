@@ -7,6 +7,7 @@ const { v4: uuidv4 } = require('uuid');
 const multer = require('multer');
 const XLSX = require('xlsx');
 const calculateResults = require('../utils/calculate-results');
+const excelDetector = require('../utils/excel-import-detector');
 
 // Multer config for Excel uploads (memory storage, max 10MB)
 const upload = multer({
@@ -437,49 +438,37 @@ router.get('/dashboard', auth, async (req, res) => {
  * The ficha_datos uses questionNumber-based responses that our report-data-aggregator reads.
  * Q2=sexo, Q3=año nacimiento, Q4=estudios, Q5=estado civil, Q9=dependientes, etc.
  */
-function buildFichaFromExcelRow(row) {
-  // row is array from Excel, cols 0-24 are sociodemographic
-  // Map Excel columns to ficha_datos question numbers
-  const fichaMap = {};
+/**
+ * Build ficha_datos from an Excel row using a detected sociodemographic layout.
+ * socio is { fieldName: colIndex } from excelDetector.detectLayout().
+ */
+function buildFichaFromExcelRow(row, socio) {
+  const get = (field) => {
+    const c = socio[field];
+    if (c === undefined || row[c] == null) return '';
+    return String(row[c]);
+  };
 
-  // Q1: Fecha de aplicación (col 1)
-  fichaMap['1'] = row[1] || '';
-  // Q2: Sexo (col 5) - text value like "FEMENINO", "MASCULINO"
-  fichaMap['2'] = row[5] || '';
-  // Q3: Año de nacimiento (col 6)
-  fichaMap['3'] = row[6] != null ? String(row[6]) : '';
-  // Q4: Último nivel de estudios (col 8)
-  fichaMap['4'] = row[8] || '';
-  // Q5: Estado civil (col 7)
-  fichaMap['5'] = row[7] || '';
-  // Q6: Ocupación o profesión (col 9)
-  fichaMap['6'] = row[9] || '';
-  // Q7: Ciudad de residencia (col 10)
-  fichaMap['7'] = row[10] || '';
-  // Q8: Estrato (col 12)
-  fichaMap['8'] = row[12] != null ? String(row[12]) : '';
-  // Q9: Número de personas que dependen económicamente (col 14)
-  fichaMap['9'] = row[14] != null ? String(row[14]) : '0';
-  // Q10: Tipo de vivienda (col 13)
-  fichaMap['10'] = row[13] || '';
-  // Q11: Ciudad donde trabaja (col 15)
-  fichaMap['11'] = row[15] || '';
-  // Q12: Hace cuantos años que trabaja en esta empresa (col 17)
-  fichaMap['12'] = row[17] || '';
-  // Q13: Nombre del cargo (col 18)
-  fichaMap['13'] = row[18] || '';
-  // Q14: Tipo de cargo (col 19)
-  fichaMap['14'] = row[19] || '';
-  // Q15: Hace cuantos años desempeña el cargo (col 20)
-  fichaMap['15'] = row[20] || '';
-  // Q16: Departamento de la empresa (col 21)
-  fichaMap['16'] = row[21] || '';
-  // Q17: Tipo de contrato (col 22)
-  fichaMap['17'] = row[22] || '';
-  // Q18: Horas de trabajo diarias (col 23)
-  fichaMap['18'] = row[23] != null ? String(row[23]) : '';
-
-  return fichaMap;
+  return {
+    '1':  get('fecha'),
+    '2':  get('sexo'),
+    '3':  get('birthYear'),
+    '4':  get('education'),
+    '5':  get('maritalStatus'),
+    '6':  get('ocupacion'),
+    '7':  get('ciudadResidencia'),
+    '8':  get('estrato'),
+    '9':  get('dependientes') || '0',
+    '10': get('tipoVivienda'),
+    '11': get('ciudadTrabajo'),
+    '12': get('anosEmpresa'),
+    '13': get('cargo'),
+    '14': get('tipoCargo'),
+    '15': get('anosCargo'),
+    '16': get('departamento'),
+    '17': get('tipoContrato'),
+    '18': get('horasTrabajo'),
+  };
 }
 
 /**
@@ -533,6 +522,114 @@ function excelDateToString(serial) {
   return d.toISOString().split('T')[0];
 }
 
+/**
+ * Parse the uploaded Excel buffer and detect FA/FB sheets with their layouts.
+ * Shared between the preview and import endpoints.
+ *
+ * Returns { sheets: { FA?: { name, data, headerRow, layout }, FB?: {...} }, error? }
+ */
+function parseAndDetect(buffer) {
+  const workbook = XLSX.read(buffer, { type: 'buffer' });
+  const sheetNames = workbook.SheetNames;
+
+  const detected = {};
+  for (const name of sheetNames) {
+    const upper = name.toUpperCase().trim();
+    let key = null;
+    if (upper.startsWith('FA')) key = 'FA';
+    else if (upper.startsWith('FB')) key = 'FB';
+    if (!key || detected[key]) continue;
+
+    const data = XLSX.utils.sheet_to_json(workbook.Sheets[name], { header: 1 });
+    const headerRow = excelDetector.findHeaderRow(data);
+    const banners = excelDetector.detectSectionBanners(data, headerRow);
+    const layout = excelDetector.detectLayout(data[headerRow] || [], banners);
+    detected[key] = { name, data, headerRow, layout };
+  }
+
+  if (!detected.FA && !detected.FB) {
+    return { error: 'El archivo Excel debe tener hojas llamadas "FA" (Forma A) y/o "FB" (Forma B)' };
+  }
+  return { sheets: detected };
+}
+
+// Intralaboral questionnaire type per form
+const INTRA_TYPE = { FA: 'intralaboral_a', FB: 'intralaboral_b' };
+// Expected item counts for BRS
+const EXPECTED_ITEMS = {
+  FA: { intra: 123, extra: 31, stress: 31 },
+  FB: { intra: 97,  extra: 31, stress: 31 },
+};
+
+// POST /api/evaluations/:evaluationId/preview-excel
+// Returns what the importer detected without persisting anything. Lets the
+// user verify column mappings and sample data before committing.
+router.post('/:evaluationId/preview-excel', auth, authorize('admin', 'evaluator'), upload.single('file'), async (req, res) => {
+  try {
+    const { evaluationId } = req.params;
+
+    const companyIds = await getOwnedCompanyIds(req.user.userId);
+    const evaluation = await db('evaluations')
+      .where('id', evaluationId)
+      .whereIn('company_id', companyIds)
+      .first();
+
+    if (!evaluation) return res.status(404).json({ error: 'Evaluación no encontrada' });
+    if (!req.file)   return res.status(400).json({ error: 'No se envió ningún archivo' });
+
+    const parsed = parseAndDetect(req.file.buffer);
+    if (parsed.error) return res.status(400).json({ error: parsed.error });
+
+    const existingPEs = await db('participant_evaluations')
+      .where('evaluation_id', evaluationId)
+      .join('participants', 'participant_evaluations.participant_id', 'participants.id')
+      .select('participants.email');
+    const assignedEmails = new Set(existingPEs.map(r => r.email));
+
+    const previews = [];
+    for (const [formKey, sheet] of Object.entries(parsed.sheets)) {
+      const { data, layout, headerRow, name } = sheet;
+      const preview = excelDetector.buildPreview(data, layout, formKey, 5, headerRow);
+      preview.sheetName = name;
+      preview.expected = EXPECTED_ITEMS[formKey];
+
+      // Items missing vs. expected (help user spot gaps in their Excel)
+      const missingIntra = [];
+      for (let i = 1; i <= preview.expected.intra; i++) {
+        if (layout.intra[i] === undefined) missingIntra.push(i);
+      }
+      preview.missingIntraItems = missingIntra;
+
+      // How many rows are new vs. already assigned
+      let newRows = 0;
+      let dupRows = 0;
+      const docCol = layout.socio.documento;
+      for (let r = headerRow + 1; r < data.length; r++) {
+        const row = data[r];
+        if (!row) continue;
+        const doc = docCol !== undefined ? String(row[docCol] || '').trim() : '';
+        const nameVal = layout.socio.nombre !== undefined ? String(row[layout.socio.nombre] || '').trim() : '';
+        if (!doc && !nameVal) continue;
+        const docNumber = doc || `IMPORT_${r}`;
+        const email = `cc_${docNumber}@temp.com`.toLowerCase();
+        if (assignedEmails.has(email)) dupRows++; else newRows++;
+      }
+      preview.newRows = newRows;
+      preview.duplicateRows = dupRows;
+
+      previews.push(preview);
+    }
+
+    res.json({ previews });
+  } catch (error) {
+    console.error('Preview Excel error:', error);
+    if (error.message && error.message.includes('Solo se permiten archivos Excel')) {
+      return res.status(400).json({ error: error.message });
+    }
+    res.status(500).json({ error: 'Error al analizar archivo Excel: ' + error.message });
+  }
+});
+
 // POST /api/evaluations/:evaluationId/import-excel
 router.post('/:evaluationId/import-excel', auth, authorize('admin', 'evaluator'), upload.single('file'), async (req, res) => {
   try {
@@ -545,40 +642,12 @@ router.post('/:evaluationId/import-excel', auth, authorize('admin', 'evaluator')
       .whereIn('company_id', companyIds)
       .first();
 
-    if (!evaluation) {
-      return res.status(404).json({ error: 'Evaluación no encontrada' });
-    }
+    if (!evaluation) return res.status(404).json({ error: 'Evaluación no encontrada' });
+    if (!req.file)   return res.status(400).json({ error: 'No se envió ningún archivo' });
 
-    if (!req.file) {
-      return res.status(400).json({ error: 'No se envió ningún archivo' });
-    }
-
-    // Parse Excel
-    const workbook = XLSX.read(req.file.buffer, { type: 'buffer' });
-    const sheetNames = workbook.SheetNames;
-
-    // Detect FA/FB sheets
-    const sheets = {};
-    for (const name of sheetNames) {
-      const upper = name.toUpperCase().trim();
-      if (upper.startsWith('FA')) sheets.FA = name;
-      else if (upper.startsWith('FB')) sheets.FB = name;
-    }
-
-    if (!sheets.FA && !sheets.FB) {
-      return res.status(400).json({
-        error: 'El archivo Excel debe tener hojas llamadas "FA" (Forma A) y/o "FB" (Forma B)'
-      });
-    }
-
-    // Column layout (based on analysis of the standard Excel format):
-    // Cols 0-24: Sociodemographic (25 columns)
-    // FA: Cols 25-147: Intralaboral A (123 items), Cols 148-178: Extralaboral (31), Cols 179-209: Estrés (31)
-    // FB: Cols 25-121: Intralaboral B (97 items), Cols 122-152: Extralaboral (31), Cols 153-183: Estrés (31)
-    const LAYOUT = {
-      FA: { intraStart: 25, intraCount: 123, extraStart: 148, extraCount: 31, stressStart: 179, stressCount: 31, type: 'intralaboral_a' },
-      FB: { intraStart: 25, intraCount: 97, extraStart: 122, extraCount: 31, stressStart: 153, stressCount: 31, type: 'intralaboral_b' }
-    };
+    const parsed = parseAndDetect(req.file.buffer);
+    if (parsed.error) return res.status(400).json({ error: parsed.error });
+    const sheets = parsed.sheets;
 
     const crypto = require('crypto');
     let totalCreated = 0;
@@ -602,23 +671,21 @@ router.post('/:evaluationId/import-excel', auth, authorize('admin', 'evaluator')
     // Collect all rows to process
     const rowsToProcess = [];
 
-    for (const [formKey, sheetName] of Object.entries(sheets)) {
-      const layout = LAYOUT[formKey];
-      const ws = workbook.Sheets[sheetName];
-      const data = XLSX.utils.sheet_to_json(ws, { header: 1 });
+    for (const [formKey, sheet] of Object.entries(sheets)) {
+      const { data, layout, headerRow } = sheet;
+      const socio = layout.socio;
+      const docCol = socio.documento;
+      const nameCol = socio.nombre;
 
-      for (let rowIdx = 2; rowIdx < data.length; rowIdx++) {
+      for (let rowIdx = headerRow + 1; rowIdx < data.length; rowIdx++) {
         const row = data[rowIdx];
-        if (!row || row[0] === undefined || row[0] === '' || row[0] === null) continue;
+        if (!row) continue;
 
         const rowNum = rowIdx + 1;
-        const nombre = (row[3] || '').toString().trim();
-        const docId = (row[2] || '').toString().trim();
+        const docId = docCol !== undefined ? String(row[docCol] || '').trim() : '';
+        const nombre = nameCol !== undefined ? String(row[nameCol] || '').trim() : '';
 
-        if (!nombre && !docId) {
-          totalSkipped++;
-          continue;
-        }
+        if (!nombre && !docId) continue;
 
         const documentNumber = docId || `IMPORT_${rowIdx}`;
         const email = `cc_${documentNumber}@temp.com`.toLowerCase();
@@ -647,6 +714,11 @@ router.post('/:evaluationId/import-excel', auth, authorize('admin', 'evaluator')
             const firstName = nameParts.slice(0, Math.ceil(nameParts.length / 2)).join(' ') || item.nombre;
             const lastName = nameParts.slice(Math.ceil(nameParts.length / 2)).join(' ') || '';
             const formType = item.formKey === 'FA' ? 'A' : 'B';
+            const socio = item.layout.socio;
+            const get = (field) => {
+              const c = socio[field];
+              return c !== undefined && item.row[c] != null ? String(item.row[c]) : '';
+            };
 
             newParticipantInserts.push({
               company_id: evaluation.company_id,
@@ -655,17 +727,17 @@ router.post('/:evaluationId/import-excel', auth, authorize('admin', 'evaluator')
                 firstName, lastName,
                 documentType: 'CC',
                 documentNumber: item.documentNumber,
-                birthYear: parseInt(item.row[6]) || 1990,
-                gender: mapGender(item.row[5]),
-                maritalStatus: mapMaritalStatus(item.row[7]),
-                educationLevel: (item.row[8] || '').toString(),
-                department: (item.row[4] || '').toString(),
-                position: (item.row[18] || '').toString(),
-                contractType: (item.row[22] || '').toString(),
-                employmentType: (item.row[19] || '').toString(),
+                birthYear: excelDetector.parseExcelYear(socio.birthYear !== undefined ? item.row[socio.birthYear] : null) || 1990,
+                gender: mapGender(get('sexo')),
+                maritalStatus: mapMaritalStatus(get('maritalStatus')),
+                educationLevel: get('education'),
+                department: get('departamento'),
+                position: get('cargo'),
+                contractType: get('tipoContrato'),
+                employmentType: get('tipoCargo'),
                 tenureMonths: 0,
-                salaryRange: (item.row[24] || '').toString(),
-                workHoursPerDay: parseInt(item.row[23]) || 8,
+                salaryRange: get('tipoSalario'),
+                workHoursPerDay: parseInt(get('horasTrabajo')) || 8,
                 workDaysPerWeek: 5,
                 formType
               }),
@@ -711,52 +783,45 @@ router.post('/:evaluationId/import-excel', auth, authorize('admin', 'evaluator')
           const occupationalGroup = formType === 'B' ? 'auxiliares' : 'jefes';
 
           try {
+            const intraType = INTRA_TYPE[formKey];
+
             // Ficha de datos
             allResponseInserts.push({
               participant_evaluation_id: pe.id,
               questionnaire_type: 'ficha_datos',
-              responses: JSON.stringify(buildFichaFromExcelRow(row)),
+              responses: JSON.stringify(buildFichaFromExcelRow(row, layout.socio)),
               completed_at: new Date()
             });
 
-            // Intralaboral (Excel: Siempre=0..Nunca=4 → BRS: Siempre=4..Nunca=0)
-            const intraResponses = {};
-            for (let i = 0; i < layout.intraCount; i++) {
-              const val = row[layout.intraStart + i];
-              if (val !== undefined && val !== null && val !== '') {
-                intraResponses[String(i + 1)] = 4 - (parseInt(val) || 0);
+            // Build response maps by looking up each item's column in the detected layout
+            // and converting whatever is there (numeric 0-4 or text "Siempre"..."Nunca")
+            // to the BRS-scaled numeric value.
+            const collectResponses = (itemMap, scale) => {
+              const out = {};
+              for (const [itemNumStr, col] of Object.entries(itemMap)) {
+                const val = row[col];
+                const parsed = excelDetector.parseResponseValue(val, scale);
+                if (parsed !== null) out[itemNumStr] = parsed;
               }
-            }
+              return out;
+            };
+
+            const intraResponses  = collectResponses(layout.intra,  'intra');
+            const extraResponses  = collectResponses(layout.extra,  'intra');
+            const stressResponses = collectResponses(layout.stress, 'stress');
+
             allResponseInserts.push({
               participant_evaluation_id: pe.id,
-              questionnaire_type: layout.type,
+              questionnaire_type: intraType,
               responses: JSON.stringify(intraResponses),
               completed_at: new Date()
             });
-
-            // Extralaboral (Excel: Siempre=0..Nunca=4 → BRS: Siempre=4..Nunca=0)
-            const extraResponses = {};
-            for (let i = 0; i < layout.extraCount; i++) {
-              const val = row[layout.extraStart + i];
-              if (val !== undefined && val !== null && val !== '') {
-                extraResponses[String(i + 1)] = 4 - (parseInt(val) || 0);
-              }
-            }
             allResponseInserts.push({
               participant_evaluation_id: pe.id,
               questionnaire_type: 'extralaboral',
               responses: JSON.stringify(extraResponses),
               completed_at: new Date()
             });
-
-            // Estrés (Excel: Siempre=0..Nunca=3 → BRS: Siempre=3..Nunca=0)
-            const stressResponses = {};
-            for (let i = 0; i < layout.stressCount; i++) {
-              const val = row[layout.stressStart + i];
-              if (val !== undefined && val !== null && val !== '') {
-                stressResponses[String(i + 1)] = 3 - (parseInt(val) || 0);
-              }
-            }
             allResponseInserts.push({
               participant_evaluation_id: pe.id,
               questionnaire_type: 'estres',
@@ -770,7 +835,7 @@ router.post('/:evaluationId/import-excel', auth, authorize('admin', 'evaluator')
               question_number: parseInt(qn), response_value: parseInt(rv)
             }));
             if (intraFormatted.length > 0) {
-              const r = await calculateResults(layout.type, intraFormatted, { occupationalGroup });
+              const r = await calculateResults(intraType, intraFormatted, { occupationalGroup });
               allResults.push(...r);
             }
             const extraFormatted = Object.entries(extraResponses).map(([qn, rv]) => ({
