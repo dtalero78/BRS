@@ -611,9 +611,9 @@ router.post('/:evaluationId/preview-excel', auth, authorize('admin', 'evaluator'
         const nameVal = layout.socio.nombre !== undefined ? String(row[layout.socio.nombre] || '').trim() : '';
         if (!doc && !nameVal) continue;
         const docNumber = doc || `IMPORT_${r}`;
-        const newEmail = `cc_${docNumber}_c${evaluation.company_id}@temp.com`.toLowerCase();
-        const legacyEmail = `cc_${docNumber}@temp.com`.toLowerCase();
-        if (assignedEmails.has(newEmail) || assignedEmails.has(legacyEmail)) dupRows++; else newRows++;
+        const canonicalEmail = `cc_${docNumber}@temp.com`.toLowerCase();
+        const suffixedEmail  = `cc_${docNumber}_c${evaluation.company_id}@temp.com`.toLowerCase();
+        if (assignedEmails.has(canonicalEmail) || assignedEmails.has(suffixedEmail)) dupRows++; else newRows++;
       }
       preview.newRows = newRows;
       preview.duplicateRows = dupRows;
@@ -689,14 +689,15 @@ router.post('/:evaluationId/import-excel', auth, authorize('admin', 'evaluator')
         if (!nombre && !docId) continue;
 
         const documentNumber = docId || `IMPORT_${rowIdx}`;
-        // Email must be unique per company so two companies importing the
-        // same documento don't collide on participants.email's global
-        // unique constraint. Legacy participants from earlier imports use
-        // the unsuffixed format — we still recognise them for reuse.
-        const newEmail = `cc_${documentNumber}_c${evaluation.company_id}@temp.com`.toLowerCase();
-        const legacyEmail = `cc_${documentNumber}@temp.com`.toLowerCase();
-        const existingP = participantsByEmail[newEmail] || participantsByEmail[legacyEmail];
-        const email = existingP ? existingP.email : newEmail;
+        // After migration 20260420000001 the unique constraint on
+        // participants.email is scoped to (company_id, email), so the
+        // simple cc_<doc>@temp.com format is safe again. We still check
+        // the company-suffixed format to find participants created by
+        // the previous workaround and reuse them.
+        const canonicalEmail = `cc_${documentNumber}@temp.com`.toLowerCase();
+        const suffixedEmail  = `cc_${documentNumber}_c${evaluation.company_id}@temp.com`.toLowerCase();
+        const existingP = participantsByEmail[canonicalEmail] || participantsByEmail[suffixedEmail];
+        const email = existingP ? existingP.email : canonicalEmail;
 
         // Check if already assigned using pre-fetched data
         if (existingP && assignedParticipantIds.has(existingP.id)) {
