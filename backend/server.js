@@ -261,6 +261,14 @@ app.use('/api/reports', require('./routes/reports'));
 console.log('✅ Results routes loaded');
 console.log('✅ Reports routes loaded');
 
+// Photo import (Claude Vision) routes
+try {
+  app.use('/api/photo-import', require('./routes/photo-import'));
+  console.log('✅ Photo import routes loaded');
+} catch (error) {
+  console.error('❌ Error loading photo-import routes:', error.message);
+}
+
 // Serve static files (uploads, reports)
 app.use('/uploads', express.static('uploads'));
 

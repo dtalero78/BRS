@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import FlowLayout from '../../components/FlowLayout';
-import { 
+import {
   PlusIcon,
   PencilIcon,
   TrashIcon,
@@ -11,9 +11,11 @@ import {
   BriefcaseIcon,
   ClockIcon,
   MagnifyingGlassIcon,
-  FunnelIcon
+  FunnelIcon,
+  CameraIcon
 } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
+import PhotoImportModal from '../../components/PhotoImportModal';
 
 interface Participant {
   id: number;
@@ -59,6 +61,7 @@ export default function EvaluatorParticipants() {
   const [formTypeFilter, setFormTypeFilter] = useState<string>('all');
   const [showModal, setShowModal] = useState(false);
   const [editingParticipant, setEditingParticipant] = useState<Participant | null>(null);
+  const [photoTarget, setPhotoTarget] = useState<Participant | null>(null);
   const [formData, setFormData] = useState({
     evaluationId: '',
     firstName: '',
@@ -658,6 +661,13 @@ export default function EvaluatorParticipants() {
                         <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                           <div className="flex items-center space-x-2">
                             <button
+                              onClick={() => setPhotoTarget(participant)}
+                              className="text-gray-500 hover:text-green-700"
+                              title="Subir foto de prueba física"
+                            >
+                              <CameraIcon className="h-5 w-5" />
+                            </button>
+                            <button
                               onClick={() => handleEdit(participant)}
                               className="text-blue-600 hover:text-blue-900"
                               title="Editar"
@@ -866,6 +876,18 @@ export default function EvaluatorParticipants() {
             </div>
           </div>
         </div>
+      )}
+
+      {photoTarget && (
+        <PhotoImportModal
+          open={!!photoTarget}
+          onClose={() => setPhotoTarget(null)}
+          evaluationId={Number(photoTarget.evaluationId)}
+          participantId={photoTarget.id}
+          participantLabel={`${photoTarget.firstName} ${photoTarget.lastName} (${photoTarget.documentNumber})`}
+          defaultQuestionnaireType={photoTarget.formType === 'B' ? 'intralaboral_b' : 'intralaboral_a'}
+          onSuccess={() => fetchParticipants()}
+        />
       )}
     </FlowLayout>
   );

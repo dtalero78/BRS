@@ -13,6 +13,7 @@
     "db:seed": "knex seed:run"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.32.0",
     "bcrypt": "^6.0.0",
     "bcryptjs": "^2.4.3",
     "compression": "^1.8.1",

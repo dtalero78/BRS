@@ -14,9 +14,11 @@ import {
   ArrowUpTrayIcon,
   DocumentArrowUpIcon,
   CheckCircleIcon,
-  ExclamationTriangleIcon
+  ExclamationTriangleIcon,
+  CameraIcon
 } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
+import PhotoImportModal from '../../components/PhotoImportModal';
 
 interface Company {
   id: number;
@@ -62,6 +64,9 @@ export default function EvaluatorEvaluations() {
   const [importStep, setImportStep] = useState<'select' | 'preview' | 'result'>('select');
   const [previewing, setPreviewing] = useState(false);
   const [previewData, setPreviewData] = useState<any>(null);
+
+  // Photo import (Claude Vision) state
+  const [photoEvaluationId, setPhotoEvaluationId] = useState<number | null>(null);
 
   useEffect(() => {
     fetchEvaluations();
@@ -509,6 +514,13 @@ export default function EvaluatorEvaluations() {
                           <ArrowUpTrayIcon className="h-5 w-5" />
                         </button>
                         <button
+                          onClick={() => setPhotoEvaluationId(evaluation.id)}
+                          className="text-gray-400 hover:text-purple-600"
+                          title="Subir foto de hoja física"
+                        >
+                          <CameraIcon className="h-5 w-5" />
+                        </button>
+                        <button
                           onClick={() => handleEdit(evaluation)}
                           className="text-gray-400 hover:text-blue-600"
                           title="Editar"
@@ -946,6 +958,15 @@ export default function EvaluatorEvaluations() {
             </div>
           </div>
         </div>
+      )}
+
+      {photoEvaluationId !== null && (
+        <PhotoImportModal
+          open={photoEvaluationId !== null}
+          onClose={() => setPhotoEvaluationId(null)}
+          evaluationId={photoEvaluationId}
+          onSuccess={() => fetchEvaluations()}
+        />
       )}
     </FlowLayout>
   );
