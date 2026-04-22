@@ -13,14 +13,14 @@ const VALID_TYPES = Object.keys(QUESTIONNAIRE_META);
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
-    fileSize: 10 * 1024 * 1024,
+    fileSize: 32 * 1024 * 1024,
     files: 10,
   },
   fileFilter: (req, file, cb) => {
-    if (/^image\/(jpeg|png|webp|jpg)$/i.test(file.mimetype)) {
+    if (/^image\/(jpeg|png|webp|jpg)$/i.test(file.mimetype) || /^application\/pdf$/i.test(file.mimetype)) {
       cb(null, true);
     } else {
-      cb(new Error('Solo se permiten imágenes JPG, PNG o WebP.'));
+      cb(new Error('Solo se permiten imágenes JPG, PNG, WebP o PDF.'));
     }
   },
 });

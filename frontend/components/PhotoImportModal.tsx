@@ -239,14 +239,17 @@ export default function PhotoImportModal({
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Foto(s) de la hoja de respuestas</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Archivo(s) de la hoja de respuestas</label>
               <input
                 type="file"
                 multiple
-                accept="image/jpeg,image/png,image/webp"
+                accept="image/jpeg,image/png,image/webp,application/pdf"
                 onChange={(e) => setFiles(Array.from(e.target.files || []))}
                 className="block w-full text-sm text-gray-700 file:mr-4 file:py-2 file:px-3 file:rounded-md file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
               />
+              <p className="mt-1 text-xs text-gray-500">
+                Formatos aceptados: JPG, PNG, WebP, PDF. Máximo 32 MB por archivo. Los PDF multi-página se procesan completos.
+              </p>
               {files.length > 0 && (
                 <ul className="mt-2 text-xs text-gray-600 list-disc list-inside">
                   {files.map((f, i) => <li key={i}>{f.name} ({Math.round(f.size / 1024)} KB)</li>)}

@@ -24,14 +24,17 @@ const SCALE_DESCRIPTIONS = {
   ].join('\n'),
 };
 
-function detectMediaType(buffer) {
-  if (!buffer || buffer.length < 4) return 'image/jpeg';
+function detectFileKind(buffer) {
+  if (!buffer || buffer.length < 4) return { type: 'image', mediaType: 'image/jpeg' };
   const b = buffer;
-  if (b[0] === 0xff && b[1] === 0xd8) return 'image/jpeg';
-  if (b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) return 'image/png';
-  if (b[0] === 0x47 && b[1] === 0x49 && b[2] === 0x46) return 'image/gif';
-  if (b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46) return 'image/webp';
-  return 'image/jpeg';
+  if (b[0] === 0x25 && b[1] === 0x50 && b[2] === 0x44 && b[3] === 0x46) {
+    return { type: 'document', mediaType: 'application/pdf' };
+  }
+  if (b[0] === 0xff && b[1] === 0xd8) return { type: 'image', mediaType: 'image/jpeg' };
+  if (b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) return { type: 'image', mediaType: 'image/png' };
+  if (b[0] === 0x47 && b[1] === 0x49 && b[2] === 0x46) return { type: 'image', mediaType: 'image/gif' };
+  if (b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46) return { type: 'image', mediaType: 'image/webp' };
+  return { type: 'image', mediaType: 'image/jpeg' };
 }
 
 function buildSystemPrompt(questionnaireType, expectedCount, scale, expectParticipantInfo) {
@@ -178,19 +181,22 @@ async function extractAnswersFromSheet(imageBuffers, options) {
   const tool = buildTool(expectParticipantInfo);
 
   const content = [
-    ...imageBuffers.map(buf => ({
-      type: 'image',
-      source: {
-        type: 'base64',
-        media_type: detectMediaType(buf),
-        data: buf.toString('base64'),
-      },
-    })),
+    ...imageBuffers.map(buf => {
+      const kind = detectFileKind(buf);
+      return {
+        type: kind.type,
+        source: {
+          type: 'base64',
+          media_type: kind.mediaType,
+          data: buf.toString('base64'),
+        },
+      };
+    }),
     {
       type: 'text',
       text: expectParticipantInfo
-        ? `Lee la(s) imagen(es) adjunta(s) de la hoja física y extrae: (1) los datos del encabezado (documento y nombre) y (2) todas las marcas de respuesta con su número de pregunta. Esperas ${meta.count} preguntas numeradas.`
-        : `Lee la(s) imagen(es) adjunta(s) de la hoja física y extrae todas las marcas de respuesta con su número de pregunta. Esperas ${meta.count} preguntas numeradas.`,
+        ? `Lee el/los archivo(s) adjunto(s) (imagen o PDF) de la hoja física y extrae: (1) los datos del encabezado (documento y nombre) y (2) todas las marcas de respuesta con su número de pregunta. Esperas ${meta.count} preguntas numeradas. Si el PDF tiene varias páginas, recorre todas.`
+        : `Lee el/los archivo(s) adjunto(s) (imagen o PDF) de la hoja física y extrae todas las marcas de respuesta con su número de pregunta. Esperas ${meta.count} preguntas numeradas. Si el PDF tiene varias páginas, recorre todas.`,
     },
   ];
 
