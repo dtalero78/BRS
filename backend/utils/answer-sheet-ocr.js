@@ -242,7 +242,206 @@ async function extractAnswersFromSheet(imageBuffers, options) {
   return summarized;
 }
 
+function buildAutoSystemPrompt(expectParticipantInfo) {
+  return [
+    'Eres un asistente experto en leer PDFs o imágenes que contengan uno o varios cuestionarios de la Batería de Riesgo Psicosocial del Ministerio de Protección Social de Colombia (Resolución 2646 de 2008).',
+    '',
+    'El archivo puede contener cualquier combinación de estos 4 tipos:',
+    '',
+    '1. intralaboral_a — encabezado "FORMA A" (Jefes/Profesionales/Técnicos). 123 preguntas. Escala Likert 0..4.',
+    '2. intralaboral_b — encabezado "FORMA B" (Auxiliares/Operarios). 97 preguntas. Escala Likert 0..4.',
+    '3. extralaboral   — título "FACTORES EXTRALABORALES" o similar. 31 preguntas. Escala Likert 0..4.',
+    '4. estres         — "CUESTIONARIO PARA LA EVALUACIÓN DEL ESTRÉS — TERCERA VERSIÓN". 31 preguntas. Escala Likert 0..3.',
+    '',
+    'Escalas Likert (devuelve el valor numérico, NO el texto):',
+    '  Para intralaboral_a, intralaboral_b, extralaboral:',
+    '    Siempre=4, Casi siempre=3, Algunas veces=2, Casi nunca=1, Nunca=0',
+    '  Para estres:',
+    '    Siempre=3, Casi siempre=2, A veces=1, Nunca=0',
+    '',
+    'Reglas estrictas:',
+    '1. Identifica primero qué cuestionarios ESTÁN PRESENTES Y RESPONDIDOS en el archivo. Si ves un título pero no hay marcas de respuesta, NO lo incluyas.',
+    '2. Forma A y Forma B son mutuamente excluyentes — nunca ambas en el mismo archivo.',
+    '3. Por cada cuestionario detectado, agrega UN elemento al array "questionnaires" con sus respuestas.',
+    '4. Cada pregunta tiene UNA sola marca (X, círculo o similar). Si ves múltiples marcas ambiguas o ninguna, OMITE esa pregunta. NO inventes respuestas.',
+    '5. responseValue debe ser entero en el rango de la escala del cuestionario.',
+    '6. Usa confidence="high" para marcas claras, "medium" para legibles pero no perfectas, "low" para dudosas (borrón, tachadura, cerca del límite).',
+    '7. En "warnings" del cuestionario reporta observaciones específicas (borrón, columna cortada, etc). En "warnings" del top-level reporta observaciones generales del archivo.',
+    expectParticipantInfo
+      ? '8. Además extrae datos del encabezado del archivo: documento (solo dígitos), primer nombre, primer apellido. Si no están visibles, devuelve cadenas vacías y confidence="low".'
+      : '8. NO devuelvas participantInfo — el participante ya fue seleccionado en el sistema.',
+    '',
+    'Devuelve SIEMPRE el resultado llamando la herramienta save_all_questionnaires. No escribas prosa fuera de la llamada.',
+  ].join('\n');
+}
+
+function buildAutoTool(expectParticipantInfo) {
+  const schema = {
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+      questionnaires: {
+        type: 'array',
+        description: 'Un elemento por cuestionario detectado en el archivo. No incluyas cuestionarios sin respuestas.',
+        items: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            type: {
+              type: 'string',
+              enum: ['intralaboral_a', 'intralaboral_b', 'extralaboral', 'estres'],
+            },
+            responses: {
+              type: 'array',
+              items: {
+                type: 'object',
+                additionalProperties: false,
+                properties: {
+                  questionNumber: { type: 'integer' },
+                  responseValue:  { type: 'integer' },
+                  confidence:     { type: 'string', enum: ['high', 'medium', 'low'] },
+                },
+                required: ['questionNumber', 'responseValue', 'confidence'],
+              },
+            },
+            warnings: {
+              type: 'array',
+              items: { type: 'string' },
+            },
+          },
+          required: ['type', 'responses', 'warnings'],
+        },
+      },
+      warnings: {
+        type: 'array',
+        items: { type: 'string' },
+      },
+    },
+    required: ['questionnaires', 'warnings'],
+  };
+
+  if (expectParticipantInfo) {
+    schema.properties.participantInfo = {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        documentNumber: { type: 'string' },
+        firstName:      { type: 'string' },
+        lastName:       { type: 'string' },
+        confidence:     { type: 'string', enum: ['high', 'medium', 'low'] },
+      },
+      required: ['documentNumber', 'firstName', 'lastName', 'confidence'],
+    };
+    schema.required.push('participantInfo');
+  }
+
+  return {
+    name: 'save_all_questionnaires',
+    description: 'Guarda TODOS los cuestionarios detectados en el archivo. Úsala exactamente una vez.',
+    strict: true,
+    input_schema: schema,
+  };
+}
+
+async function extractAllQuestionnairesFromSheet(imageBuffers, options) {
+  const { expectParticipantInfo = false } = options || {};
+
+  if (!Array.isArray(imageBuffers) || imageBuffers.length === 0) {
+    throw new Error('Debe enviar al menos una imagen o PDF.');
+  }
+  if (!process.env.ANTHROPIC_API_KEY) {
+    throw new Error('ANTHROPIC_API_KEY no está configurada en el servidor.');
+  }
+
+  const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+  const systemPrompt = buildAutoSystemPrompt(expectParticipantInfo);
+  const tool = buildAutoTool(expectParticipantInfo);
+
+  const content = [
+    ...imageBuffers.map(buf => {
+      const kind = detectFileKind(buf);
+      return {
+        type: kind.type,
+        source: {
+          type: 'base64',
+          media_type: kind.mediaType,
+          data: buf.toString('base64'),
+        },
+      };
+    }),
+    {
+      type: 'text',
+      text: expectParticipantInfo
+        ? 'Lee el/los archivo(s) adjunto(s) (imagen o PDF) y: (1) extrae los datos del encabezado (documento y nombre). (2) Identifica TODOS los cuestionarios presentes y extrae sus respuestas. El archivo puede contener una batería completa.'
+        : 'Lee el/los archivo(s) adjunto(s) (imagen o PDF) y: identifica TODOS los cuestionarios presentes y extrae sus respuestas. El archivo puede contener una batería completa.',
+    },
+  ];
+
+  const response = await client.messages.create({
+    model: process.env.OCR_MODEL || 'claude-sonnet-4-6',
+    max_tokens: 20000,
+    system: [
+      { type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } },
+    ],
+    tools: [tool],
+    tool_choice: { type: 'tool', name: 'save_all_questionnaires' },
+    messages: [{ role: 'user', content }],
+  });
+
+  const toolBlock = response.content.find(b => b.type === 'tool_use' && b.name === 'save_all_questionnaires');
+  if (!toolBlock) {
+    const textBlock = response.content.find(b => b.type === 'text');
+    throw new Error(
+      'El modelo no devolvió el resultado estructurado. ' +
+      (textBlock ? `Texto recibido: ${String(textBlock.text).slice(0, 200)}` : ''),
+    );
+  }
+
+  const raw = toolBlock.input || {};
+  const seenTypes = new Set();
+  const byType = {};
+  for (const q of (raw.questionnaires || [])) {
+    if (!QUESTIONNAIRE_META[q.type] || seenTypes.has(q.type)) continue;
+    seenTypes.add(q.type);
+    const meta = QUESTIONNAIRE_META[q.type];
+    const summary = summarize({ responses: q.responses, warnings: q.warnings }, meta.count);
+    byType[q.type] = {
+      type: q.type,
+      label: meta.label,
+      expectedCount: meta.count,
+      scale: meta.scale,
+      ...summary,
+    };
+  }
+
+  const result = {
+    detectedTypes: Array.from(seenTypes),
+    byType,
+    warnings: Array.isArray(raw.warnings) ? raw.warnings.filter(w => typeof w === 'string') : [],
+    usage: {
+      inputTokens: response.usage?.input_tokens ?? null,
+      outputTokens: response.usage?.output_tokens ?? null,
+      cacheReadInputTokens: response.usage?.cache_read_input_tokens ?? null,
+      cacheCreationInputTokens: response.usage?.cache_creation_input_tokens ?? null,
+    },
+  };
+
+  if (expectParticipantInfo && raw.participantInfo) {
+    const p = raw.participantInfo;
+    result.participantInfo = {
+      documentNumber: (p.documentNumber || '').toString().replace(/\D+/g, ''),
+      firstName: (p.firstName || '').toString().trim(),
+      lastName: (p.lastName || '').toString().trim(),
+      confidence: ['high', 'medium', 'low'].includes(p.confidence) ? p.confidence : 'low',
+    };
+  }
+
+  return result;
+}
+
 module.exports = {
   extractAnswersFromSheet,
+  extractAllQuestionnairesFromSheet,
   QUESTIONNAIRE_META,
 };

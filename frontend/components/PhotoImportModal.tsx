@@ -1,8 +1,9 @@
 import { useEffect, useState, useMemo } from 'react';
 import toast from 'react-hot-toast';
-import { XMarkIcon, ArrowLeftIcon, PhotoIcon, CheckCircleIcon, ExclamationTriangleIcon } from '@heroicons/react/24/outline';
+import { XMarkIcon, ArrowLeftIcon, PhotoIcon, CheckCircleIcon, ExclamationTriangleIcon, SparklesIcon } from '@heroicons/react/24/outline';
 
 type QuestionnaireType = 'intralaboral_a' | 'intralaboral_b' | 'extralaboral' | 'estres';
+type SelectMode = QuestionnaireType | 'auto';
 
 const QUESTIONNAIRE_LABELS: Record<QuestionnaireType, string> = {
   intralaboral_a: 'Intralaboral Forma A (123 preguntas — Jefes/Profesionales/Técnicos)',
@@ -11,11 +12,25 @@ const QUESTIONNAIRE_LABELS: Record<QuestionnaireType, string> = {
   estres: 'Estrés (31 preguntas)',
 };
 
+const SHORT_LABELS: Record<QuestionnaireType, string> = {
+  intralaboral_a: 'Intra A',
+  intralaboral_b: 'Intra B',
+  extralaboral: 'Extralaboral',
+  estres: 'Estrés',
+};
+
 const QUESTIONNAIRE_COUNTS: Record<QuestionnaireType, number> = {
   intralaboral_a: 123,
   intralaboral_b: 97,
   extralaboral: 31,
   estres: 31,
+};
+
+const QUESTIONNAIRE_SCALES: Record<QuestionnaireType, 'intra' | 'stress'> = {
+  intralaboral_a: 'intra',
+  intralaboral_b: 'intra',
+  extralaboral: 'intra',
+  estres: 'stress',
 };
 
 const INTRA_OPTIONS = [
@@ -39,14 +54,28 @@ interface DetectedResponse {
   confidence: 'high' | 'medium' | 'low';
 }
 
-interface PreviewData {
-  questionnaireType: QuestionnaireType;
-  participantId: number | null;
-  participant: { id: number; email: string; demographicData: any } | null;
+interface TypeData {
+  type: QuestionnaireType;
+  label?: string;
+  expectedCount: number;
+  scale?: 'intra' | 'stress';
   responses: DetectedResponse[];
   missing: number[];
   warnings: string[];
   summary: { totalDetected: number; totalExpected: number; lowConfidenceCount: number; missingCount: number };
+}
+
+interface PreviewData {
+  mode: 'single' | 'auto';
+  questionnaireType: SelectMode;
+  participantId: number | null;
+  participant: { id: number; email: string; demographicData: any } | null;
+  detectedTypes?: QuestionnaireType[];
+  byType?: Record<QuestionnaireType, TypeData>;
+  responses?: DetectedResponse[];
+  missing?: number[];
+  warnings: string[];
+  summary?: { totalDetected: number; totalExpected: number; lowConfidenceCount: number; missingCount: number };
   participantInfo?: { documentNumber: string; firstName: string; lastName: string; confidence: string };
 }
 
@@ -56,13 +85,13 @@ interface Props {
   evaluationId: number;
   participantId?: number;
   participantLabel?: string;
-  defaultQuestionnaireType?: QuestionnaireType;
+  defaultQuestionnaireType?: SelectMode;
   onSuccess?: () => void;
 }
 
 type Step = 'select' | 'preview' | 'result';
-
 type EditedRow = { responseValue: number | null; confidence: 'high' | 'medium' | 'low' | 'user' };
+type EditsByType = Partial<Record<QuestionnaireType, Record<number, EditedRow>>>;
 
 export default function PhotoImportModal({
   open,
@@ -70,15 +99,16 @@ export default function PhotoImportModal({
   evaluationId,
   participantId,
   participantLabel,
-  defaultQuestionnaireType = 'estres',
+  defaultQuestionnaireType = 'auto',
   onSuccess,
 }: Props) {
   const [step, setStep] = useState<Step>('select');
   const [files, setFiles] = useState<File[]>([]);
-  const [questionnaireType, setQuestionnaireType] = useState<QuestionnaireType>(defaultQuestionnaireType);
+  const [selectedMode, setSelectedMode] = useState<SelectMode>(defaultQuestionnaireType);
   const [previewing, setPreviewing] = useState(false);
   const [preview, setPreview] = useState<PreviewData | null>(null);
-  const [edits, setEdits] = useState<Record<number, EditedRow>>({});
+  const [editsByType, setEditsByType] = useState<EditsByType>({});
+  const [activeTab, setActiveTab] = useState<QuestionnaireType | null>(null);
   const [editedInfo, setEditedInfo] = useState<{ documentNumber: string; firstName: string; lastName: string }>({
     documentNumber: '',
     firstName: '',
@@ -91,23 +121,32 @@ export default function PhotoImportModal({
     if (!open) return;
     setStep('select');
     setFiles([]);
-    setQuestionnaireType(defaultQuestionnaireType);
+    setSelectedMode(defaultQuestionnaireType);
     setPreview(null);
-    setEdits({});
+    setEditsByType({});
+    setActiveTab(null);
     setEditedInfo({ documentNumber: '', firstName: '', lastName: '' });
     setResult(null);
   }, [open, defaultQuestionnaireType]);
 
-  const expectedCount = QUESTIONNAIRE_COUNTS[questionnaireType];
-  const scaleOptions = questionnaireType === 'estres' ? STRESS_OPTIONS : INTRA_OPTIONS;
+  const buildInitialEdits = (t: TypeData): Record<number, EditedRow> => {
+    const edits: Record<number, EditedRow> = {};
+    for (const r of t.responses) {
+      edits[r.questionNumber] = { responseValue: r.responseValue, confidence: r.confidence };
+    }
+    for (const m of t.missing) {
+      edits[m] = { responseValue: null, confidence: 'low' };
+    }
+    return edits;
+  };
 
   const handlePreview = async () => {
-    if (files.length === 0) return toast.error('Selecciona al menos una imagen.');
+    if (files.length === 0) return toast.error('Selecciona al menos un archivo.');
     setPreviewing(true);
     try {
       const token = localStorage.getItem('token');
       const fd = new FormData();
-      fd.append('questionnaireType', questionnaireType);
+      fd.append('questionnaireType', selectedMode);
       if (participantId) fd.append('participantId', String(participantId));
       files.forEach(f => fd.append('images', f));
 
@@ -116,20 +155,40 @@ export default function PhotoImportModal({
         headers: { Authorization: `Bearer ${token}` },
         body: fd,
       });
-      const data = await response.json();
+      const data: PreviewData = await response.json();
       if (!response.ok) {
-        toast.error(data.error || 'Error al analizar las imágenes');
+        toast.error((data as any).error || 'Error al analizar el archivo.');
         return;
       }
+
+      if (data.mode === 'auto') {
+        const detected = data.detectedTypes || [];
+        if (detected.length === 0) {
+          toast.error('La IA no detectó ningún cuestionario reconocible en el archivo.');
+          return;
+        }
+        const initial: EditsByType = {};
+        for (const t of detected) {
+          if (data.byType && data.byType[t]) initial[t] = buildInitialEdits(data.byType[t]);
+        }
+        setEditsByType(initial);
+        setActiveTab(detected[0]);
+      } else {
+        const t = data.questionnaireType as QuestionnaireType;
+        const td: TypeData = {
+          type: t,
+          expectedCount: QUESTIONNAIRE_COUNTS[t],
+          scale: QUESTIONNAIRE_SCALES[t],
+          responses: data.responses || [],
+          missing: data.missing || [],
+          warnings: [],
+          summary: data.summary!,
+        };
+        setEditsByType({ [t]: buildInitialEdits(td) });
+        setActiveTab(t);
+      }
+
       setPreview(data);
-      const initialEdits: Record<number, EditedRow> = {};
-      for (const r of data.responses) {
-        initialEdits[r.questionNumber] = { responseValue: r.responseValue, confidence: r.confidence };
-      }
-      for (const missing of data.missing) {
-        initialEdits[missing] = { responseValue: null, confidence: 'low' };
-      }
-      setEdits(initialEdits);
       if (data.participantInfo) {
         setEditedInfo({
           documentNumber: data.participantInfo.documentNumber || '',
@@ -140,7 +199,7 @@ export default function PhotoImportModal({
       setStep('preview');
     } catch (err) {
       console.error(err);
-      toast.error('Error de conexión al analizar imágenes.');
+      toast.error('Error de conexión al analizar archivo.');
     } finally {
       setPreviewing(false);
     }
@@ -148,29 +207,34 @@ export default function PhotoImportModal({
 
   const handleCommit = async () => {
     if (!preview) return;
-    const toSubmit = Object.entries(edits)
-      .filter(([, row]) => row.responseValue !== null && row.responseValue !== undefined)
-      .map(([qn, row]) => ({ questionNumber: Number(qn), responseValue: row.responseValue as number }));
+    const submitTypes = Object.keys(editsByType) as QuestionnaireType[];
+    const questionnaires = submitTypes
+      .map(t => ({
+        questionnaireType: t,
+        responses: Object.entries(editsByType[t] || {})
+          .filter(([, row]) => row.responseValue !== null && row.responseValue !== undefined)
+          .map(([qn, row]) => ({ questionNumber: Number(qn), responseValue: row.responseValue as number })),
+      }))
+      .filter(q => q.responses.length > 0);
 
-    if (toSubmit.length === 0) return toast.error('No hay respuestas para guardar.');
+    if (questionnaires.length === 0) return toast.error('No hay respuestas para guardar.');
 
-    if (!preview.participantId) {
-      if (!editedInfo.documentNumber.trim()) {
-        return toast.error('Escribe el número de documento del participante.');
-      }
+    if (!preview.participantId && !editedInfo.documentNumber.trim()) {
+      return toast.error('Escribe el número de documento del participante.');
     }
 
     setCommitting(true);
     try {
       const token = localStorage.getItem('token');
-      const body: any = {
-        questionnaireType: preview.questionnaireType,
-        responses: toSubmit,
-      };
+      const isMulti = preview.mode === 'auto' || questionnaires.length > 1;
+      const endpoint = isMulti ? 'commit-multi' : 'commit';
+      const body: any = isMulti
+        ? { questionnaires }
+        : { questionnaireType: questionnaires[0].questionnaireType, responses: questionnaires[0].responses };
       if (preview.participantId) body.participantId = preview.participantId;
       else body.participantInfo = editedInfo;
 
-      const response = await fetch(`/api/photo-import/${evaluationId}/commit`, {
+      const response = await fetch(`/api/photo-import/${evaluationId}/${endpoint}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify(body),
@@ -182,7 +246,7 @@ export default function PhotoImportModal({
       }
       setResult(data);
       setStep('result');
-      toast.success(`Se guardaron ${data.responsesSaved} respuestas.`);
+      toast.success(isMulti ? `Se guardaron ${questionnaires.length} cuestionarios.` : `Se guardaron ${questionnaires[0].responses.length} respuestas.`);
       onSuccess && onSuccess();
     } catch (err) {
       console.error(err);
@@ -192,15 +256,36 @@ export default function PhotoImportModal({
     }
   };
 
-  const savedCount = useMemo(
-    () => Object.values(edits).filter(r => r.responseValue !== null && r.responseValue !== undefined).length,
-    [edits]
-  );
-  const lowConfCount = useMemo(
-    () => Object.values(edits).filter(r => r.confidence === 'low' && r.responseValue !== null).length,
-    [edits]
-  );
-  const missingCount = expectedCount - savedCount;
+  const activeTypeData: TypeData | null = useMemo(() => {
+    if (!preview || !activeTab) return null;
+    if (preview.mode === 'auto' && preview.byType) return preview.byType[activeTab] || null;
+    return {
+      type: activeTab,
+      expectedCount: QUESTIONNAIRE_COUNTS[activeTab],
+      scale: QUESTIONNAIRE_SCALES[activeTab],
+      responses: preview.responses || [],
+      missing: preview.missing || [],
+      warnings: [],
+      summary: preview.summary!,
+    };
+  }, [preview, activeTab]);
+
+  const activeEdits = (activeTab && editsByType[activeTab]) || {};
+  const activeExpected = activeTab ? QUESTIONNAIRE_COUNTS[activeTab] : 0;
+  const activeScale = activeTab ? QUESTIONNAIRE_SCALES[activeTab] : 'intra';
+  const scaleOptions = activeScale === 'stress' ? STRESS_OPTIONS : INTRA_OPTIONS;
+
+  const activeSavedCount = Object.values(activeEdits).filter(r => r.responseValue !== null && r.responseValue !== undefined).length;
+  const activeLowConf = Object.values(activeEdits).filter(r => r.confidence === 'low' && r.responseValue !== null).length;
+  const activeMissing = activeExpected - activeSavedCount;
+
+  const totalSaved = useMemo(() => {
+    let sum = 0;
+    for (const t of Object.keys(editsByType) as QuestionnaireType[]) {
+      sum += Object.values(editsByType[t] || {}).filter(r => r.responseValue !== null).length;
+    }
+    return sum;
+  }, [editsByType]);
 
   if (!open) return null;
 
@@ -210,7 +295,7 @@ export default function PhotoImportModal({
         <div className="flex items-center justify-between px-5 py-3 border-b">
           <div className="flex items-center gap-2">
             <PhotoIcon className="h-5 w-5 text-blue-600" />
-            <h3 className="text-lg font-semibold text-gray-900">Subir foto de prueba física</h3>
+            <h3 className="text-lg font-semibold text-gray-900">Subir foto / PDF de prueba física</h3>
             {participantLabel && (
               <span className="ml-2 text-sm text-gray-500">para {participantLabel}</span>
             )}
@@ -225,17 +310,25 @@ export default function PhotoImportModal({
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Cuestionario</label>
               <select
-                value={questionnaireType}
-                onChange={(e) => setQuestionnaireType(e.target.value as QuestionnaireType)}
+                value={selectedMode}
+                onChange={(e) => setSelectedMode(e.target.value as SelectMode)}
                 className="block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
               >
-                {Object.entries(QUESTIONNAIRE_LABELS).map(([v, label]) => (
-                  <option key={v} value={v}>{label}</option>
+                <option value="auto">✨ Auto-detectar (la IA identifica todos los cuestionarios en el archivo)</option>
+                {(Object.keys(QUESTIONNAIRE_LABELS) as QuestionnaireType[]).map(v => (
+                  <option key={v} value={v}>{QUESTIONNAIRE_LABELS[v]}</option>
                 ))}
               </select>
-              <p className="mt-1 text-xs text-gray-500">
-                Se esperan {expectedCount} preguntas numeradas. Puedes subir varias fotos si el cuestionario ocupa más de una página.
-              </p>
+              {selectedMode === 'auto' ? (
+                <p className="mt-1 text-xs text-gray-500 flex items-start gap-1">
+                  <SparklesIcon className="h-4 w-4 flex-shrink-0 text-purple-500 mt-0.5" />
+                  Ideal para baterías completas: la IA reconoce Intralaboral A/B, Extralaboral y Estrés en el mismo archivo y los procesa todos.
+                </p>
+              ) : (
+                <p className="mt-1 text-xs text-gray-500">
+                  Se esperan {QUESTIONNAIRE_COUNTS[selectedMode as QuestionnaireType]} preguntas numeradas.
+                </p>
+              )}
             </div>
 
             <div>
@@ -248,7 +341,7 @@ export default function PhotoImportModal({
                 className="block w-full text-sm text-gray-700 file:mr-4 file:py-2 file:px-3 file:rounded-md file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
               />
               <p className="mt-1 text-xs text-gray-500">
-                Formatos aceptados: JPG, PNG, WebP, PDF. Máximo 32 MB por archivo. Los PDF multi-página se procesan completos.
+                Formatos: JPG, PNG, WebP, PDF. Máximo 32 MB por archivo. Los PDFs multi-página se procesan completos.
               </p>
               {files.length > 0 && (
                 <ul className="mt-2 text-xs text-gray-600 list-disc list-inside">
@@ -260,7 +353,7 @@ export default function PhotoImportModal({
             {!participantId && (
               <div className="bg-amber-50 border border-amber-200 rounded-md p-3 text-sm text-amber-900">
                 <ExclamationTriangleIcon className="h-4 w-4 inline mr-1" />
-                La IA intentará leer el documento/nombre escrito en el encabezado. Si no existe el participante, se creará automáticamente al confirmar.
+                La IA intentará leer el documento/nombre del encabezado. Si no existe el participante, se creará automáticamente al confirmar.
               </div>
             )}
 
@@ -279,20 +372,48 @@ export default function PhotoImportModal({
           </div>
         )}
 
-        {step === 'preview' && preview && (
+        {step === 'preview' && preview && activeTypeData && activeTab && (
           <div className="flex flex-col flex-1 overflow-hidden">
+            {preview.mode === 'auto' && preview.detectedTypes && preview.detectedTypes.length > 0 && (
+              <div className="px-5 pt-3 border-b flex gap-1 flex-wrap">
+                {preview.detectedTypes.map((t) => {
+                  const tEdits = editsByType[t] || {};
+                  const saved = Object.values(tEdits).filter(r => r.responseValue !== null).length;
+                  const expected = QUESTIONNAIRE_COUNTS[t];
+                  const missingCount = expected - saved;
+                  const isActive = activeTab === t;
+                  return (
+                    <button
+                      key={t}
+                      onClick={() => setActiveTab(t)}
+                      className={`px-3 py-1.5 text-sm rounded-t-md border-b-2 transition ${
+                        isActive
+                          ? 'border-blue-600 text-blue-700 font-semibold bg-blue-50'
+                          : 'border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                      }`}
+                    >
+                      {SHORT_LABELS[t]}{' '}
+                      <span className={`text-xs ${missingCount > 0 ? 'text-amber-700' : 'text-green-700'}`}>
+                        ({saved}/{expected})
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
             <div className="px-5 py-3 bg-gray-50 border-b grid grid-cols-2 lg:grid-cols-4 gap-3 text-sm">
-              <div><span className="text-gray-500">Detectadas:</span> <b>{savedCount}</b> / {expectedCount}</div>
-              <div><span className="text-gray-500">Baja confianza:</span> <b className="text-amber-700">{lowConfCount}</b></div>
-              <div><span className="text-gray-500">Faltantes:</span> <b className={missingCount > 0 ? 'text-red-700' : ''}>{missingCount}</b></div>
-              <div><span className="text-gray-500">Cuestionario:</span> <b>{preview.questionnaireType}</b></div>
+              <div><span className="text-gray-500">Detectadas:</span> <b>{activeSavedCount}</b> / {activeExpected}</div>
+              <div><span className="text-gray-500">Baja confianza:</span> <b className="text-amber-700">{activeLowConf}</b></div>
+              <div><span className="text-gray-500">Faltantes:</span> <b className={activeMissing > 0 ? 'text-red-700' : ''}>{activeMissing}</b></div>
+              <div><span className="text-gray-500">Cuestionario:</span> <b>{activeTab}</b></div>
             </div>
 
-            {preview.warnings && preview.warnings.length > 0 && (
+            {(activeTypeData.warnings?.length || preview.warnings?.length) && (
               <div className="px-5 py-2 bg-amber-50 border-b text-sm text-amber-900">
                 <b>Advertencias:</b>
                 <ul className="list-disc list-inside">
-                  {preview.warnings.map((w, i) => <li key={i}>{w}</li>)}
+                  {[...(preview.warnings || []), ...(activeTypeData.warnings || [])].map((w, i) => <li key={i}>{w}</li>)}
                 </ul>
               </div>
             )}
@@ -340,8 +461,8 @@ export default function PhotoImportModal({
                   </tr>
                 </thead>
                 <tbody>
-                  {Array.from({ length: expectedCount }, (_, i) => i + 1).map((qn) => {
-                    const row = edits[qn] || { responseValue: null, confidence: 'low' as const };
+                  {Array.from({ length: activeExpected }, (_, i) => i + 1).map((qn) => {
+                    const row = activeEdits[qn] || { responseValue: null, confidence: 'low' as const };
                     const missing = row.responseValue === null || row.responseValue === undefined;
                     const rowClass = missing
                       ? 'bg-red-50'
@@ -358,11 +479,14 @@ export default function PhotoImportModal({
                             value={row.responseValue === null || row.responseValue === undefined ? '' : row.responseValue}
                             onChange={(e) => {
                               const v = e.target.value;
-                              setEdits((prev) => ({
+                              setEditsByType((prev) => ({
                                 ...prev,
-                                [qn]: v === ''
-                                  ? { responseValue: null, confidence: 'user' }
-                                  : { responseValue: Number(v), confidence: 'user' },
+                                [activeTab]: {
+                                  ...(prev[activeTab] || {}),
+                                  [qn]: v === ''
+                                    ? { responseValue: null, confidence: 'user' }
+                                    : { responseValue: Number(v), confidence: 'user' },
+                                },
                               }));
                             }}
                             className="border-gray-300 rounded-md text-sm py-1"
@@ -395,7 +519,7 @@ export default function PhotoImportModal({
 
             <div className="px-5 py-3 border-t flex justify-between items-center">
               <button onClick={() => setStep('select')} className="text-sm text-gray-600 hover:text-gray-900 flex items-center gap-1">
-                <ArrowLeftIcon className="h-4 w-4" /> Cambiar fotos
+                <ArrowLeftIcon className="h-4 w-4" /> Cambiar archivos
               </button>
               <div className="flex gap-2">
                 <button onClick={onClose} className="px-4 py-2 text-sm rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50">
@@ -403,10 +527,14 @@ export default function PhotoImportModal({
                 </button>
                 <button
                   onClick={handleCommit}
-                  disabled={committing || savedCount === 0}
+                  disabled={committing || totalSaved === 0}
                   className="px-4 py-2 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
                 >
-                  {committing ? 'Guardando…' : `Confirmar e importar (${savedCount})`}
+                  {committing
+                    ? 'Guardando…'
+                    : preview.mode === 'auto'
+                    ? `Confirmar e importar todos (${totalSaved} respuestas)`
+                    : `Confirmar e importar (${totalSaved})`}
                 </button>
               </div>
             </div>
@@ -422,16 +550,27 @@ export default function PhotoImportModal({
                 <p className="text-sm text-gray-600">Las respuestas y resultados quedaron guardados en el participante.</p>
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-3 text-sm">
-              <div className="bg-gray-50 p-3 rounded">
-                <div className="text-gray-500">Respuestas guardadas</div>
-                <div className="text-2xl font-semibold">{result.responsesSaved}</div>
+            {Array.isArray(result.questionnaires) ? (
+              <div className="space-y-2">
+                {result.questionnaires.map((q: any, i: number) => (
+                  <div key={i} className="bg-gray-50 p-3 rounded flex justify-between items-center text-sm">
+                    <div><b>{SHORT_LABELS[q.questionnaireType as QuestionnaireType] || q.questionnaireType}</b></div>
+                    <div className="text-gray-600">{q.responsesSaved} respuestas · {q.resultsCalculated} dimensiones</div>
+                  </div>
+                ))}
               </div>
-              <div className="bg-gray-50 p-3 rounded">
-                <div className="text-gray-500">Dimensiones calculadas</div>
-                <div className="text-2xl font-semibold">{result.resultsCalculated}</div>
+            ) : (
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <div className="bg-gray-50 p-3 rounded">
+                  <div className="text-gray-500">Respuestas guardadas</div>
+                  <div className="text-2xl font-semibold">{result.responsesSaved}</div>
+                </div>
+                <div className="bg-gray-50 p-3 rounded">
+                  <div className="text-gray-500">Dimensiones calculadas</div>
+                  <div className="text-2xl font-semibold">{result.resultsCalculated}</div>
+                </div>
               </div>
-            </div>
+            )}
             <div className="flex justify-end pt-3 border-t">
               <button onClick={onClose} className="px-4 py-2 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-700">
                 Cerrar
