@@ -12,10 +12,12 @@ import {
   ClockIcon,
   MagnifyingGlassIcon,
   FunnelIcon,
-  CameraIcon
+  CameraIcon,
+  DocumentTextIcon
 } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import PhotoImportModal from '../../components/PhotoImportModal';
+import ManualEntryModal from '../../components/ManualEntryModal';
 
 interface Participant {
   id: number;
@@ -62,6 +64,7 @@ export default function EvaluatorParticipants() {
   const [showModal, setShowModal] = useState(false);
   const [editingParticipant, setEditingParticipant] = useState<Participant | null>(null);
   const [photoTarget, setPhotoTarget] = useState<Participant | null>(null);
+  const [manualTarget, setManualTarget] = useState<Participant | null>(null);
   const [formData, setFormData] = useState({
     evaluationId: '',
     firstName: '',
@@ -663,9 +666,16 @@ export default function EvaluatorParticipants() {
                             <button
                               onClick={() => setPhotoTarget(participant)}
                               className="text-gray-500 hover:text-green-700"
-                              title="Subir foto de prueba física"
+                              title="Subir foto / PDF de prueba física"
                             >
                               <CameraIcon className="h-5 w-5" />
+                            </button>
+                            <button
+                              onClick={() => setManualTarget(participant)}
+                              className="text-gray-500 hover:text-indigo-700"
+                              title="Ingresar respuestas manualmente"
+                            >
+                              <DocumentTextIcon className="h-5 w-5" />
                             </button>
                             <button
                               onClick={() => handleEdit(participant)}
@@ -886,6 +896,18 @@ export default function EvaluatorParticipants() {
           participantId={photoTarget.id}
           participantLabel={`${photoTarget.firstName} ${photoTarget.lastName} (${photoTarget.documentNumber})`}
           defaultQuestionnaireType={photoTarget.formType === 'B' ? 'intralaboral_b' : 'intralaboral_a'}
+          onSuccess={() => fetchParticipants()}
+        />
+      )}
+
+      {manualTarget && (
+        <ManualEntryModal
+          open={!!manualTarget}
+          onClose={() => setManualTarget(null)}
+          evaluationId={Number(manualTarget.evaluationId)}
+          participantId={manualTarget.id}
+          participantLabel={`${manualTarget.firstName} ${manualTarget.lastName} (${manualTarget.documentNumber})`}
+          defaultQuestionnaireType={manualTarget.formType === 'B' ? 'intralaboral_b' : 'intralaboral_a'}
           onSuccess={() => fetchParticipants()}
         />
       )}

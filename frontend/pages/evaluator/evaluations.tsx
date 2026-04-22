@@ -15,10 +15,12 @@ import {
   DocumentArrowUpIcon,
   CheckCircleIcon,
   ExclamationTriangleIcon,
-  CameraIcon
+  CameraIcon,
+  DocumentTextIcon
 } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import PhotoImportModal from '../../components/PhotoImportModal';
+import ManualEntryModal from '../../components/ManualEntryModal';
 
 interface Company {
   id: number;
@@ -67,6 +69,7 @@ export default function EvaluatorEvaluations() {
 
   // Photo import (Claude Vision) state
   const [photoEvaluationId, setPhotoEvaluationId] = useState<number | null>(null);
+  const [manualEvaluationId, setManualEvaluationId] = useState<number | null>(null);
 
   useEffect(() => {
     fetchEvaluations();
@@ -516,9 +519,16 @@ export default function EvaluatorEvaluations() {
                         <button
                           onClick={() => setPhotoEvaluationId(evaluation.id)}
                           className="text-gray-400 hover:text-purple-600"
-                          title="Subir foto de hoja física"
+                          title="Subir foto / PDF de hoja física"
                         >
                           <CameraIcon className="h-5 w-5" />
+                        </button>
+                        <button
+                          onClick={() => setManualEvaluationId(evaluation.id)}
+                          className="text-gray-400 hover:text-indigo-600"
+                          title="Ingresar respuestas manualmente"
+                        >
+                          <DocumentTextIcon className="h-5 w-5" />
                         </button>
                         <button
                           onClick={() => handleEdit(evaluation)}
@@ -965,6 +975,15 @@ export default function EvaluatorEvaluations() {
           open={photoEvaluationId !== null}
           onClose={() => setPhotoEvaluationId(null)}
           evaluationId={photoEvaluationId}
+          onSuccess={() => fetchEvaluations()}
+        />
+      )}
+
+      {manualEvaluationId !== null && (
+        <ManualEntryModal
+          open={manualEvaluationId !== null}
+          onClose={() => setManualEvaluationId(null)}
+          evaluationId={manualEvaluationId}
           onSuccess={() => fetchEvaluations()}
         />
       )}
