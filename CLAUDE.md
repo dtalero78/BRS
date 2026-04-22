@@ -4,7 +4,7 @@
 
 Plataforma SaaS multi-empresa para la evaluación de factores de riesgo psicosocial basada en la **Batería oficial del Ministerio de la Protección Social de Colombia** (Resolución 2646 de 2008). Los psicólogos se auto-registran, crean sus propias empresas y gestionan múltiples baterías de forma independiente. Desplegada en producción en DigitalOcean App Platform.
 
-**URL Producción**: https://brs-abaxh.ondigitalocean.app
+**URL Producción**: https://bateriariesgopsicosocial.com (alias: https://brs-abaxh.ondigitalocean.app)
 **Repositorio**: https://github.com/dtalero78/BRS
 
 ## ARQUITECTURA
@@ -46,15 +46,21 @@ BRS/
 ├── .do/app.yaml              # Config DigitalOcean (no se usa, deploy es single-service)
 ├── backend/
 │   ├── server.js             # Express server principal (sirve frontend estático)
+│   ├── package.json          # `start` chain: `knex migrate:latest && node server.js`
+│   ├── knexfile.js           # Config Knex (SSL DENTRO de connection en production)
 │   ├── config/
 │   │   └── database.js       # Conexión PostgreSQL con Knex.js (SSL)
 │   ├── middleware/
 │   │   └── auth.js           # JWT verification, role-based auth, getOwnedCompanyIds()
+│   ├── migrations/           # Migraciones Knex (corren auto en cada deploy)
+│   │   ├── 20241201*.js      # Esquema inicial (companies, users, evaluations, …)
+│   │   ├── 20250903*.js      # access_token + ficha_datos questionnaire_type
+│   │   └── 20260420000001_scope_participants_email_per_company.js
 │   ├── routes/
 │   │   ├── auth.js           # Login, register (self-service evaluador), refresh, logout
 │   │   ├── companies.js      # CRUD empresas (admin + evaluador con ownership)
 │   │   ├── users.js          # CRUD usuarios (admin)
-│   │   ├── evaluations.js    # Gestión de evaluaciones (filtrado por ownership)
+│   │   ├── evaluations.js    # Gestión de evaluaciones + import/preview Excel
 │   │   ├── participants.js   # Gestión de participantes (filtrado por ownership)
 │   │   ├── participant-access.js # Acceso público por token
 │   │   ├── questionnaires.js # Servir cuestionarios
@@ -65,6 +71,7 @@ BRS/
 │   └── utils/
 │       ├── calculate-results.js      # Motor de cálculo BRS oficial
 │       ├── baremos-completos.js      # Baremos Tablas 29-34 del Ministerio
+│       ├── excel-import-detector.js  # Detector header-aware + parser de respuestas Excel
 │       ├── pdf-charts.js             # Gráficas PDF: pie, bar, grouped bar, tablas
 │       ├── report-templates.js       # Textos estáticos, mapeos dimensiones, intervenciones
 │       └── report-data-aggregator.js # Agregación demográfica y resultados por forma A/B
@@ -144,6 +151,13 @@ audit_logs (id, user_id, action, table_name, record_id, old_values, new_values, 
 - Filtrado por ownership: `getOwnedCompanyIds(userId)` → `whereIn('company_id', ownedIds)`
 - JWT payload: `{userId, role}` — sin companyId fijo
 - Admin ve todo; evaluador solo ve sus empresas y datos asociados
+- **Constraint `participants.email`**: único por `(company_id, email)`, no global (migración `20260420000001`). Esto permite que dos empresas importen el mismo documento de identidad sin colisionar.
+
+### Migraciones Knex
+- Corren automáticamente al arrancar el container: `npm start` = `knex migrate:latest && node server.js`
+- Idempotentes: knex registra cada migración aplicada en `knex_migrations`, no las re-ejecuta
+- Si una migración falla, el container no arranca → DigitalOcean hace rollback automático al deploy anterior
+- Para crear una nueva: archivo en `backend/migrations/<timestamp>_<nombre>.js` con `exports.up` y `exports.down`
 
 **Formato de `results.results`** (JSONB array):
 ```json
@@ -181,10 +195,13 @@ Dimensiones con sufijo `_total` son totales de dominio.
 - `GET /` - Listar (filtrado por ownership para evaluadores)
 - `POST /` - Crear (requiere `companyId` en body, evaluador elige empresa)
 - `PUT /:id` | `POST /:id/assign`
+- `POST /:id/preview-excel` - Analiza el Excel y devuelve layout detectado + muestra de filas, sin persistir nada (multipart `file`)
+- `POST /:id/import-excel` - Crea participantes + respuestas + resultados desde Excel (multipart `file`, máx 10MB)
 
 ### Participantes (`/api/participants`)
 - `GET /` - Listar (filtrado por ownership)
 - `POST /` | `PUT /:id` | `GET /evaluation/:evalId`
+- `DELETE /:id` - Eliminar (admin: cualquiera, evaluador: solo de empresas propias). Cascada: borra responses + results + participant_evaluations.
 
 ### Cuestionarios (`/api/questionnaires`)
 - `GET /` - Listar tipos | `GET /:type` - Obtener (forma_a, forma_b, extralaboral, estres)
@@ -233,6 +250,39 @@ Dimensiones con sufijo `_total` son totales de dominio.
 - Extralaboral: Tabla 17 (jefes/profesionales) y Tabla 18 (auxiliares/operarios) - baremos duales
 - Estrés: Tabla 6 - baremos duales por grupo ocupacional (solo puntaje total)
 - Total general: Tabla 34 (intralaboral + extralaboral combinado)
+
+## IMPORTACIÓN MASIVA POR EXCEL
+
+**Módulo**: `backend/utils/excel-import-detector.js`
+**Endpoints**: `POST /api/evaluations/:id/preview-excel` y `POST /api/evaluations/:id/import-excel`
+**UI**: Modal de 3 pasos en `frontend/pages/evaluator/evaluations.tsx` (select → preview → result)
+
+### Detección por header (no por posición fija)
+El detector tolera layouts no estándar de cualquier empresa:
+- `findHeaderRow(data)` — escanea las primeras 3 filas y elige la que más matches tiene con keywords conocidos (documento, nombre, sexo, cargo, etc.)
+- `detectSectionBanners(data, headerRow)` — detecta filas-bandera (`SOCIODEMOGRÁFICO`, `INTRALABORAL`, etc.) que dividen secciones (formato fundacionsanmartin)
+- `detectLayout(headers, banners)` — 3 pasadas:
+  1. Asigna campos socio cuyo header tiene prefijo de pregunta numerada (`13. ¿Cuál es el nombre del cargo?`)
+  2. Asigna campos socio restantes con cualquier match (metadata como `PUESTO DE TRABAJO`)
+  3. Asigna items de cuestionario por número embebido (`..114. Mi trabajo me exige…`) y los clasifica por sección via banners o keywords del header
+- Salta columnas filtro (no son items): `Soy jefe de otras personas`, `Las siguientes preguntas relacionadas con la atención a clientes y usuarios`, `Si su respuesta fue SI por favor responda` (sin item embebido)
+
+### Parser de respuestas
+`parseResponseValue(val, scale)` acepta dos formatos:
+- **Numérico** 0-4 (intra/extra) o 0-3 (estrés): asume escala invertida del Excel oficial (Siempre=0..Nunca=4) → convierte a BRS (Siempre=4..Nunca=0)
+- **Texto** literal: `"Siempre"`, `"Casi siempre"`, `"Algunas veces"`, `"Casi nunca"`, `"Nunca"` → mapea directamente a la escala BRS
+Los valores no parseables (textos sueltos, vacíos) se marcan como inválidos en el preview pero no rompen la importación.
+
+### Generación del email sintético
+Como los Excel no traen email, el importador minta `cc_<documento>@temp.com` por participante. El constraint único es `(company_id, email)` (no global), así que múltiples empresas pueden importar el mismo documento sin colisionar. Lookup dual reconoce el formato legacy con sufijo `_c<companyId>` (workaround temporal previo a la migración).
+
+### Layout esperado vs detectado
+| Forma | Items intralaboral | Items extralaboral | Items estrés |
+|---|---|---|---|
+| FA (jefes/profesionales) | 123 | 31 | 31 |
+| FB (auxiliares/operarios) | 97 | 31 | 31 |
+
+El preview muestra cuántos items detectó vs los esperados, columnas filtro, items faltantes y muestra de los primeros 5 participantes con conteo de respuestas válidas.
 
 ## GENERACIÓN DE REPORTES PDF
 
@@ -346,6 +396,10 @@ cd frontend && npm run dev   # Frontend en puerto 3000
 # Build producción
 npm run build                # Build frontend + backend
 
+# Migraciones (corren auto en el deploy via npm start)
+cd backend && npm run db:migrate    # Aplicar migraciones pendientes
+cd backend && npm run db:rollback   # Revertir última migración
+
 # Deploy (auto-deploy en push a main)
 git push origin main
 
@@ -353,7 +407,9 @@ git push origin main
 ~/bin/doctl apps list-deployments 420e1df4-744a-4442-a9b9-87c8b8603eb7 --format ID,Phase,Progress
 
 # Ver logs
-~/bin/doctl apps logs 420e1df4-744a-4442-a9b9-87c8b8603eb7 --type run
+~/bin/doctl apps logs 420e1df4-744a-4442-a9b9-87c8b8603eb7 --type run    # Runtime
+~/bin/doctl apps logs 420e1df4-744a-4442-a9b9-87c8b8603eb7 --type build --deployment <id>   # Build
+~/bin/doctl apps logs 420e1df4-744a-4442-a9b9-87c8b8603eb7 --type deploy --deployment <id>  # Migraciones + arranque
 ```
 
 ## DEPENDENCIAS CLAVE
@@ -376,14 +432,17 @@ git push origin main
 ## NOTAS TÉCNICAS IMPORTANTES
 
 1. **SSL de DB**: Conexión usa `ssl: { rejectUnauthorized: false }` - requerido por DigitalOcean managed DB.
-2. **API URL en frontend**: `config/api.ts` usa URL relativa en browser (mismo origen), `localhost:5000` en SSR. Variable `NEXT_PUBLIC_API_URL` para override.
-3. **PDFKit bufferPages**: SIEMPRE usar `bufferPages: true` al crear PDFDocument si se necesitan footers con `switchToPage()`.
-4. **Resultados pre-calculados**: Los reportes PDF leen de la tabla `results` (pre-calculados), no recalculan.
-5. **Deploy time**: ~15 minutos en DigitalOcean. `doctl` a veces retorna exit code 1 pero output es válido.
-6. **Frontend export**: Next.js en modo `output: 'export'` (estático). No soporta API routes del lado frontend ni SSR.
-7. **Ownership filtering**: Todas las rutas de evaluador usan `getOwnedCompanyIds(req.user.userId)` → `whereIn('company_id', ownedIds)` para aislar datos entre evaluadores.
-8. **FlowLayout maxWidth**: Hub pages usan `"3xl"` (gradiente), data pages usan `"full"` (bg-gray-50 neutro). No mezclar — las cards blancas se ven mal sobre gradiente en full-width.
-9. **Font ibrand**: Cargada via `@font-face` en `globals.css` desde `frontend/public/fonts/ibrand.otf`. Clase Tailwind: `font-ibrand` (configurada en `tailwind.config.js`).
+2. **knexfile.js SSL gotcha**: El campo `ssl` debe ir DENTRO del objeto `connection`, no como hermano. Si está como hermano, `pg` lo ignora y el connect falla con `no pg_hba.conf entry … no encryption`. La config de `production` tenía este bug y rompía el `knex migrate:latest` en arranque.
+3. **API URL en frontend**: `config/api.ts` usa URL relativa en browser (mismo origen), `localhost:5000` en SSR. Variable `NEXT_PUBLIC_API_URL` para override.
+4. **PDFKit bufferPages**: SIEMPRE usar `bufferPages: true` al crear PDFDocument si se necesitan footers con `switchToPage()`.
+5. **Resultados pre-calculados**: Los reportes PDF leen de la tabla `results` (pre-calculados), no recalculan.
+6. **Deploy time**: ~15 minutos en DigitalOcean. `doctl` a veces retorna exit code 1 pero output es válido.
+7. **Frontend export**: Next.js en modo `output: 'export'` (estático). No soporta API routes del lado frontend ni SSR.
+8. **Ownership filtering**: Todas las rutas de evaluador usan `getOwnedCompanyIds(req.user.userId)` → `whereIn('company_id', ownedIds)` para aislar datos entre evaluadores.
+9. **FlowLayout maxWidth**: Hub pages usan `"3xl"` (gradiente), data pages usan `"full"` (bg-gray-50 neutro). No mezclar — las cards blancas se ven mal sobre gradiente en full-width.
+10. **Font ibrand**: Cargada via `@font-face` en `globals.css` desde `frontend/public/fonts/ibrand.otf`. Clase Tailwind: `font-ibrand` (configurada en `tailwind.config.js`).
+11. **audit_logs columnas**: La tabla en producción usa `table_name`, `record_id`, `old_values`, `new_values` (NO `entity_type`/`entity_id`/`details`). Hay endpoints viejos con los nombres equivocados que fallan el insert silenciosamente y devuelven 500 al usuario aunque la operación principal sí completó. Buscar en logs por `column "details"` para detectarlos.
+12. **Tablas con scroll fijo**: Para tablas largas, usar `<div className="overflow-auto h-[calc(100vh-260px)] min-h-[300px]">` con `<thead className="sticky top-0 z-10 bg-gray-50 shadow-sm">`. `max-h-[Nvh]` permite que la página crezca y deja el scrollbar fuera del viewport.
 
 ## ESTADO DEL PROYECTO
 
@@ -417,12 +476,18 @@ git push origin main
 - [x] **UI Typeform-style** — FlowLayout con hubs (dashboards) y data pages (tablas full-width)
 - [x] **Componentes Flow** — FlowOption, FlowQuestion, FlowStats, useFlowKeyboard
 - [x] **Font personalizado ibrand** — branding consistente en header
+- [x] **Importación masiva por Excel** — detector header-aware tolerante a layouts no estándar (acepta texto o numérico, salta columnas filtro)
+- [x] **Modal de previsualización** — flujo select → preview → result antes de persistir
+- [x] **Sistema de migraciones Knex** — auto-aplicación en arranque del container
+- [x] **Constraint de email per-empresa** — `participants.email` único por `(company_id, email)` para que múltiples empresas importen los mismos documentos
+- [x] **Tabla de participantes con scroll fijo** — `h-[calc(100vh-260px)]` + sticky header
 
 ### Pendiente
 - [ ] Tests unitarios y de integración
 - [ ] Exportación de datos a Excel/CSV
 - [ ] Notificaciones por email a participantes
 - [ ] Dashboard admin con métricas del sistema
+- [ ] Corregir endpoints que usan columnas viejas de `audit_logs` (`PUT /participants/:id`, `POST /responses/`, etc.)
 
 ## REFERENCIAS
 
