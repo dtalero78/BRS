@@ -78,8 +78,8 @@ function buildTool(expectParticipantInfo) {
           type: 'object',
           additionalProperties: false,
           properties: {
-            questionNumber: { type: 'integer', minimum: 1 },
-            responseValue:  { type: 'integer', minimum: 0, maximum: 4 },
+            questionNumber: { type: 'integer', description: 'Número de la pregunta, entre 1 y N.' },
+            responseValue:  { type: 'integer', description: 'Valor en la escala BRS: 0..4 para intra/extralaboral, 0..3 para estrés.' },
             confidence:     { type: 'string', enum: ['high', 'medium', 'low'] },
           },
           required: ['questionNumber', 'responseValue', 'confidence'],
