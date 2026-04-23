@@ -6,9 +6,97 @@ const Joi = require('joi');
 const { auth, authorize, getOwnedCompanyIds } = require('../middleware/auth');
 const db = require('../config/database');
 const calculateResults = require('../utils/calculate-results');
-const { extractAnswersFromSheet, extractAllQuestionnairesFromSheet, QUESTIONNAIRE_META } = require('../utils/answer-sheet-ocr');
+const { extractAnswersFromSheet, extractAllQuestionnairesFromSheet, QUESTIONNAIRE_META, FICHA_FIELDS, FICHA_FIELD_NAMES } = require('../utils/answer-sheet-ocr');
 
 const VALID_TYPES = Object.keys(QUESTIONNAIRE_META);
+const VALID_TYPES_WITH_FICHA = [...VALID_TYPES, 'ficha_datos'];
+
+function transformFichaToResponseMap(fichaFields) {
+  const map = {};
+  for (const f of FICHA_FIELDS) {
+    const v = fichaFields[f.name];
+    map[String(f.key)] = typeof v === 'string' ? v : '';
+  }
+  return map;
+}
+
+function extractBirthYear(val) {
+  if (!val) return null;
+  const s = String(val);
+  const match4 = s.match(/(19|20)\d{2}/);
+  if (match4) return parseInt(match4[0], 10);
+  return null;
+}
+
+function parseTenureMonths(val) {
+  if (!val) return null;
+  const s = String(val).toLowerCase();
+  const monthMatch = s.match(/(\d+)\s*mes/);
+  if (monthMatch) return parseInt(monthMatch[1], 10);
+  const yearMatch = s.match(/(\d+)\s*(año|anio|an[oó])/);
+  if (yearMatch) return parseInt(yearMatch[1], 10) * 12;
+  const bareNum = s.match(/^\s*(\d+)\s*$/);
+  if (bareNum) return parseInt(bareNum[1], 10) * 12;
+  return null;
+}
+
+function parseHoursPerDay(val) {
+  if (!val) return null;
+  const s = String(val);
+  const m = s.match(/(\d+)/);
+  if (m) return parseInt(m[1], 10);
+  return null;
+}
+
+function mapGender(sexo) {
+  if (!sexo) return null;
+  const u = String(sexo).toUpperCase().trim();
+  if (u.startsWith('MASC') || u === 'M') return 'Masculino';
+  if (u.startsWith('FEM') || u === 'F') return 'Femenino';
+  return null;
+}
+
+function mapMaritalStatus(st) {
+  if (!st) return null;
+  const u = String(st).toUpperCase();
+  if (u.includes('SOLTER')) return 'Soltero(a)';
+  if (u.includes('CASAD')) return 'Casado(a)';
+  if (u.includes('UNION') || u.includes('UNIÓN') || u.includes('UNI')) return 'Unión libre';
+  if (u.includes('SEPARAD')) return 'Separado(a)';
+  if (u.includes('DIVORCIAD')) return 'Divorciado(a)';
+  if (u.includes('VIUD')) return 'Viudo(a)';
+  return null;
+}
+
+function mapFormTypeFromTipoCargo(tc) {
+  if (!tc) return null;
+  const u = String(tc).toUpperCase();
+  if (u.includes('JEFATURA') || u.includes('PROFESIONAL') || u.includes('TÉCNIC') || u.includes('TECNIC')) return 'A';
+  if (u.includes('AUXILIAR') || u.includes('ASISTENT') || u.includes('OPERARI') || u.includes('OPERAD') || u.includes('AYUDANT')) return 'B';
+  return null;
+}
+
+function mergeDemographicFromFicha(currentDemo, fichaFields) {
+  const demo = { ...(currentDemo || {}) };
+  const gender = mapGender(fichaFields.sexo);
+  if (gender) demo.gender = gender;
+  const birth = extractBirthYear(fichaFields.birthYear);
+  if (birth) demo.birthYear = birth;
+  const ms = mapMaritalStatus(fichaFields.maritalStatus);
+  if (ms) demo.maritalStatus = ms;
+  if (fichaFields.education) demo.educationLevel = fichaFields.education;
+  if (fichaFields.cargo) demo.position = fichaFields.cargo;
+  if (fichaFields.departamento) demo.department = fichaFields.departamento;
+  if (fichaFields.tipoContrato) demo.contractType = fichaFields.tipoContrato;
+  if (fichaFields.tipoCargo) demo.employmentType = fichaFields.tipoCargo;
+  const tenure = parseTenureMonths(fichaFields.anosEmpresa);
+  if (tenure !== null) demo.tenureMonths = tenure;
+  const hours = parseHoursPerDay(fichaFields.horasTrabajo);
+  if (hours !== null) demo.workHoursPerDay = hours;
+  const ft = mapFormTypeFromTipoCargo(fichaFields.tipoCargo);
+  if (ft) demo.formType = ft;
+  return demo;
+}
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -121,19 +209,35 @@ router.post(
   }
 );
 
-const commitSchema = Joi.object({
-  questionnaireType: Joi.string().valid(...VALID_TYPES).required(),
-  participantId: Joi.number().integer().optional(),
-  participantInfo: Joi.object({
-    documentNumber: Joi.string().allow(''),
-    firstName: Joi.string().allow(''),
-    lastName: Joi.string().allow(''),
-  }).optional(),
-  responses: Joi.array().items(Joi.object({
-    questionNumber: Joi.number().integer().min(1).required(),
-    responseValue: Joi.number().integer().min(0).max(4).required(),
-  })).min(1).required(),
-});
+const fichaFieldsJoi = Joi.object(Object.fromEntries(
+  FICHA_FIELD_NAMES.map(n => [n, Joi.string().allow('')])
+)).unknown(false);
+
+const commitSchema = Joi.alternatives().try(
+  Joi.object({
+    questionnaireType: Joi.string().valid(...VALID_TYPES).required(),
+    participantId: Joi.number().integer().optional(),
+    participantInfo: Joi.object({
+      documentNumber: Joi.string().allow(''),
+      firstName: Joi.string().allow(''),
+      lastName: Joi.string().allow(''),
+    }).optional(),
+    responses: Joi.array().items(Joi.object({
+      questionNumber: Joi.number().integer().min(1).required(),
+      responseValue: Joi.number().integer().min(0).max(4).required(),
+    })).min(1).required(),
+  }),
+  Joi.object({
+    questionnaireType: Joi.string().valid('ficha_datos').required(),
+    participantId: Joi.number().integer().optional(),
+    participantInfo: Joi.object({
+      documentNumber: Joi.string().allow(''),
+      firstName: Joi.string().allow(''),
+      lastName: Joi.string().allow(''),
+    }).optional(),
+    fichaDatos: fichaFieldsJoi.required(),
+  })
+);
 
 router.post(
   '/:evaluationId/commit',
@@ -148,7 +252,8 @@ router.post(
       const { error, value } = commitSchema.validate(req.body);
       if (error) return res.status(400).json({ error: error.details[0].message });
 
-      const { questionnaireType, participantId, participantInfo, responses } = value;
+      const { questionnaireType, participantId, participantInfo, responses, fichaDatos } = value;
+      const isFicha = questionnaireType === 'ficha_datos';
 
       if (!participantId && (!participantInfo || !participantInfo.documentNumber)) {
         return res.status(400).json({
@@ -177,8 +282,10 @@ router.post(
             .first();
 
           if (!participant) {
-            const formType = questionnaireType === 'intralaboral_b' ? 'B' : 'A';
-            const demographicData = {
+            let formType = 'A';
+            if (isFicha) formType = mapFormTypeFromTipoCargo(fichaDatos.tipoCargo) || 'A';
+            else if (questionnaireType === 'intralaboral_b') formType = 'B';
+            const baseDemo = {
               firstName: (participantInfo.firstName || 'Participante').trim() || 'Participante',
               lastName: (participantInfo.lastName || docDigits).trim() || docDigits,
               documentType: 'CC',
@@ -197,6 +304,7 @@ router.post(
               workDaysPerWeek: 5,
               formType,
             };
+            const demographicData = isFicha ? mergeDemographicFromFicha(baseDemo, fichaDatos) : baseDemo;
             const [inserted] = await trx('participants').insert({
               company_id: evaluation.company_id,
               email: canonicalEmail,
@@ -222,6 +330,40 @@ router.post(
             token_expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
           }).returning('*');
           pe = insertedPE;
+        }
+
+        if (isFicha) {
+          const responseMap = transformFichaToResponseMap(fichaDatos);
+
+          await trx('responses')
+            .where('participant_evaluation_id', pe.id)
+            .where('questionnaire_type', 'ficha_datos')
+            .del();
+
+          await trx('responses').insert({
+            participant_evaluation_id: pe.id,
+            questionnaire_type: 'ficha_datos',
+            responses: JSON.stringify(responseMap),
+            completed_at: new Date(),
+          });
+
+          const currentDemo = typeof participant.demographic_data === 'string'
+            ? JSON.parse(participant.demographic_data)
+            : (participant.demographic_data || {});
+          const mergedDemo = mergeDemographicFromFicha(currentDemo, fichaDatos);
+          await trx('participants')
+            .where('id', participant.id)
+            .update({ demographic_data: JSON.stringify(mergedDemo) });
+
+          return {
+            participantId: participant.id,
+            participantEvaluationId: pe.id,
+            email: participant.email,
+            questionnaireType: 'ficha_datos',
+            responsesSaved: Object.keys(responseMap).length,
+            resultsCalculated: 0,
+            demographicUpdated: true,
+          };
         }
 
         const responseMap = {};
@@ -300,8 +442,9 @@ const commitMultiSchema = Joi.object({
       questionNumber: Joi.number().integer().min(1).required(),
       responseValue: Joi.number().integer().min(0).max(4).required(),
     })).min(1).required(),
-  })).min(1).required(),
-});
+  })).default([]),
+  fichaDatos: fichaFieldsJoi.optional(),
+}).or('questionnaires', 'fichaDatos');
 
 router.post(
   '/:evaluationId/commit-multi',
@@ -316,7 +459,7 @@ router.post(
       const { error, value } = commitMultiSchema.validate(req.body);
       if (error) return res.status(400).json({ error: error.details[0].message });
 
-      const { participantId, participantInfo, questionnaires } = value;
+      const { participantId, participantInfo, questionnaires, fichaDatos } = value;
 
       if (!participantId && (!participantInfo || !participantInfo.documentNumber)) {
         return res.status(400).json({
@@ -330,7 +473,8 @@ router.post(
         return res.status(400).json({ error: 'No se puede guardar Forma A y Forma B juntas para el mismo participante.' });
       }
 
-      const resolvedFormType = hasB ? 'B' : hasA ? 'A' : null;
+      const fichaFormType = fichaDatos ? mapFormTypeFromTipoCargo(fichaDatos.tipoCargo) : null;
+      const resolvedFormType = hasB ? 'B' : hasA ? 'A' : fichaFormType;
 
       const outcome = await db.transaction(async (trx) => {
         let participant = null;
@@ -354,28 +498,30 @@ router.post(
 
           if (!participant) {
             const formType = resolvedFormType || 'A';
+            const baseDemo = {
+              firstName: (participantInfo.firstName || 'Participante').trim() || 'Participante',
+              lastName: (participantInfo.lastName || docDigits).trim() || docDigits,
+              documentType: 'CC',
+              documentNumber: docDigits,
+              birthYear: 1990,
+              gender: 'Otro',
+              maritalStatus: 'Soltero(a)',
+              educationLevel: '',
+              department: '',
+              position: '',
+              contractType: '',
+              employmentType: '',
+              tenureMonths: 0,
+              salaryRange: '',
+              workHoursPerDay: 8,
+              workDaysPerWeek: 5,
+              formType,
+            };
+            const demographicData = fichaDatos ? mergeDemographicFromFicha(baseDemo, fichaDatos) : baseDemo;
             const [inserted] = await trx('participants').insert({
               company_id: evaluation.company_id,
               email: canonicalEmail,
-              demographic_data: JSON.stringify({
-                firstName: (participantInfo.firstName || 'Participante').trim() || 'Participante',
-                lastName: (participantInfo.lastName || docDigits).trim() || docDigits,
-                documentType: 'CC',
-                documentNumber: docDigits,
-                birthYear: 1990,
-                gender: 'Otro',
-                maritalStatus: 'Soltero(a)',
-                educationLevel: '',
-                department: '',
-                position: '',
-                contractType: '',
-                employmentType: '',
-                tenureMonths: 0,
-                salaryRange: '',
-                workHoursPerDay: 8,
-                workDaysPerWeek: 5,
-                formType,
-              }),
+              demographic_data: JSON.stringify(demographicData),
               active: true,
             }).returning('*');
             participant = inserted;
@@ -399,12 +545,39 @@ router.post(
           pe = insertedPE;
         }
 
-        const demo = typeof participant.demographic_data === 'string'
+        let demo = typeof participant.demographic_data === 'string'
           ? JSON.parse(participant.demographic_data)
           : (participant.demographic_data || {});
+
+        if (fichaDatos) {
+          demo = mergeDemographicFromFicha(demo, fichaDatos);
+          await trx('participants')
+            .where('id', participant.id)
+            .update({ demographic_data: JSON.stringify(demo) });
+
+          const fichaMap = transformFichaToResponseMap(fichaDatos);
+          await trx('responses')
+            .where('participant_evaluation_id', pe.id)
+            .where('questionnaire_type', 'ficha_datos')
+            .del();
+          await trx('responses').insert({
+            participant_evaluation_id: pe.id,
+            questionnaire_type: 'ficha_datos',
+            responses: JSON.stringify(fichaMap),
+            completed_at: new Date(),
+          });
+        }
+
         const effectiveFormType = resolvedFormType || demo.formType || 'A';
 
         const summary = [];
+        if (fichaDatos) {
+          summary.push({
+            questionnaireType: 'ficha_datos',
+            responsesSaved: FICHA_FIELDS.length,
+            resultsCalculated: 0,
+          });
+        }
         for (const q of questionnaires) {
           const { questionnaireType, responses } = q;
 

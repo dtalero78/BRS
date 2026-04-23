@@ -1,8 +1,11 @@
 import { useEffect, useState, useMemo } from 'react';
 import toast from 'react-hot-toast';
 import { XMarkIcon, ArrowLeftIcon, PhotoIcon, CheckCircleIcon, ExclamationTriangleIcon, SparklesIcon } from '@heroicons/react/24/outline';
+import FichaDatosForm from './FichaDatosForm';
+import { FichaValues, emptyFicha } from './fichaFields';
 
 type QuestionnaireType = 'intralaboral_a' | 'intralaboral_b' | 'extralaboral' | 'estres';
+type TabKey = QuestionnaireType | 'ficha_datos';
 type SelectMode = QuestionnaireType | 'auto';
 
 const QUESTIONNAIRE_LABELS: Record<QuestionnaireType, string> = {
@@ -12,11 +15,12 @@ const QUESTIONNAIRE_LABELS: Record<QuestionnaireType, string> = {
   estres: 'Estrés (31 preguntas)',
 };
 
-const SHORT_LABELS: Record<QuestionnaireType, string> = {
+const SHORT_LABELS: Record<TabKey, string> = {
   intralaboral_a: 'Intra A',
   intralaboral_b: 'Intra B',
   extralaboral: 'Extralaboral',
   estres: 'Estrés',
+  ficha_datos: 'Ficha',
 };
 
 const QUESTIONNAIRE_COUNTS: Record<QuestionnaireType, number> = {
@@ -65,6 +69,14 @@ interface TypeData {
   summary: { totalDetected: number; totalExpected: number; lowConfidenceCount: number; missingCount: number };
 }
 
+interface FichaDatosPayload {
+  detected: boolean;
+  fields: FichaValues;
+  filledCount: number;
+  totalCount: number;
+  warnings: string[];
+}
+
 interface PreviewData {
   mode: 'single' | 'auto';
   questionnaireType: SelectMode;
@@ -72,6 +84,7 @@ interface PreviewData {
   participant: { id: number; email: string; demographicData: any } | null;
   detectedTypes?: QuestionnaireType[];
   byType?: Record<QuestionnaireType, TypeData>;
+  fichaDatos?: FichaDatosPayload | null;
   responses?: DetectedResponse[];
   missing?: number[];
   warnings: string[];
@@ -108,7 +121,9 @@ export default function PhotoImportModal({
   const [previewing, setPreviewing] = useState(false);
   const [preview, setPreview] = useState<PreviewData | null>(null);
   const [editsByType, setEditsByType] = useState<EditsByType>({});
-  const [activeTab, setActiveTab] = useState<QuestionnaireType | null>(null);
+  const [fichaEdits, setFichaEdits] = useState<FichaValues>(emptyFicha());
+  const [fichaDetected, setFichaDetected] = useState(false);
+  const [activeTab, setActiveTab] = useState<TabKey | null>(null);
   const [editedInfo, setEditedInfo] = useState<{ documentNumber: string; firstName: string; lastName: string }>({
     documentNumber: '',
     firstName: '',
@@ -124,6 +139,8 @@ export default function PhotoImportModal({
     setSelectedMode(defaultQuestionnaireType);
     setPreview(null);
     setEditsByType({});
+    setFichaEdits(emptyFicha());
+    setFichaDetected(false);
     setActiveTab(null);
     setEditedInfo({ documentNumber: '', firstName: '', lastName: '' });
     setResult(null);
@@ -163,8 +180,9 @@ export default function PhotoImportModal({
 
       if (data.mode === 'auto') {
         const detected = data.detectedTypes || [];
-        if (detected.length === 0) {
-          toast.error('La IA no detectó ningún cuestionario reconocible en el archivo.');
+        const hasFicha = !!(data.fichaDatos && data.fichaDatos.detected);
+        if (detected.length === 0 && !hasFicha) {
+          toast.error('La IA no detectó ningún cuestionario ni ficha de datos en el archivo.');
           return;
         }
         const initial: EditsByType = {};
@@ -172,7 +190,14 @@ export default function PhotoImportModal({
           if (data.byType && data.byType[t]) initial[t] = buildInitialEdits(data.byType[t]);
         }
         setEditsByType(initial);
-        setActiveTab(detected[0]);
+        if (hasFicha) {
+          setFichaDetected(true);
+          setFichaEdits({ ...emptyFicha(), ...(data.fichaDatos!.fields || {}) });
+        } else {
+          setFichaDetected(false);
+          setFichaEdits(emptyFicha());
+        }
+        setActiveTab(detected[0] || (hasFicha ? 'ficha_datos' : null));
       } else {
         const t = data.questionnaireType as QuestionnaireType;
         const td: TypeData = {
@@ -185,6 +210,8 @@ export default function PhotoImportModal({
           summary: data.summary!,
         };
         setEditsByType({ [t]: buildInitialEdits(td) });
+        setFichaDetected(false);
+        setFichaEdits(emptyFicha());
         setActiveTab(t);
       }
 
@@ -205,6 +232,11 @@ export default function PhotoImportModal({
     }
   };
 
+  const fichaHasContent = useMemo(
+    () => Object.values(fichaEdits).some(v => v && String(v).trim().length > 0),
+    [fichaEdits]
+  );
+
   const handleCommit = async () => {
     if (!preview) return;
     const submitTypes = Object.keys(editsByType) as QuestionnaireType[];
@@ -217,7 +249,11 @@ export default function PhotoImportModal({
       }))
       .filter(q => q.responses.length > 0);
 
-    if (questionnaires.length === 0) return toast.error('No hay respuestas para guardar.');
+    const includeFicha = fichaDetected && fichaHasContent;
+
+    if (questionnaires.length === 0 && !includeFicha) {
+      return toast.error('No hay respuestas ni ficha para guardar.');
+    }
 
     if (!preview.participantId && !editedInfo.documentNumber.trim()) {
       return toast.error('Escribe el número de documento del participante.');
@@ -226,11 +262,19 @@ export default function PhotoImportModal({
     setCommitting(true);
     try {
       const token = localStorage.getItem('token');
-      const isMulti = preview.mode === 'auto' || questionnaires.length > 1;
-      const endpoint = isMulti ? 'commit-multi' : 'commit';
-      const body: any = isMulti
-        ? { questionnaires }
-        : { questionnaireType: questionnaires[0].questionnaireType, responses: questionnaires[0].responses };
+      const isMulti = preview.mode === 'auto' || questionnaires.length > 1 || (questionnaires.length >= 1 && includeFicha);
+      const onlyFicha = questionnaires.length === 0 && includeFicha;
+      const endpoint = onlyFicha ? 'commit' : isMulti ? 'commit-multi' : 'commit';
+
+      let body: any;
+      if (onlyFicha) {
+        body = { questionnaireType: 'ficha_datos', fichaDatos: fichaEdits };
+      } else if (isMulti) {
+        body = { questionnaires };
+        if (includeFicha) body.fichaDatos = fichaEdits;
+      } else {
+        body = { questionnaireType: questionnaires[0].questionnaireType, responses: questionnaires[0].responses };
+      }
       if (preview.participantId) body.participantId = preview.participantId;
       else body.participantInfo = editedInfo;
 
@@ -246,7 +290,13 @@ export default function PhotoImportModal({
       }
       setResult(data);
       setStep('result');
-      toast.success(isMulti ? `Se guardaron ${questionnaires.length} cuestionarios.` : `Se guardaron ${questionnaires[0].responses.length} respuestas.`);
+      toast.success(
+        onlyFicha
+          ? 'Ficha de datos guardada.'
+          : isMulti
+          ? `Se guardaron ${questionnaires.length}${includeFicha ? ' cuestionarios + ficha' : ' cuestionarios'}.`
+          : `Se guardaron ${questionnaires[0].responses.length} respuestas.`
+      );
       onSuccess && onSuccess();
     } catch (err) {
       console.error(err);
@@ -256,13 +306,16 @@ export default function PhotoImportModal({
     }
   };
 
+  const isFichaTab = activeTab === 'ficha_datos';
+
   const activeTypeData: TypeData | null = useMemo(() => {
-    if (!preview || !activeTab) return null;
-    if (preview.mode === 'auto' && preview.byType) return preview.byType[activeTab] || null;
+    if (!preview || !activeTab || activeTab === 'ficha_datos') return null;
+    const qType = activeTab as QuestionnaireType;
+    if (preview.mode === 'auto' && preview.byType) return preview.byType[qType] || null;
     return {
-      type: activeTab,
-      expectedCount: QUESTIONNAIRE_COUNTS[activeTab],
-      scale: QUESTIONNAIRE_SCALES[activeTab],
+      type: qType,
+      expectedCount: QUESTIONNAIRE_COUNTS[qType],
+      scale: QUESTIONNAIRE_SCALES[qType],
       responses: preview.responses || [],
       missing: preview.missing || [],
       warnings: [],
@@ -270,22 +323,26 @@ export default function PhotoImportModal({
     };
   }, [preview, activeTab]);
 
-  const activeEdits = (activeTab && editsByType[activeTab]) || {};
-  const activeExpected = activeTab ? QUESTIONNAIRE_COUNTS[activeTab] : 0;
-  const activeScale = activeTab ? QUESTIONNAIRE_SCALES[activeTab] : 'intra';
+  const activeQType = (activeTab && activeTab !== 'ficha_datos') ? (activeTab as QuestionnaireType) : null;
+  const activeEdits = (activeQType && editsByType[activeQType]) || {};
+  const activeExpected = activeQType ? QUESTIONNAIRE_COUNTS[activeQType] : 0;
+  const activeScale = activeQType ? QUESTIONNAIRE_SCALES[activeQType] : 'intra';
   const scaleOptions = activeScale === 'stress' ? STRESS_OPTIONS : INTRA_OPTIONS;
 
   const activeSavedCount = Object.values(activeEdits).filter(r => r.responseValue !== null && r.responseValue !== undefined).length;
   const activeLowConf = Object.values(activeEdits).filter(r => r.confidence === 'low' && r.responseValue !== null).length;
   const activeMissing = activeExpected - activeSavedCount;
 
+  const fichaFilled = Object.values(fichaEdits).filter(v => v && String(v).trim().length > 0).length;
+
   const totalSaved = useMemo(() => {
     let sum = 0;
     for (const t of Object.keys(editsByType) as QuestionnaireType[]) {
       sum += Object.values(editsByType[t] || {}).filter(r => r.responseValue !== null).length;
     }
+    if (fichaDetected) sum += fichaFilled;
     return sum;
-  }, [editsByType]);
+  }, [editsByType, fichaDetected, fichaFilled]);
 
   if (!open) return null;
 
@@ -372,11 +429,11 @@ export default function PhotoImportModal({
           </div>
         )}
 
-        {step === 'preview' && preview && activeTypeData && activeTab && (
+        {step === 'preview' && preview && activeTab && (
           <div className="flex flex-col flex-1 overflow-hidden">
-            {preview.mode === 'auto' && preview.detectedTypes && preview.detectedTypes.length > 0 && (
+            {preview.mode === 'auto' && ((preview.detectedTypes && preview.detectedTypes.length > 0) || fichaDetected) && (
               <div className="px-5 pt-3 border-b flex gap-1 flex-wrap">
-                {preview.detectedTypes.map((t) => {
+                {(preview.detectedTypes || []).map((t) => {
                   const tEdits = editsByType[t] || {};
                   const saved = Object.values(tEdits).filter(r => r.responseValue !== null).length;
                   const expected = QUESTIONNAIRE_COUNTS[t];
@@ -399,21 +456,44 @@ export default function PhotoImportModal({
                     </button>
                   );
                 })}
+                {fichaDetected && (
+                  <button
+                    onClick={() => setActiveTab('ficha_datos')}
+                    className={`px-3 py-1.5 text-sm rounded-t-md border-b-2 transition ${
+                      activeTab === 'ficha_datos'
+                        ? 'border-blue-600 text-blue-700 font-semibold bg-blue-50'
+                        : 'border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                    }`}
+                  >
+                    {SHORT_LABELS.ficha_datos}{' '}
+                    <span className="text-xs text-gray-500">({fichaFilled}/18)</span>
+                  </button>
+                )}
               </div>
             )}
 
             <div className="px-5 py-3 bg-gray-50 border-b grid grid-cols-2 lg:grid-cols-4 gap-3 text-sm">
-              <div><span className="text-gray-500">Detectadas:</span> <b>{activeSavedCount}</b> / {activeExpected}</div>
-              <div><span className="text-gray-500">Baja confianza:</span> <b className="text-amber-700">{activeLowConf}</b></div>
-              <div><span className="text-gray-500">Faltantes:</span> <b className={activeMissing > 0 ? 'text-red-700' : ''}>{activeMissing}</b></div>
-              <div><span className="text-gray-500">Cuestionario:</span> <b>{activeTab}</b></div>
+              {isFichaTab ? (
+                <>
+                  <div><span className="text-gray-500">Campos:</span> <b>{fichaFilled}</b> / 18</div>
+                  <div><span className="text-gray-500">Ficha detectada:</span> <b className={fichaDetected ? 'text-green-700' : 'text-gray-400'}>{fichaDetected ? 'Sí' : 'No'}</b></div>
+                  <div className="col-span-2"><span className="text-gray-500">Sección:</span> <b>Ficha de Datos Generales</b></div>
+                </>
+              ) : (
+                <>
+                  <div><span className="text-gray-500">Detectadas:</span> <b>{activeSavedCount}</b> / {activeExpected}</div>
+                  <div><span className="text-gray-500">Baja confianza:</span> <b className="text-amber-700">{activeLowConf}</b></div>
+                  <div><span className="text-gray-500">Faltantes:</span> <b className={activeMissing > 0 ? 'text-red-700' : ''}>{activeMissing}</b></div>
+                  <div><span className="text-gray-500">Cuestionario:</span> <b>{activeTab}</b></div>
+                </>
+              )}
             </div>
 
-            {(activeTypeData.warnings?.length || preview.warnings?.length) && (
+            {((activeTypeData?.warnings?.length || 0) > 0 || (preview.warnings?.length || 0) > 0) && (
               <div className="px-5 py-2 bg-amber-50 border-b text-sm text-amber-900">
                 <b>Advertencias:</b>
                 <ul className="list-disc list-inside">
-                  {[...(preview.warnings || []), ...(activeTypeData.warnings || [])].map((w, i) => <li key={i}>{w}</li>)}
+                  {[...(preview.warnings || []), ...(activeTypeData?.warnings || [])].map((w, i) => <li key={i}>{w}</li>)}
                 </ul>
               </div>
             )}
@@ -452,69 +532,77 @@ export default function PhotoImportModal({
             )}
 
             <div className="flex-1 overflow-auto">
-              <table className="min-w-full text-sm">
-                <thead className="bg-gray-100 sticky top-0 z-10">
-                  <tr>
-                    <th className="px-3 py-2 text-left w-16">#</th>
-                    <th className="px-3 py-2 text-left">Respuesta</th>
-                    <th className="px-3 py-2 text-left w-32">Confianza</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {Array.from({ length: activeExpected }, (_, i) => i + 1).map((qn) => {
-                    const row = activeEdits[qn] || { responseValue: null, confidence: 'low' as const };
-                    const missing = row.responseValue === null || row.responseValue === undefined;
-                    const rowClass = missing
-                      ? 'bg-red-50'
-                      : row.confidence === 'low'
-                      ? 'bg-amber-50'
-                      : row.confidence === 'medium'
-                      ? 'bg-yellow-50'
-                      : '';
-                    return (
-                      <tr key={qn} className={`border-b border-gray-100 ${rowClass}`}>
-                        <td className="px-3 py-1.5 font-mono text-gray-700">{qn}</td>
-                        <td className="px-3 py-1.5">
-                          <select
-                            value={row.responseValue === null || row.responseValue === undefined ? '' : row.responseValue}
-                            onChange={(e) => {
-                              const v = e.target.value;
-                              setEditsByType((prev) => ({
-                                ...prev,
-                                [activeTab]: {
-                                  ...(prev[activeTab] || {}),
-                                  [qn]: v === ''
-                                    ? { responseValue: null, confidence: 'user' }
-                                    : { responseValue: Number(v), confidence: 'user' },
-                                },
-                              }));
-                            }}
-                            className="border-gray-300 rounded-md text-sm py-1"
-                          >
-                            <option value="">— sin respuesta —</option>
-                            {scaleOptions.map(o => (
-                              <option key={o.value} value={o.value}>{o.label}</option>
-                            ))}
-                          </select>
-                        </td>
-                        <td className="px-3 py-1.5">
-                          {missing ? (
-                            <span className="text-red-700 text-xs">Faltante</span>
-                          ) : row.confidence === 'user' ? (
-                            <span className="text-blue-700 text-xs">Manual</span>
-                          ) : row.confidence === 'high' ? (
-                            <span className="text-green-700 text-xs">Alta</span>
-                          ) : row.confidence === 'medium' ? (
-                            <span className="text-yellow-700 text-xs">Media</span>
-                          ) : (
-                            <span className="text-amber-700 text-xs">Baja</span>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+              {isFichaTab ? (
+                <FichaDatosForm
+                  values={fichaEdits}
+                  onChange={(name, value) => setFichaEdits((prev) => ({ ...prev, [name]: value }))}
+                />
+              ) : (
+                <table className="min-w-full text-sm">
+                  <thead className="bg-gray-100 sticky top-0 z-10">
+                    <tr>
+                      <th className="px-3 py-2 text-left w-16">#</th>
+                      <th className="px-3 py-2 text-left">Respuesta</th>
+                      <th className="px-3 py-2 text-left w-32">Confianza</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {Array.from({ length: activeExpected }, (_, i) => i + 1).map((qn) => {
+                      const row = activeEdits[qn] || { responseValue: null, confidence: 'low' as const };
+                      const missing = row.responseValue === null || row.responseValue === undefined;
+                      const rowClass = missing
+                        ? 'bg-red-50'
+                        : row.confidence === 'low'
+                        ? 'bg-amber-50'
+                        : row.confidence === 'medium'
+                        ? 'bg-yellow-50'
+                        : '';
+                      return (
+                        <tr key={qn} className={`border-b border-gray-100 ${rowClass}`}>
+                          <td className="px-3 py-1.5 font-mono text-gray-700">{qn}</td>
+                          <td className="px-3 py-1.5">
+                            <select
+                              value={row.responseValue === null || row.responseValue === undefined ? '' : row.responseValue}
+                              onChange={(e) => {
+                                const v = e.target.value;
+                                const tabKey = activeQType!;
+                                setEditsByType((prev) => ({
+                                  ...prev,
+                                  [tabKey]: {
+                                    ...(prev[tabKey] || {}),
+                                    [qn]: v === ''
+                                      ? { responseValue: null, confidence: 'user' }
+                                      : { responseValue: Number(v), confidence: 'user' },
+                                  },
+                                }));
+                              }}
+                              className="border-gray-300 rounded-md text-sm py-1"
+                            >
+                              <option value="">— sin respuesta —</option>
+                              {scaleOptions.map(o => (
+                                <option key={o.value} value={o.value}>{o.label}</option>
+                              ))}
+                            </select>
+                          </td>
+                          <td className="px-3 py-1.5">
+                            {missing ? (
+                              <span className="text-red-700 text-xs">Faltante</span>
+                            ) : row.confidence === 'user' ? (
+                              <span className="text-blue-700 text-xs">Manual</span>
+                            ) : row.confidence === 'high' ? (
+                              <span className="text-green-700 text-xs">Alta</span>
+                            ) : row.confidence === 'medium' ? (
+                              <span className="text-yellow-700 text-xs">Media</span>
+                            ) : (
+                              <span className="text-amber-700 text-xs">Baja</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
             </div>
 
             <div className="px-5 py-3 border-t flex justify-between items-center">

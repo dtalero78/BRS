@@ -8,6 +8,28 @@ const QUESTIONNAIRE_META = {
   estres:         { label: 'Estrés',                                                  count: 31,  scale: 'stress' },
 };
 
+const FICHA_FIELDS = [
+  { key: 1,  name: 'fecha',            label: 'Fecha de aplicación' },
+  { key: 2,  name: 'sexo',             label: 'Sexo (Masculino, Femenino u Otro)' },
+  { key: 3,  name: 'birthYear',        label: 'Año de nacimiento (o fecha completa si aparece)' },
+  { key: 4,  name: 'education',        label: 'Último nivel de estudios' },
+  { key: 5,  name: 'maritalStatus',    label: 'Estado civil' },
+  { key: 6,  name: 'ocupacion',        label: 'Ocupación o profesión' },
+  { key: 7,  name: 'ciudadResidencia', label: 'Ciudad/municipio y departamento de residencia' },
+  { key: 8,  name: 'estrato',          label: 'Estrato (1..6, Finca o No sé)' },
+  { key: 9,  name: 'dependientes',     label: 'Número de personas que dependen económicamente' },
+  { key: 10, name: 'tipoVivienda',     label: 'Tipo de vivienda (Propia, En arriendo, Familiar)' },
+  { key: 11, name: 'ciudadTrabajo',    label: 'Ciudad/municipio y departamento de trabajo' },
+  { key: 12, name: 'anosEmpresa',      label: 'Cuántos años (o meses) lleva en la empresa' },
+  { key: 13, name: 'cargo',            label: 'Nombre del cargo' },
+  { key: 14, name: 'tipoCargo',        label: 'Tipo de cargo (Jefatura, Profesional/analista/técnico, Auxiliar/asistente, Operario/operador)' },
+  { key: 15, name: 'anosCargo',        label: 'Cuántos años (o meses) en el cargo actual' },
+  { key: 16, name: 'departamento',     label: 'Departamento/área/sección de la empresa' },
+  { key: 17, name: 'tipoContrato',     label: 'Tipo de contrato (Temporal <1, Temporal ≥1, Indefinido, Cooperado, Prestación de servicios, No sé)' },
+  { key: 18, name: 'horasTrabajo',     label: 'Horas diarias de trabajo' },
+];
+const FICHA_FIELD_NAMES = FICHA_FIELDS.map(f => f.name);
+
 const SCALE_DESCRIPTIONS = {
   intra: [
     'Siempre        = 4',
@@ -243,15 +265,22 @@ async function extractAnswersFromSheet(imageBuffers, options) {
 }
 
 function buildAutoSystemPrompt(expectParticipantInfo) {
+  const fichaBullets = FICHA_FIELDS.map(f => `     - ${f.name}: ${f.label}`).join('\n');
   return [
     'Eres un asistente experto en leer PDFs o imágenes que contengan uno o varios cuestionarios de la Batería de Riesgo Psicosocial del Ministerio de Protección Social de Colombia (Resolución 2646 de 2008).',
     '',
-    'El archivo puede contener cualquier combinación de estos 4 tipos:',
+    'El archivo puede contener cualquier combinación de estos tipos:',
     '',
+    'Cuestionarios Likert (van en el array "questionnaires"):',
     '1. intralaboral_a — encabezado "FORMA A" (Jefes/Profesionales/Técnicos). 123 preguntas. Escala Likert 0..4.',
     '2. intralaboral_b — encabezado "FORMA B" (Auxiliares/Operarios). 97 preguntas. Escala Likert 0..4.',
     '3. extralaboral   — título "FACTORES EXTRALABORALES" o similar. 31 preguntas. Escala Likert 0..4.',
     '4. estres         — "CUESTIONARIO PARA LA EVALUACIÓN DEL ESTRÉS — TERCERA VERSIÓN". 31 preguntas. Escala Likert 0..3.',
+    '',
+    'Ficha de Datos Generales (va en el objeto "fichaDatos", NO en "questionnaires"):',
+    '   Títulos típicos: "FICHA DE DATOS GENERALES", "DATOS GENERALES", "SOCIODEMOGRÁFICOS".',
+    '   Tiene campos estructurados (texto, número, categoría seleccionada con X):',
+    fichaBullets,
     '',
     'Escalas Likert (devuelve el valor numérico, NO el texto):',
     '  Para intralaboral_a, intralaboral_b, extralaboral:',
@@ -260,29 +289,44 @@ function buildAutoSystemPrompt(expectParticipantInfo) {
     '    Siempre=3, Casi siempre=2, A veces=1, Nunca=0',
     '',
     'Reglas estrictas:',
-    '1. Identifica primero qué cuestionarios ESTÁN PRESENTES Y RESPONDIDOS en el archivo. Si ves un título pero no hay marcas de respuesta, NO lo incluyas.',
+    '1. Identifica qué secciones ESTÁN PRESENTES Y RESPONDIDAS. Si ves un título pero no hay marcas/datos, NO lo incluyas.',
     '2. Forma A y Forma B son mutuamente excluyentes — nunca ambas en el mismo archivo.',
-    '3. Por cada cuestionario detectado, agrega UN elemento al array "questionnaires" con sus respuestas.',
-    '4. Cada pregunta tiene UNA sola marca (X, círculo o similar). Si ves múltiples marcas ambiguas o ninguna, OMITE esa pregunta. NO inventes respuestas.',
-    '5. responseValue debe ser entero en el rango de la escala del cuestionario.',
-    '6. Usa confidence="high" para marcas claras, "medium" para legibles pero no perfectas, "low" para dudosas (borrón, tachadura, cerca del límite).',
-    '7. En "warnings" del cuestionario reporta observaciones específicas (borrón, columna cortada, etc). En "warnings" del top-level reporta observaciones generales del archivo.',
+    '3. Por cada cuestionario Likert detectado, agrega UN elemento al array "questionnaires".',
+    '4. Si detectas la Ficha de Datos Generales, llena "fichaDatos.detected" = true y transcribe cada campo en "fichaDatos.fields". Si un campo está vacío, devuelve cadena vacía. NO inventes valores.',
+    '5. Para campos categóricos con X (sexo, estado civil, estudios, estrato, tipo vivienda, tipo cargo, tipo contrato, tipo salario), escribe EL LITERAL EXACTO de la opción marcada (por ejemplo "Masculino", "Unión libre", "Bachillerato completo", "Operario, operador, ayudante, servicios generales", "Término indefinido"). Si no hay marca visible, cadena vacía.',
+    '6. Para campos de texto manuscrito, transcribe tal cual lo veas. Para campos numéricos (dependientes, horas), devuelve solo el número como string.',
+    '7. Para campos de ciudad/residencia/trabajo que tienen dos subcampos (ciudad y departamento), concaténalos como "Ciudad, Departamento".',
+    '8. Cada pregunta Likert tiene UNA sola marca. Si ves múltiples marcas ambiguas o ninguna, OMITE esa pregunta. NO inventes respuestas.',
+    '9. Usa confidence="high" para marcas claras, "medium" para legibles pero no perfectas, "low" para dudosas.',
+    '10. En "warnings" del cuestionario reporta observaciones específicas. En "fichaDatos.warnings" reporta observaciones de la ficha. En "warnings" del top-level las generales.',
     expectParticipantInfo
-      ? '8. Además extrae datos del encabezado del archivo: documento (solo dígitos), primer nombre, primer apellido. Si no están visibles, devuelve cadenas vacías y confidence="low".'
-      : '8. NO devuelvas participantInfo — el participante ya fue seleccionado en el sistema.',
+      ? '11. Además extrae datos del encabezado del archivo: documento (solo dígitos), primer nombre, primer apellido. Si la Ficha de Datos Generales tiene "Nombre completo", úsalo como primer nombre + apellido. Si no, usa el encabezado. Si nada está visible, cadenas vacías y confidence="low".'
+      : '11. NO devuelvas participantInfo — el participante ya fue seleccionado en el sistema.',
     '',
     'Devuelve SIEMPRE el resultado llamando la herramienta save_all_questionnaires. No escribas prosa fuera de la llamada.',
   ].join('\n');
 }
 
 function buildAutoTool(expectParticipantInfo) {
+  const fichaFieldsSchema = {
+    type: 'object',
+    additionalProperties: false,
+    description: 'Valor transcrito de cada campo de la Ficha. Vacío si no está presente.',
+    properties: {},
+    required: [],
+  };
+  for (const f of FICHA_FIELDS) {
+    fichaFieldsSchema.properties[f.name] = { type: 'string', description: f.label };
+    fichaFieldsSchema.required.push(f.name);
+  }
+
   const schema = {
     type: 'object',
     additionalProperties: false,
     properties: {
       questionnaires: {
         type: 'array',
-        description: 'Un elemento por cuestionario detectado en el archivo. No incluyas cuestionarios sin respuestas.',
+        description: 'Un elemento por cuestionario Likert detectado. No incluyas la Ficha de Datos aquí — esa va en "fichaDatos".',
         items: {
           type: 'object',
           additionalProperties: false,
@@ -312,12 +356,23 @@ function buildAutoTool(expectParticipantInfo) {
           required: ['type', 'responses', 'warnings'],
         },
       },
+      fichaDatos: {
+        type: 'object',
+        additionalProperties: false,
+        description: 'Ficha de Datos Generales. Si no aparece en el archivo, detected=false y fields con cadenas vacías.',
+        properties: {
+          detected: { type: 'boolean' },
+          fields: fichaFieldsSchema,
+          warnings: { type: 'array', items: { type: 'string' } },
+        },
+        required: ['detected', 'fields', 'warnings'],
+      },
       warnings: {
         type: 'array',
         items: { type: 'string' },
       },
     },
-    required: ['questionnaires', 'warnings'],
+    required: ['questionnaires', 'fichaDatos', 'warnings'],
   };
 
   if (expectParticipantInfo) {
@@ -337,7 +392,7 @@ function buildAutoTool(expectParticipantInfo) {
 
   return {
     name: 'save_all_questionnaires',
-    description: 'Guarda TODOS los cuestionarios detectados en el archivo. Úsala exactamente una vez.',
+    description: 'Guarda TODOS los cuestionarios y la ficha de datos detectados en el archivo. Úsala exactamente una vez.',
     strict: true,
     input_schema: schema,
   };
@@ -415,9 +470,29 @@ async function extractAllQuestionnairesFromSheet(imageBuffers, options) {
     };
   }
 
+  let fichaDatos = null;
+  if (raw.fichaDatos && raw.fichaDatos.detected === true) {
+    const rawFields = raw.fichaDatos.fields || {};
+    const fields = {};
+    let filled = 0;
+    for (const f of FICHA_FIELDS) {
+      const v = typeof rawFields[f.name] === 'string' ? rawFields[f.name].trim() : '';
+      fields[f.name] = v;
+      if (v) filled++;
+    }
+    fichaDatos = {
+      detected: true,
+      fields,
+      filledCount: filled,
+      totalCount: FICHA_FIELDS.length,
+      warnings: Array.isArray(raw.fichaDatos.warnings) ? raw.fichaDatos.warnings.filter(w => typeof w === 'string') : [],
+    };
+  }
+
   const result = {
     detectedTypes: Array.from(seenTypes),
     byType,
+    fichaDatos,
     warnings: Array.isArray(raw.warnings) ? raw.warnings.filter(w => typeof w === 'string') : [],
     usage: {
       inputTokens: response.usage?.input_tokens ?? null,
@@ -444,4 +519,6 @@ module.exports = {
   extractAnswersFromSheet,
   extractAllQuestionnairesFromSheet,
   QUESTIONNAIRE_META,
+  FICHA_FIELDS,
+  FICHA_FIELD_NAMES,
 };

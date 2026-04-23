@@ -1,14 +1,18 @@
 import { useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import { XMarkIcon, DocumentTextIcon, CheckCircleIcon, ExclamationTriangleIcon } from '@heroicons/react/24/outline';
+import FichaDatosForm from './FichaDatosForm';
+import { FichaValues, emptyFicha } from './fichaFields';
 
 type QuestionnaireType = 'intralaboral_a' | 'intralaboral_b' | 'extralaboral' | 'estres';
+type EntryType = QuestionnaireType | 'ficha_datos';
 
-const QUESTIONNAIRE_LABELS: Record<QuestionnaireType, string> = {
+const QUESTIONNAIRE_LABELS: Record<EntryType, string> = {
   intralaboral_a: 'Intralaboral Forma A (123 preguntas — Jefes/Profesionales/Técnicos)',
   intralaboral_b: 'Intralaboral Forma B (97 preguntas — Auxiliares/Operarios)',
   extralaboral: 'Extralaboral (31 preguntas)',
   estres: 'Estrés (31 preguntas)',
+  ficha_datos: 'Ficha de Datos Generales (18 campos sociodemográficos)',
 };
 
 const QUESTIONNAIRE_COUNTS: Record<QuestionnaireType, number> = {
@@ -46,7 +50,7 @@ interface Props {
   evaluationId: number;
   participantId?: number;
   participantLabel?: string;
-  defaultQuestionnaireType?: QuestionnaireType;
+  defaultQuestionnaireType?: EntryType;
   onSuccess?: () => void;
 }
 
@@ -62,8 +66,9 @@ export default function ManualEntryModal({
   onSuccess,
 }: Props) {
   const [step, setStep] = useState<Step>('entry');
-  const [questionnaireType, setQuestionnaireType] = useState<QuestionnaireType>(defaultQuestionnaireType);
+  const [questionnaireType, setQuestionnaireType] = useState<EntryType>(defaultQuestionnaireType);
   const [edits, setEdits] = useState<Record<number, number>>({});
+  const [fichaEdits, setFichaEdits] = useState<FichaValues>(emptyFicha());
   const [editedInfo, setEditedInfo] = useState<{ documentNumber: string; firstName: string; lastName: string }>({
     documentNumber: '',
     firstName: '',
@@ -72,27 +77,31 @@ export default function ManualEntryModal({
   const [committing, setCommitting] = useState(false);
   const [result, setResult] = useState<any>(null);
 
+  const isFicha = questionnaireType === 'ficha_datos';
+
   useEffect(() => {
     if (!open) return;
     setStep('entry');
     setQuestionnaireType(defaultQuestionnaireType);
     setEdits({});
+    setFichaEdits(emptyFicha());
     setEditedInfo({ documentNumber: '', firstName: '', lastName: '' });
     setResult(null);
   }, [open, defaultQuestionnaireType]);
 
   useEffect(() => {
     setEdits({});
+    setFichaEdits(emptyFicha());
   }, [questionnaireType]);
 
-  const expectedCount = QUESTIONNAIRE_COUNTS[questionnaireType];
-  const scale = QUESTIONNAIRE_SCALES[questionnaireType];
+  const expectedCount = isFicha ? 18 : QUESTIONNAIRE_COUNTS[questionnaireType as QuestionnaireType];
+  const scale = !isFicha ? QUESTIONNAIRE_SCALES[questionnaireType as QuestionnaireType] : 'intra';
   const scaleOptions = scale === 'stress' ? STRESS_OPTIONS : INTRA_OPTIONS;
 
-  const savedCount = useMemo(
-    () => Object.values(edits).filter((v) => v !== undefined && v !== null).length,
-    [edits]
-  );
+  const savedCount = useMemo(() => {
+    if (isFicha) return Object.values(fichaEdits).filter(v => v && String(v).trim().length > 0).length;
+    return Object.values(edits).filter((v) => v !== undefined && v !== null).length;
+  }, [edits, fichaEdits, isFicha]);
 
   const handleSetAll = (value: number) => {
     const next: Record<number, number> = {};
@@ -101,11 +110,14 @@ export default function ManualEntryModal({
   };
 
   const handleCommit = async () => {
-    const responses = Object.entries(edits)
-      .filter(([, v]) => v !== undefined && v !== null)
-      .map(([qn, v]) => ({ questionNumber: Number(qn), responseValue: v }));
-
-    if (responses.length === 0) return toast.error('No hay respuestas para guardar.');
+    if (isFicha) {
+      if (savedCount === 0) return toast.error('Llena al menos un campo de la ficha.');
+    } else {
+      const responses = Object.entries(edits)
+        .filter(([, v]) => v !== undefined && v !== null)
+        .map(([qn, v]) => ({ questionNumber: Number(qn), responseValue: v }));
+      if (responses.length === 0) return toast.error('No hay respuestas para guardar.');
+    }
 
     if (!participantId && !editedInfo.documentNumber.trim()) {
       return toast.error('Escribe el número de documento del participante.');
@@ -114,7 +126,14 @@ export default function ManualEntryModal({
     setCommitting(true);
     try {
       const token = localStorage.getItem('token');
-      const body: any = { questionnaireType, responses };
+      const body: any = isFicha
+        ? { questionnaireType: 'ficha_datos', fichaDatos: fichaEdits }
+        : {
+            questionnaireType,
+            responses: Object.entries(edits)
+              .filter(([, v]) => v !== undefined && v !== null)
+              .map(([qn, v]) => ({ questionNumber: Number(qn), responseValue: v })),
+          };
       if (participantId) body.participantId = participantId;
       else body.participantInfo = editedInfo;
 
@@ -130,7 +149,7 @@ export default function ManualEntryModal({
       }
       setResult(data);
       setStep('result');
-      toast.success(`Se guardaron ${data.responsesSaved} respuestas.`);
+      toast.success(isFicha ? 'Ficha guardada.' : `Se guardaron ${data.responsesSaved} respuestas.`);
       onSuccess && onSuccess();
     } catch (err) {
       console.error(err);
@@ -165,10 +184,10 @@ export default function ManualEntryModal({
                 <label className="block text-sm font-medium text-gray-700 mb-1">Cuestionario</label>
                 <select
                   value={questionnaireType}
-                  onChange={(e) => setQuestionnaireType(e.target.value as QuestionnaireType)}
+                  onChange={(e) => setQuestionnaireType(e.target.value as EntryType)}
                   className="block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
                 >
-                  {(Object.keys(QUESTIONNAIRE_LABELS) as QuestionnaireType[]).map((v) => (
+                  {(Object.keys(QUESTIONNAIRE_LABELS) as EntryType[]).map((v) => (
                     <option key={v} value={v}>{QUESTIONNAIRE_LABELS[v]}</option>
                   ))}
                 </select>
@@ -210,28 +229,38 @@ export default function ManualEntryModal({
               <div className="flex items-center justify-between bg-gray-50 rounded-md p-3 text-sm">
                 <div>
                   <span className="text-gray-500">Progreso:</span>{' '}
-                  <b className={savedCount === expectedCount ? 'text-green-700' : ''}>{savedCount}</b> / {expectedCount} respondidas
+                  <b className={savedCount === expectedCount ? 'text-green-700' : ''}>{savedCount}</b> / {expectedCount} {isFicha ? 'campos llenos' : 'respondidas'}
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-gray-500">Asignar a todas:</span>
-                  {scaleOptions.map((o) => (
+                {!isFicha && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-gray-500">Asignar a todas:</span>
+                    {scaleOptions.map((o) => (
+                      <button
+                        key={o.value}
+                        onClick={() => handleSetAll(o.value)}
+                        className="text-xs px-2 py-1 rounded border border-gray-300 hover:bg-gray-100"
+                        title={`Asigna ${o.label} a todas las preguntas`}
+                      >
+                        {o.label} ({o.value})
+                      </button>
+                    ))}
                     <button
-                      key={o.value}
-                      onClick={() => handleSetAll(o.value)}
-                      className="text-xs px-2 py-1 rounded border border-gray-300 hover:bg-gray-100"
-                      title={`Asigna ${o.label} a todas las preguntas`}
+                      onClick={() => setEdits({})}
+                      className="text-xs px-2 py-1 rounded border border-red-300 text-red-700 hover:bg-red-50"
+                      title="Borra todas las respuestas"
                     >
-                      {o.label} ({o.value})
+                      Limpiar
                     </button>
-                  ))}
+                  </div>
+                )}
+                {isFicha && (
                   <button
-                    onClick={() => setEdits({})}
+                    onClick={() => setFichaEdits(emptyFicha())}
                     className="text-xs px-2 py-1 rounded border border-red-300 text-red-700 hover:bg-red-50"
-                    title="Borra todas las respuestas"
                   >
-                    Limpiar
+                    Limpiar ficha
                   </button>
-                </div>
+                )}
               </div>
 
               <div className="bg-amber-50 border border-amber-200 rounded-md p-2 text-xs text-amber-900 flex items-start gap-2">
@@ -243,49 +272,56 @@ export default function ManualEntryModal({
             </div>
 
             <div className="flex-1 overflow-auto">
-              <table className="min-w-full text-sm">
-                <thead className="bg-gray-100 sticky top-0 z-10">
-                  <tr>
-                    <th className="px-3 py-2 text-left w-16">#</th>
-                    <th className="px-3 py-2 text-left">Respuesta</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {Array.from({ length: expectedCount }, (_, i) => i + 1).map((qn) => {
-                    const value = edits[qn];
-                    const missing = value === undefined || value === null;
-                    return (
-                      <tr key={qn} className={`border-b border-gray-100 ${missing ? 'bg-red-50' : ''}`}>
-                        <td className="px-3 py-1.5 font-mono text-gray-700">{qn}</td>
-                        <td className="px-3 py-1.5">
-                          <select
-                            value={missing ? '' : value}
-                            onChange={(e) => {
-                              const v = e.target.value;
-                              setEdits((prev) => {
-                                if (v === '') {
-                                  const next = { ...prev };
-                                  delete next[qn];
-                                  return next;
-                                }
-                                return { ...prev, [qn]: Number(v) };
-                              });
-                            }}
-                            className="border-gray-300 rounded-md text-sm py-1 w-56"
-                          >
-                            <option value="">— sin respuesta —</option>
-                            {scaleOptions.map((o) => (
-                              <option key={o.value} value={o.value}>
-                                {o.label} ({o.value})
-                              </option>
-                            ))}
-                          </select>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+              {isFicha ? (
+                <FichaDatosForm
+                  values={fichaEdits}
+                  onChange={(name, value) => setFichaEdits((prev) => ({ ...prev, [name]: value }))}
+                />
+              ) : (
+                <table className="min-w-full text-sm">
+                  <thead className="bg-gray-100 sticky top-0 z-10">
+                    <tr>
+                      <th className="px-3 py-2 text-left w-16">#</th>
+                      <th className="px-3 py-2 text-left">Respuesta</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {Array.from({ length: expectedCount }, (_, i) => i + 1).map((qn) => {
+                      const value = edits[qn];
+                      const missing = value === undefined || value === null;
+                      return (
+                        <tr key={qn} className={`border-b border-gray-100 ${missing ? 'bg-red-50' : ''}`}>
+                          <td className="px-3 py-1.5 font-mono text-gray-700">{qn}</td>
+                          <td className="px-3 py-1.5">
+                            <select
+                              value={missing ? '' : value}
+                              onChange={(e) => {
+                                const v = e.target.value;
+                                setEdits((prev) => {
+                                  if (v === '') {
+                                    const next = { ...prev };
+                                    delete next[qn];
+                                    return next;
+                                  }
+                                  return { ...prev, [qn]: Number(v) };
+                                });
+                              }}
+                              className="border-gray-300 rounded-md text-sm py-1 w-56"
+                            >
+                              <option value="">— sin respuesta —</option>
+                              {scaleOptions.map((o) => (
+                                <option key={o.value} value={o.value}>
+                                  {o.label} ({o.value})
+                                </option>
+                              ))}
+                            </select>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
             </div>
 
             <div className="px-5 py-3 border-t flex justify-end gap-2">
