@@ -10,7 +10,12 @@ import {
   ChartBarIcon,
   DocumentChartBarIcon,
   BuildingOfficeIcon,
+  ShieldCheckIcon,
 } from '@heroicons/react/24/outline';
+
+const SUPER_ADMIN_EMAILS = ['d_talero@yahoo.com'];
+const isSuperAdmin = (u: any) =>
+  !!u && (u.role === 'admin' || (u.email && SUPER_ADMIN_EMAILS.includes(String(u.email).toLowerCase())));
 
 import { API_URL } from '../../config/api';
 
@@ -71,6 +76,7 @@ export default function EvaluatorDashboard() {
     { key: 'C', href: '/evaluator/participants' },
     { key: 'D', href: '/evaluator/results' },
     { key: 'E', href: '/evaluator/reports' },
+    ...(isSuperAdmin(user) ? [{ key: 'F', href: '/evaluator/admin-clients' }] : []),
   ]);
 
   if (loading) {
@@ -140,6 +146,16 @@ export default function EvaluatorDashboard() {
           href="/evaluator/reports"
           icon={DocumentChartBarIcon}
         />
+
+        {isSuperAdmin(user) && (
+          <FlowOption
+            letter="F"
+            title="Administración de clientes"
+            description="Ver usuarios registrados, empresas, pruebas realizadas y marcar evaluaciones como pagadas"
+            href="/evaluator/admin-clients"
+            icon={ShieldCheckIcon}
+          />
+        )}
       </div>
 
       <FlowStats stats={[

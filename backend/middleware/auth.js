@@ -26,7 +26,8 @@ const auth = async (req, res, next) => {
     // Add user info to request
     req.user = {
       userId: decoded.userId,
-      role: decoded.role
+      role: decoded.role,
+      email: user.email
     };
 
     next();
@@ -64,4 +65,21 @@ async function getOwnedCompanyIds(userId) {
   return rows.map(r => r.id);
 }
 
-module.exports = { auth, authorize, getOwnedCompanyIds };
+// Super-admin: role='admin' OR email matches the configured super-admin email.
+// Lets us gate cross-tenant admin features without changing the existing role of d_talero@yahoo.com.
+const SUPER_ADMIN_EMAILS = ['d_talero@yahoo.com'];
+
+function isSuperAdmin(user) {
+  if (!user) return false;
+  if (user.role === 'admin') return true;
+  if (user.email && SUPER_ADMIN_EMAILS.includes(user.email.toLowerCase())) return true;
+  return false;
+}
+
+const requireSuperAdmin = (req, res, next) => {
+  if (!req.user) return res.status(401).json({ error: 'No autenticado' });
+  if (!isSuperAdmin(req.user)) return res.status(403).json({ error: 'No autorizado' });
+  next();
+};
+
+module.exports = { auth, authorize, getOwnedCompanyIds, isSuperAdmin, requireSuperAdmin, SUPER_ADMIN_EMAILS };

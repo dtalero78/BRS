@@ -2,9 +2,9 @@ const express = require('express');
 const router = express.Router();
 const PDFDocument = require('pdfkit');
 const db = require('../config/database');
-const { auth, getOwnedCompanyIds } = require('../middleware/auth');
-const { drawPieChart, drawBarChart, drawGroupedBarChart, drawTable, createRiskSeries, RISK_COLORS, RISK_ORDER, RISK_LABELS } = require('../utils/pdf-charts');
-const { aggregateDemographics, aggregateResultsByForm, getAtRiskDimensions, sumCounts } = require('../utils/report-data-aggregator');
+const { auth, getOwnedCompanyIds, isSuperAdmin } = require('../middleware/auth');
+const { drawPieChart, drawBarChart, drawGroupedBarChart, drawTable, createRiskSeries, drawDonutChart, drawSemicircleGauge, drawSimpleRiskBars, drawColorCodedRiskTable, drawRiskPrioritizationMatrix, drawSectionBanner, RISK_COLORS, RISK_ORDER, RISK_LABELS } = require('../utils/pdf-charts');
+const { aggregateDemographics, aggregateExtendedDemographics, aggregateResultsByForm, getAtRiskDimensions, aggregateStressTypology, buildRiskPrioritizationMatrix, aggregateResultsByArea, aggregateResultsByCargo, buildDemandasPorCargo, resolveFicha, sumCounts } = require('../utils/report-data-aggregator');
 const templates = require('../utils/report-templates');
 
 // ============================================================
@@ -19,27 +19,40 @@ router.post('/individual', auth, async (req, res) => {
     }
 
     // Get participant + evaluation + company data
-    const participant = await db('participant_evaluations as pe')
+    const participantQuery = db('participant_evaluations as pe')
       .join('participants as p', 'pe.participant_id', 'p.id')
       .join('evaluations as e', 'pe.evaluation_id', 'e.id')
       .join('companies as c', 'e.company_id', 'c.id')
       .where('pe.id', participantEvaluationId)
-      .whereIn('e.company_id', await getOwnedCompanyIds(req.user.userId))
       .select(
         'pe.id as pe_id',
         'pe.status',
         'pe.completed_at',
         'p.email',
         'p.demographic_data',
+        'e.id as evaluation_id',
         'e.name as evaluation_name',
         'e.description as evaluation_description',
+        'e.paid as evaluation_paid',
         'c.name as company_name',
         'c.nit as company_nit'
-      )
-      .first();
+      );
+
+    if (!isSuperAdmin(req.user)) {
+      participantQuery.whereIn('e.company_id', await getOwnedCompanyIds(req.user.userId));
+    }
+
+    const participant = await participantQuery.first();
 
     if (!participant) {
       return res.status(404).json({ error: 'Participante no encontrado' });
+    }
+
+    if (!participant.evaluation_paid && !isSuperAdmin(req.user)) {
+      return res.status(403).json({
+        error: 'payment_required',
+        message: 'Esta evaluación no está habilitada para descarga. Contacta al administrador.'
+      });
     }
 
     // Get pre-calculated results from DB
@@ -64,6 +77,14 @@ router.post('/individual', auth, async (req, res) => {
       ? JSON.parse(participant.demographic_data)
       : (participant.demographic_data || {});
 
+    // Get ficha_datos responses for this participant (for sociodemographic section)
+    const fichaRow = await db('responses')
+      .where('participant_evaluation_id', participantEvaluationId)
+      .where('questionnaire_type', 'ficha_datos')
+      .select('responses')
+      .first();
+    const ficha = fichaRow ? resolveFicha(fichaRow.responses) : null;
+
     // Generate PDF
     const doc = new PDFDocument({ size: 'A4', margin: 50, bufferPages: true });
 
@@ -75,6 +96,7 @@ router.post('/individual', auth, async (req, res) => {
       participant,
       demo,
       resultsByType,
+      ficha,
     });
 
     doc.end();
@@ -99,15 +121,26 @@ router.post('/organizational', auth, async (req, res) => {
     }
 
     // Get evaluation + company data
-    const evaluation = await db('evaluations as e')
+    const evaluationQuery = db('evaluations as e')
       .join('companies as c', 'e.company_id', 'c.id')
       .where('e.id', evaluationId)
-      .whereIn('e.company_id', await getOwnedCompanyIds(req.user.userId))
       .select(
-        'e.id', 'e.name', 'e.description', 'e.start_date', 'e.end_date', 'e.status',
+        'e.id', 'e.name', 'e.description', 'e.start_date', 'e.end_date', 'e.status', 'e.paid',
         'c.name as company_name', 'c.nit as company_nit'
-      )
-      .first();
+      );
+
+    if (!isSuperAdmin(req.user)) {
+      evaluationQuery.whereIn('e.company_id', await getOwnedCompanyIds(req.user.userId));
+    }
+
+    const evaluation = await evaluationQuery.first();
+
+    if (evaluation && !evaluation.paid && !isSuperAdmin(req.user)) {
+      return res.status(403).json({
+        error: 'payment_required',
+        message: 'Esta evaluación no está habilitada para descarga. Contacta al administrador.'
+      });
+    }
 
     if (!evaluation) {
       return res.status(404).json({ error: 'Evaluación no encontrada' });
@@ -136,6 +169,13 @@ router.post('/organizational', auth, async (req, res) => {
       .join('participant_evaluations as pe', 'responses.participant_evaluation_id', 'pe.id')
       .where('pe.evaluation_id', evaluationId)
       .where('responses.questionnaire_type', 'ficha_datos')
+      .select('responses.responses', 'pe.participant_id', 'pe.id as participant_evaluation_id');
+
+    // Get stress responses for typology analysis
+    const stressResponses = await db('responses')
+      .join('participant_evaluations as pe', 'responses.participant_evaluation_id', 'pe.id')
+      .where('pe.evaluation_id', evaluationId)
+      .where('responses.questionnaire_type', 'estres')
       .select('responses.responses', 'pe.participant_id');
 
     // Get evaluator info
@@ -145,9 +185,14 @@ router.post('/organizational', auth, async (req, res) => {
       .first();
 
     // Aggregate data
-    const demographics = aggregateDemographics(fichaResponses);
+    const demographics = aggregateExtendedDemographics(fichaResponses);
     const aggResults = aggregateResultsByForm(allResults);
     const atRiskDimensions = getAtRiskDimensions(aggResults);
+    const stressTypology = aggregateStressTypology(stressResponses);
+    const riskMatrix = buildRiskPrioritizationMatrix(aggResults);
+    const areaResults = aggregateResultsByArea(allResults, fichaResponses);
+    const cargoResults = aggregateResultsByCargo(allResults, fichaResponses);
+    const demandasPorCargo = buildDemandasPorCargo(cargoResults);
 
     // Generate PDF
     const doc = new PDFDocument({ size: 'A4', margin: 50, bufferPages: true });
@@ -161,6 +206,10 @@ router.post('/organizational', auth, async (req, res) => {
       demographics,
       aggResults,
       atRiskDimensions,
+      stressTypology,
+      riskMatrix,
+      areaResults,
+      demandasPorCargo,
       totalParticipants: parseInt(totalParticipants.count),
       completedParticipants: parseInt(completedParticipants.count),
       evaluatorEmail: evaluator?.email || ''
@@ -235,6 +284,13 @@ function drawHorizontalLine(doc) {
   doc.moveDown(0.5);
 }
 
+function formatBirthYear(val) {
+  if (val == null || val === '') return null;
+  const s = String(val);
+  const m = s.match(/(19|20)\d{2}/);
+  return m ? m[0] : s;
+}
+
 function drawRiskBar(doc, x, y, width, score, riskLevel) {
   const barHeight = 10;
   // Background
@@ -247,7 +303,7 @@ function drawRiskBar(doc, x, y, width, score, riskLevel) {
 // ============================================================
 // INDIVIDUAL PDF
 // ============================================================
-function generateIndividualPDF(doc, { participant, demo, resultsByType }) {
+function generateIndividualPDF(doc, { participant, demo, resultsByType, ficha }) {
   const m = doc.page.margins.left;
   const pageW = doc.page.width - m * 2;
 
@@ -283,6 +339,69 @@ function generateIndividualPDF(doc, { participant, demo, resultsByType }) {
     doc.font('Helvetica-Bold').text(`${label}: `, { continued: true });
     doc.font('Helvetica').text(value || 'N/A');
   });
+
+  // ---- SOCIODEMOGRAPHIC PAGE (Ficha de Datos Generales) ----
+  if (ficha && Object.keys(ficha).filter(k => k !== '_scheme').length > 0) {
+    doc.addPage();
+    doc.fontSize(16).fillColor('#1E40AF').text('FICHA DE DATOS GENERALES');
+    doc.moveDown(0.3);
+    drawHorizontalLine(doc);
+    doc.moveDown(0.5);
+
+    doc.fontSize(9).fillColor('#6B7280').font('Helvetica');
+    doc.text(
+      'Información general del trabajador y de su ocupación recopilada como parte del instrumento de información sociodemográfica del Ministerio de la Protección Social.',
+      { width: pageW, align: 'justify' }
+    );
+    doc.moveDown(1);
+
+    const fichaSections = [
+      {
+        title: 'Información personal',
+        rows: [
+          ['Nombre completo', ficha.nombre],
+          ['Sexo', ficha.sexo],
+          ['Año de nacimiento', formatBirthYear(ficha.birthYear)],
+          ['Último nivel de estudios', ficha.education],
+          ['Estado civil', ficha.maritalStatus],
+          ['Ocupación o profesión', ficha.ocupacion],
+          ['Lugar de residencia', ficha.ciudadResidencia],
+          ['Estrato', ficha.estrato != null ? String(ficha.estrato) : null],
+          ['Tipo de vivienda', ficha.tipoVivienda],
+          ['Personas que dependen económicamente', ficha.dependientes != null ? String(ficha.dependientes) : null],
+        ],
+      },
+      {
+        title: 'Información laboral',
+        rows: [
+          ['Ciudad / departamento de trabajo', ficha.ciudadTrabajo],
+          ['Antigüedad en la empresa', ficha.anosEmpresa],
+          ['Cargo', ficha.cargo],
+          ['Tipo de cargo', ficha.tipoCargo],
+          ['Antigüedad en el cargo', ficha.anosCargo],
+          ['Departamento / área / sección', ficha.departamento],
+          ['Tipo de contrato', ficha.tipoContrato],
+          ['Horas diarias de trabajo', ficha.horasTrabajo != null ? String(ficha.horasTrabajo) : null],
+          ['Tipo de salario', ficha.tipoSalario],
+        ],
+      },
+    ];
+
+    fichaSections.forEach(section => {
+      const visibleRows = section.rows.filter(([, v]) => v != null && v !== '');
+      if (visibleRows.length === 0) return;
+      ensureSpace(doc, 30 + visibleRows.length * 16);
+      doc.fontSize(11).fillColor('#1F2937').font('Helvetica-Bold').text(section.title);
+      doc.moveDown(0.3);
+      doc.fontSize(10).font('Helvetica').fillColor('#374151');
+      visibleRows.forEach(([label, value]) => {
+        ensureSpace(doc, 18);
+        doc.font('Helvetica-Bold').text(`${label}: `, { continued: true });
+        doc.font('Helvetica').text(String(value));
+      });
+      doc.moveDown(0.7);
+    });
+  }
 
   // ---- RESULTS PAGES ----
   for (const [qType, dimensions] of Object.entries(resultsByType)) {
@@ -441,22 +560,19 @@ function generateIndividualPDF(doc, { participant, demo, resultsByType }) {
 // ============================================================
 // ORGANIZATIONAL PDF - Full professional report (~35 pages)
 // ============================================================
-function generateOrganizationalPDF(doc, { evaluation, demographics, aggResults, atRiskDimensions, totalParticipants, completedParticipants, evaluatorEmail }) {
+function generateOrganizationalPDF(doc, { evaluation, demographics, aggResults, atRiskDimensions, stressTypology, riskMatrix, areaResults, demandasPorCargo, totalParticipants, completedParticipants, evaluatorEmail }) {
   const m = doc.page.margins.left;
   const pageW = doc.page.width - m * 2;
-  const sections = [];
-  let pageNum = 0;
 
-  function sectionTitle(title) {
-    doc.fontSize(14).fillColor('#1E40AF').font('Helvetica-Bold').text(title.toUpperCase());
-    doc.moveDown(0.3);
-    drawHorizontalLine(doc);
-    doc.moveDown(0.5);
-  }
-
-  function newPage() {
-    doc.addPage();
-    pageNum++;
+  // Helper to combine A+B risk counts for a dimension
+  function getCombinedDimCounts(dimKey) {
+    const a = aggResults.intralaboralA.dimensions[dimKey] || { sin_riesgo: 0, riesgo_bajo: 0, riesgo_medio: 0, riesgo_alto: 0, riesgo_muy_alto: 0 };
+    const b = aggResults.intralaboralB.dimensions[dimKey] || { sin_riesgo: 0, riesgo_bajo: 0, riesgo_medio: 0, riesgo_alto: 0, riesgo_muy_alto: 0 };
+    const combined = {};
+    for (const level of RISK_ORDER) {
+      combined[level] = (a[level] || 0) + (b[level] || 0);
+    }
+    return combined;
   }
 
   // ==========================================================
@@ -480,554 +596,713 @@ function generateOrganizationalPDF(doc, { evaluation, demographics, aggResults, 
   doc.text(`BOGOTÁ D.C., ${months[now.getMonth()]} ${now.getFullYear()}`, { align: 'center' });
 
   // ==========================================================
-  // PAGE 2: TABLA DE CONTENIDO (placeholder - will backfill)
+  // PAGE 2: OBJETIVOS + METODOLOGÍA (two columns)
   // ==========================================================
-  newPage();
-  const tocPageIndex = pageNum;
-  const tocStartY = doc.y;
-  doc.fontSize(14).fillColor('#1E40AF').font('Helvetica-Bold').text('Contenido');
-  doc.moveDown(1);
-  // Reserve space - actual TOC written at the end via switchToPage
-  doc.moveDown(20);
+  doc.addPage();
+  templates.writeObjetivosMetodologia(doc, pageW, evaluation.company_name);
 
   // ==========================================================
-  // INTRODUCCION
+  // PAGE 3: PROCEDIMIENTOS
   // ==========================================================
-  newPage();
-  sections.push({ title: 'INTRODUCCIÓN', page: pageNum + 1 });
-  sectionTitle('INTRODUCCIÓN');
-  templates.writeIntroduccion(doc, pageW);
+  doc.addPage();
+  templates.writeProcedimientos(doc, pageW);
 
   // ==========================================================
-  // MARCO REFERENCIAL
+  // PAGES 4-5: DEFINICIONES
   // ==========================================================
-  newPage();
-  sections.push({ title: 'MARCO REFERENCIAL', page: pageNum + 1 });
-  sectionTitle('MARCO REFERENCIAL');
-  templates.writeMarcoReferencial(doc, pageW);
+  doc.addPage();
+  templates.writeDefinicionesIntralaborales(doc, pageW, drawTable);
+
+  doc.addPage();
+  templates.writeDefinicionesExtralaborales(doc, pageW, drawTable);
 
   // ==========================================================
-  // MARCO TEORICO
+  // DATOS SOCIODEMOGRÁFICOS
   // ==========================================================
-  newPage();
-  sections.push({ title: 'MARCO TEÓRICO', page: pageNum + 1 });
-  sectionTitle('MARCO TEÓRICO');
-  templates.writeMarcoTeorico(doc, pageW);
-
-  // ==========================================================
-  // PARTE PRIMERA - ASPECTOS GENERALES
-  // ==========================================================
-  newPage();
-  sections.push({ title: 'PARTE PRIMERA - ASPECTOS GENERALES', page: pageNum + 1 });
-  doc.fontSize(14).fillColor('#1E40AF').font('Helvetica-Bold').text('PARTE PRIMERA');
-  doc.fontSize(12).text('ASPECTOS GENERALES');
+  doc.addPage();
+  drawSectionBanner(doc, m, doc.y, pageW, 'DATOS SOCIODEMOGRÁFICOS');
+  doc.y += 40;
   doc.moveDown(0.5);
-  drawHorizontalLine(doc);
-  doc.moveDown(0.5);
-
-  // A. OBJETIVO
-  doc.fontSize(12).fillColor('#1F2937').font('Helvetica-Bold').text('A. OBJETIVO');
-  doc.moveDown(0.3);
-  doc.fontSize(10).fillColor('#374151').font('Helvetica');
-  doc.text(`Identificar y evaluar los factores de riesgo psicosocial intralaboral, extralaboral y estrés, a través de la aplicación de la Batería de Instrumentos para la Evaluación de Factores de Riesgo Psicosocial del Ministerio de la Protección Social / Universidad Javeriana, a los funcionarios de ${evaluation.company_name}.`, { width: pageW, align: 'justify' });
-  doc.moveDown(0.5);
-
-  doc.fontSize(10).font('Helvetica-Bold').text('Objetivos específicos:');
-  doc.moveDown(0.2);
-  doc.font('Helvetica');
-  const objectives = [
-    `Identificar los factores de riesgo psicosocial a los que pueden estar expuestos los funcionarios de ${evaluation.company_name} por el trabajo desarrollado dentro de la Organización.`,
-    'Identificar las situaciones estresantes en la población para diseñar acciones de afrontamiento adecuadas.',
-    'Identificar los factores psicosociales protectores en la población general de la Organización.',
-    `Generar un plan de intervención con el fin de disminuir el riesgo de condiciones de salud psicosocial, teniendo en cuenta los factores de riesgo en los funcionarios de ${evaluation.company_name}.`
-  ];
-  objectives.forEach(obj => {
-    doc.text(`  • ${obj}`, { width: pageW - 10, align: 'justify' });
-    doc.moveDown(0.3);
-  });
-  doc.moveDown(0.5);
-
-  // B. ALCANCE
-  doc.fontSize(12).fillColor('#1F2937').font('Helvetica-Bold').text('B. ALCANCE');
-  doc.moveDown(0.3);
-  doc.fontSize(10).fillColor('#374151').font('Helvetica');
-  doc.text(`Aplica a todos los funcionarios vinculados a ${evaluation.company_name} que participaron en la evaluación "${evaluation.name}".`, { width: pageW, align: 'justify' });
-  doc.moveDown(0.5);
-
-  // C. POBLACION
-  doc.fontSize(12).fillColor('#1F2937').font('Helvetica-Bold').text('C. POBLACIÓN');
-  doc.moveDown(0.3);
-  doc.fontSize(10).fillColor('#374151').font('Helvetica');
-  doc.text(`${totalParticipants} funcionarios de ${evaluation.company_name} teniendo en cuenta la distribución en Forma A (${aggResults.population.formaA} funcionarios) y en Forma B (${aggResults.population.formaB} funcionarios). Del total, ${completedParticipants} completaron la evaluación.`, { width: pageW, align: 'justify' });
-
-  // ==========================================================
-  // RESULTADOS FICHA SOCIODEMOGRAFICOS
-  // ==========================================================
-  newPage();
-  sections.push({ title: 'RESULTADOS FICHA SOCIODEMOGRÁFICOS', page: pageNum + 1 });
-  sectionTitle('RESULTADOS FICHA SOCIODEMOGRÁFICOS');
 
   doc.fontSize(10).fillColor('#374151').font('Helvetica');
-  doc.text('Se tienen en cuenta las variables sociodemográficas más relevantes para la interpretación y análisis de los riesgos psicosociales intralaborales y extralaborales, a continuación se presenta el perfil sociodemográfico:', { width: pageW, align: 'justify' });
+  doc.text('A continuación se presenta el perfil sociodemográfico de la población evaluada:', { width: pageW, align: 'justify' });
   doc.moveDown(1);
 
-  const chartRadius = 70;
-  const chartCenterX = m + chartRadius + 10;
-
-  // Pie Chart 1: Género
+  // Donut chart: Género
   if (Object.keys(demographics.gender).length > 0) {
-    ensureSpace(doc, 200);
     const genderData = Object.entries(demographics.gender).map(([label, value], i) => ({
       label, value, color: templates.DEMOGRAPHIC_COLORS[i]
     }));
-    const genderY = doc.y + chartRadius + 5;
-    drawPieChart(doc, chartCenterX, genderY, chartRadius, genderData, {
-      showPercentages: true,
-      showLegend: true,
-      legendX: chartCenterX + chartRadius + 30,
-      legendY: genderY - 30,
-      title: 'Gráfica No 1. Análisis de la población evaluada según género'
+    const genderCX = m + 100;
+    const genderCY = doc.y + 80;
+    drawDonutChart(doc, genderCX, genderCY, 70, 35, genderData, {
+      title: 'Participación por Género'
     });
-    doc.y = genderY + chartRadius + 25;
+    doc.y = genderCY + 90;
     doc.moveDown(0.5);
 
     const majorGender = Object.entries(demographics.gender).sort((a, b) => b[1] - a[1])[0];
     if (majorGender) {
-      const pct = demographics.total > 0 ? ((majorGender[1] / demographics.total) * 100).toFixed(0) : 0;
+      const pct = demographics.total > 0 ? ((majorGender[1] / demographics.total) * 100).toFixed(1) : 0;
       doc.fontSize(9).fillColor('#374151').font('Helvetica');
-      doc.text(`En cuanto a la población evaluada tenemos que la mayoría son ${majorGender[0]} con un ${pct}% del total de la población.`, { width: pageW, align: 'justify' });
+      doc.text(`La mayoría de la población evaluada son ${majorGender[0]} con un ${pct}% del total.`, { width: pageW, align: 'justify' });
     }
     doc.moveDown(1);
   }
 
-  // Pie Chart 2: Edades
-  const ageEntries = Object.entries(demographics.ageRanges).filter(([, v]) => v > 0);
-  if (ageEntries.length > 0) {
-    ensureSpace(doc, 220);
-    const ageData = ageEntries.map(([label, value], i) => ({
-      label, value, color: templates.DEMOGRAPHIC_COLORS[i]
+  // Bar chart: Estado Civil
+  if (demographics.estadoCivil && Object.keys(demographics.estadoCivil).length > 0) {
+    ensureSpace(doc, 200);
+    const civilData = Object.entries(demographics.estadoCivil).map(([label, value], i) => ({
+      label, value, color: templates.DEMOGRAPHIC_COLORS[i % templates.DEMOGRAPHIC_COLORS.length]
     }));
-    const ageY = doc.y + chartRadius + 5;
-    drawPieChart(doc, chartCenterX, ageY, chartRadius, ageData, {
-      showPercentages: true,
-      showLegend: true,
-      legendX: chartCenterX + chartRadius + 30,
-      legendY: ageY - 30,
-      title: 'Gráfica No 2. Distribución por edades'
+    drawBarChart(doc, m, doc.y + 10, pageW, 160, civilData, {
+      title: 'Participación por Estado Civil', showValues: true
     });
-    doc.y = ageY + chartRadius + 25;
+    doc.y += 180;
     doc.moveDown(0.5);
-
-    const majorAge = ageEntries.sort((a, b) => b[1] - a[1])[0];
-    if (majorAge) {
-      const pct = demographics.total > 0 ? ((majorAge[1] / demographics.total) * 100).toFixed(0) : 0;
-      doc.fontSize(9).fillColor('#374151').font('Helvetica');
-      doc.text(`Se observa que el ${pct}% de la población evaluada corresponde a edades ${majorAge[0].toLowerCase()}.`, { width: pageW, align: 'justify' });
-    }
-    doc.moveDown(1);
   }
 
-  // Pie Chart 3: Escolaridad
+  // Bar chart: Nivel de Estudio (education)
   if (Object.keys(demographics.education).length > 0) {
-    newPage();
+    ensureSpace(doc, 210);
+    if (doc.y > 550) doc.addPage();
     const eduData = Object.entries(demographics.education).map(([label, value], i) => ({
-      label, value, color: templates.DEMOGRAPHIC_COLORS[i]
+      label, value, color: templates.DEMOGRAPHIC_COLORS[i % templates.DEMOGRAPHIC_COLORS.length]
     }));
-    const eduY = doc.y + chartRadius + 20;
-    drawPieChart(doc, chartCenterX, eduY, chartRadius, eduData, {
-      showPercentages: true,
-      showLegend: true,
-      legendX: chartCenterX + chartRadius + 30,
-      legendY: eduY - 40,
-      title: 'Gráfica No 3. Análisis de la población evaluada según escolaridad'
+    drawBarChart(doc, m, doc.y + 10, pageW, 160, eduData, {
+      title: 'Distribución por Nivel de Estudio', showValues: true
     });
-    doc.y = eduY + chartRadius + 25;
+    doc.y += 180;
     doc.moveDown(0.5);
 
     const majorEdu = Object.entries(demographics.education).sort((a, b) => b[1] - a[1])[0];
     if (majorEdu) {
-      const pct = demographics.total > 0 ? ((majorEdu[1] / demographics.total) * 100).toFixed(0) : 0;
+      const pct = demographics.total > 0 ? ((majorEdu[1] / demographics.total) * 100).toFixed(1) : 0;
       doc.fontSize(9).fillColor('#374151').font('Helvetica');
-      doc.text(`Se evidencia que la mayoría de los funcionarios tienen grado de ${majorEdu[0]} con un ${pct}% de la población.`, { width: pageW, align: 'justify' });
+      doc.text(`El nivel de estudio predominante es ${majorEdu[0]} con un ${pct}% de la población.`, { width: pageW, align: 'justify' });
     }
     doc.moveDown(1);
   }
 
-  // Pie Chart 4: Personas a Cargo
-  if (Object.keys(demographics.dependents).length > 0) {
-    ensureSpace(doc, 220);
-    const depData = Object.entries(demographics.dependents).map(([label, value], i) => ({
-      label, value, color: templates.DEMOGRAPHIC_COLORS[i]
+  // Bar chart: Estrato
+  if (demographics.estrato && Object.keys(demographics.estrato).length > 0) {
+    ensureSpace(doc, 210);
+    if (doc.y > 550) doc.addPage();
+    const estratoData = Object.entries(demographics.estrato).sort((a, b) => a[0].localeCompare(b[0])).map(([label, value], i) => ({
+      label, value, color: templates.DEMOGRAPHIC_COLORS[i % templates.DEMOGRAPHIC_COLORS.length]
     }));
-    const depY = doc.y + chartRadius + 5;
-    drawPieChart(doc, chartCenterX, depY, chartRadius, depData, {
-      showPercentages: true,
-      showLegend: true,
-      legendX: chartCenterX + chartRadius + 30,
-      legendY: depY - 30,
-      title: 'Gráfica No 4. Análisis de la población según Personas a Cargo'
+    drawBarChart(doc, m, doc.y + 10, pageW, 160, estratoData, {
+      title: 'Participación por Estrato Socioeconómico', showValues: true
     });
-    doc.y = depY + chartRadius + 25;
+    doc.y += 180;
     doc.moveDown(0.5);
+  }
 
-    const majorDep = Object.entries(demographics.dependents).sort((a, b) => b[1] - a[1])[0];
-    if (majorDep) {
-      const pct = demographics.total > 0 ? ((majorDep[1] / demographics.total) * 100).toFixed(0) : 0;
-      doc.fontSize(9).fillColor('#374151').font('Helvetica');
-      doc.text(`De las personas que tienen a cargo los trabajadores, encontramos que el ${pct}% reporta ${majorDep[0].toLowerCase()} persona(s) a cargo.`, { width: pageW, align: 'justify' });
-    }
+  // Bar chart: Rangos de edad
+  if (demographics.ageRanges && Object.values(demographics.ageRanges).some(v => v > 0)) {
+    ensureSpace(doc, 210);
+    if (doc.y > 550) doc.addPage();
+    const ageData = Object.entries(demographics.ageRanges).map(([label, value], i) => ({
+      label, value, color: templates.DEMOGRAPHIC_COLORS[i % templates.DEMOGRAPHIC_COLORS.length]
+    }));
+    drawBarChart(doc, m, doc.y + 10, pageW, 160, ageData, {
+      title: 'Distribución por Rangos de Edad', showValues: true
+    });
+    doc.y += 180;
+    doc.moveDown(0.5);
+  }
+
+  // Bar chart: Personas que dependen económicamente
+  if (demographics.dependents && Object.keys(demographics.dependents).length > 0) {
+    ensureSpace(doc, 210);
+    if (doc.y > 550) doc.addPage();
+    const depOrder = ['Ninguna', 'Uno', 'Dos', 'Tres', 'Cuatro o más'];
+    const depData = depOrder
+      .filter(k => demographics.dependents[k] != null)
+      .map((label, i) => ({
+        label, value: demographics.dependents[label] || 0,
+        color: templates.DEMOGRAPHIC_COLORS[i % templates.DEMOGRAPHIC_COLORS.length]
+      }));
+    drawBarChart(doc, m, doc.y + 10, pageW, 160, depData, {
+      title: 'Personas que dependen económicamente', showValues: true
+    });
+    doc.y += 180;
+    doc.moveDown(0.5);
+  }
+
+  // Bar chart: Tipo de cargo
+  if (demographics.tipoCargo && Object.keys(demographics.tipoCargo).length > 0) {
+    ensureSpace(doc, 210);
+    if (doc.y > 550) doc.addPage();
+    const cargoData = Object.entries(demographics.tipoCargo).map(([label, value], i) => ({
+      label, value, color: templates.DEMOGRAPHIC_COLORS[i % templates.DEMOGRAPHIC_COLORS.length]
+    }));
+    drawBarChart(doc, m, doc.y + 10, pageW, 160, cargoData, {
+      title: 'Distribución por Tipo de Cargo', showValues: true
+    });
+    doc.y += 180;
+    doc.moveDown(0.5);
+  }
+
+  // Bar chart: Tipo de contrato
+  if (demographics.tipoContrato && Object.keys(demographics.tipoContrato).length > 0) {
+    ensureSpace(doc, 210);
+    if (doc.y > 550) doc.addPage();
+    const contratoData = Object.entries(demographics.tipoContrato).map(([label, value], i) => ({
+      label, value, color: templates.DEMOGRAPHIC_COLORS[i % templates.DEMOGRAPHIC_COLORS.length]
+    }));
+    drawBarChart(doc, m, doc.y + 10, pageW, 160, contratoData, {
+      title: 'Distribución por Tipo de Contrato', showValues: true
+    });
+    doc.y += 180;
+    doc.moveDown(0.5);
+  }
+
+  // Bar chart: Antigüedad en la empresa
+  if (demographics.antiguedadEmpresa && Object.values(demographics.antiguedadEmpresa).some(v => v > 0)) {
+    ensureSpace(doc, 210);
+    if (doc.y > 550) doc.addPage();
+    const antData = Object.entries(demographics.antiguedadEmpresa).map(([label, value], i) => ({
+      label, value, color: templates.DEMOGRAPHIC_COLORS[i % templates.DEMOGRAPHIC_COLORS.length]
+    }));
+    drawBarChart(doc, m, doc.y + 10, pageW, 160, antData, {
+      title: 'Antigüedad en la empresa', showValues: true
+    });
+    doc.y += 180;
+    doc.moveDown(0.5);
+  }
+
+  // Bar chart: Horas diarias de trabajo
+  if (demographics.horasTrabajo && Object.values(demographics.horasTrabajo).some(v => v > 0)) {
+    ensureSpace(doc, 210);
+    if (doc.y > 550) doc.addPage();
+    const hData = Object.entries(demographics.horasTrabajo).map(([label, value], i) => ({
+      label, value, color: templates.DEMOGRAPHIC_COLORS[i % templates.DEMOGRAPHIC_COLORS.length]
+    }));
+    drawBarChart(doc, m, doc.y + 10, pageW, 160, hData, {
+      title: 'Horas diarias de trabajo', showValues: true
+    });
+    doc.y += 180;
+    doc.moveDown(0.5);
+  }
+
+  // Top departamentos / áreas
+  if (demographics.departamento && Object.keys(demographics.departamento).length > 0) {
+    ensureSpace(doc, 210);
+    if (doc.y > 550) doc.addPage();
+    const topDeps = Object.entries(demographics.departamento)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 8)
+      .map(([label, value], i) => ({
+        label, value, color: templates.DEMOGRAPHIC_COLORS[i % templates.DEMOGRAPHIC_COLORS.length]
+      }));
+    drawBarChart(doc, m, doc.y + 10, pageW, 160, topDeps, {
+      title: 'Distribución por Departamento / Área (Top 8)', showValues: true
+    });
+    doc.y += 180;
+    doc.moveDown(0.5);
   }
 
   // ==========================================================
-  // METODOLOGIA
+  // FACTORES DE RIESGO PSICOSOCIAL - Overview
   // ==========================================================
-  newPage();
-  sections.push({ title: 'METODOLOGÍA', page: pageNum + 1 });
-  sectionTitle('METODOLOGÍA');
-  templates.writeMetodologia(doc, pageW, drawTable);
+  doc.addPage();
+  drawSectionBanner(doc, m, doc.y, pageW, 'FACTORES DE RIESGO PSICOSOCIAL');
+  doc.y += 40;
+  doc.moveDown(0.5);
 
-  // ==========================================================
-  // PROCEDIMIENTO
-  // ==========================================================
-  newPage();
-  sections.push({ title: 'PROCEDIMIENTO', page: pageNum + 1 });
-  sectionTitle('PROCEDIMIENTO');
-  templates.writeProcedimiento(doc, pageW);
-
-  // ==========================================================
-  // PARTE SEGUNDA - ANALISIS DE RESULTADOS
-  // ==========================================================
+  // Semicircle gauge with total participants
+  const gaugeX = m + pageW / 2;
+  const gaugeY = doc.y + 55;
+  drawSemicircleGauge(doc, gaugeX, gaugeY, 50, completedParticipants, {
+    label: 'Participantes Evaluados'
+  });
+  doc.y = gaugeY + 45;
   doc.moveDown(1);
-  doc.fontSize(14).fillColor('#1E40AF').font('Helvetica-Bold').text('PARTE SEGUNDA');
-  doc.fontSize(12).text('ANÁLISIS DE RESULTADOS');
-  doc.moveDown(0.3);
-  drawHorizontalLine(doc);
-  doc.moveDown(0.5);
 
-  doc.fontSize(12).fillColor('#1F2937').font('Helvetica-Bold');
-  doc.text('IDENTIFICACIÓN Y EVALUACIÓN DE LOS FACTORES DE RIESGO PSICOSOCIAL');
-  doc.moveDown(0.5);
-  doc.fontSize(10).fillColor('#374151').font('Helvetica');
-  doc.text('Se presentan a continuación los resultados de la medición de los factores evaluados a través de los cuestionarios intralaborales, extralaborales y de estrés, desglosados por tipo de formulario aplicado.', { width: pageW, align: 'justify' });
+  // 3 simple risk bar charts side by side
+  const chartW = (pageW - 20) / 3;
+  const chartH = 160;
+  const chartsY = doc.y;
 
-  // ==========================================================
-  // CONDICIONES INTRALABORALES - General
-  // ==========================================================
-  newPage();
-  sections.push({ title: 'CONDICIONES INTRALABORALES', page: pageNum + 1 });
-  sectionTitle('CONDICIONES INTRALABORALES');
-
-  doc.fontSize(10).fillColor('#374151').font('Helvetica');
-  doc.text('Los factores intralaborales son entendidos como aquellas características del trabajo y de su organización que influyen en la salud y bienestar del individuo.', { width: pageW, align: 'justify' });
-  doc.moveDown(0.5);
-
-  // General intralaboral risk (combine A+B)
-  const generalIntralaboral = {};
+  // Combine A+B intralaboral
+  const generalIntra = {};
   for (const level of RISK_ORDER) {
-    generalIntralaboral[level] = (aggResults.intralaboralA.overall[level] || 0) + (aggResults.intralaboralB.overall[level] || 0);
+    generalIntra[level] = (aggResults.intralaboralA.overall[level] || 0) + (aggResults.intralaboralB.overall[level] || 0);
   }
-  const generalTotal = sumCounts(generalIntralaboral);
+  const intraTotal = sumCounts(generalIntra);
 
-  if (generalTotal > 0) {
-    doc.fontSize(10).font('Helvetica-Bold').fillColor('#1F2937');
-    doc.text(templates.generateOverallRiskText(generalIntralaboral, generalTotal, 'riesgo intralaboral'), { width: pageW, align: 'justify' });
-    doc.moveDown(0.5);
-
-    const generalBarData = RISK_ORDER.map(key => ({
-      label: RISK_LABELS[key], value: generalIntralaboral[key], color: RISK_COLORS[key]
-    }));
-    ensureSpace(doc, 200);
-    drawBarChart(doc, m, doc.y + 15, pageW, 170, generalBarData, {
-      title: 'Riesgo Psicosocial Intralaboral – General', showValues: true
-    });
-    doc.y += 195;
+  // Combine A+B extralaboral
+  const generalExtra = {};
+  for (const level of RISK_ORDER) {
+    generalExtra[level] = (aggResults.extralaboral.general.overall[level] || 0);
   }
+  const extraTotal = sumCounts(generalExtra);
 
-  // Forma A intralaboral
-  if (sumCounts(aggResults.intralaboralA.overall) > 0) {
-    ensureSpace(doc, 210);
-    const formaAData = RISK_ORDER.map(key => ({
-      label: RISK_LABELS[key], value: aggResults.intralaboralA.overall[key], color: RISK_COLORS[key]
-    }));
-    drawBarChart(doc, m, doc.y + 15, pageW, 170, formaAData, {
-      title: 'Riesgo Intralaboral – Forma A', showValues: true
-    });
-    doc.y += 195;
-  }
+  // Stress
+  const stressGeneral = aggResults.estres.general;
+  const stressTotal = sumCounts(stressGeneral);
 
-  // Forma B intralaboral
-  if (sumCounts(aggResults.intralaboralB.overall) > 0) {
-    ensureSpace(doc, 210);
-    const formaBData = RISK_ORDER.map(key => ({
-      label: RISK_LABELS[key], value: aggResults.intralaboralB.overall[key], color: RISK_COLORS[key]
-    }));
-    drawBarChart(doc, m, doc.y + 15, pageW, 170, formaBData, {
-      title: 'Riesgo Intralaboral – Forma B', showValues: true
-    });
-    doc.y += 195;
-  }
-
-  // ==========================================================
-  // DOMINIOS POR FORMA
-  // ==========================================================
-  const domainLabels = templates.DOMAIN_ORDER.map(d => {
-    const name = templates.DOMAIN_DISPLAY_NAMES[d];
-    return name.length > 22 ? name.substring(0, 20) + '...' : name;
+  // Draw 3 charts
+  drawSimpleRiskBars(doc, m, chartsY, chartW, chartH, generalIntra, intraTotal, {
+    title: 'Condiciones Intralaborales'
+  });
+  drawSimpleRiskBars(doc, m + chartW + 10, chartsY, chartW, chartH, generalExtra, extraTotal, {
+    title: 'Condiciones Extralaborales'
+  });
+  drawSimpleRiskBars(doc, m + (chartW + 10) * 2, chartsY, chartW, chartH, stressGeneral, stressTotal, {
+    title: 'Estrés'
   });
 
-  // Dominios Forma A
-  if (Object.keys(aggResults.intralaboralA.domains).length > 0) {
-    newPage();
-    const riskCountsA = {};
-    templates.DOMAIN_ORDER.forEach(dk => {
-      riskCountsA[dk] = aggResults.intralaboralA.domains[dk] || { sin_riesgo: 0, riesgo_bajo: 0, riesgo_medio: 0, riesgo_alto: 0, riesgo_muy_alto: 0 };
-    });
-    const seriesA = createRiskSeries(riskCountsA, templates.DOMAIN_ORDER);
+  doc.y = chartsY + chartH + 15;
+  doc.moveDown(0.5);
 
-    drawGroupedBarChart(doc, m, doc.y + 15, pageW, 220, domainLabels, seriesA, {
-      title: 'Dominios Forma A', showLegend: true, showValues: true
-    });
-    doc.y += 245;
-
-    doc.fontSize(9).fillColor('#374151').font('Helvetica');
-    templates.DOMAIN_ORDER.forEach(dk => {
-      const rc = aggResults.intralaboralA.domains[dk];
-      if (rc) {
-        const t = sumCounts(rc);
-        const highPct = t > 0 ? (((rc.riesgo_alto || 0) + (rc.riesgo_muy_alto || 0)) / t * 100).toFixed(0) : 0;
-        if (highPct > 0) {
-          doc.text(`  • ${templates.DOMAIN_DISPLAY_NAMES[dk]}: ${highPct}% en riesgo alto/muy alto.`, { width: pageW });
-        }
-      }
-    });
-    doc.moveDown(1);
-  }
-
-  // Dominios Forma B
-  if (Object.keys(aggResults.intralaboralB.domains).length > 0) {
-    ensureSpace(doc, 280);
-    const riskCountsB = {};
-    templates.DOMAIN_ORDER.forEach(dk => {
-      riskCountsB[dk] = aggResults.intralaboralB.domains[dk] || { sin_riesgo: 0, riesgo_bajo: 0, riesgo_medio: 0, riesgo_alto: 0, riesgo_muy_alto: 0 };
-    });
-    const seriesB = createRiskSeries(riskCountsB, templates.DOMAIN_ORDER);
-
-    drawGroupedBarChart(doc, m, doc.y + 15, pageW, 220, domainLabels, seriesB, {
-      title: 'Dominios Forma B', showLegend: true, showValues: true
-    });
-    doc.y += 245;
-
-    doc.fontSize(9).fillColor('#374151').font('Helvetica');
-    templates.DOMAIN_ORDER.forEach(dk => {
-      const rc = aggResults.intralaboralB.domains[dk];
-      if (rc) {
-        const t = sumCounts(rc);
-        const highPct = t > 0 ? (((rc.riesgo_alto || 0) + (rc.riesgo_muy_alto || 0)) / t * 100).toFixed(0) : 0;
-        if (highPct > 0) {
-          doc.text(`  • ${templates.DOMAIN_DISPLAY_NAMES[dk]}: ${highPct}% en riesgo alto/muy alto.`, { width: pageW });
-        }
-      }
-    });
-  }
+  // Interpretive text
+  doc.fontSize(9).fillColor('#374151').font('Helvetica');
+  const intraHighPct = intraTotal > 0 ? (((generalIntra.riesgo_alto || 0) + (generalIntra.riesgo_muy_alto || 0)) / intraTotal * 100).toFixed(1) : 0;
+  const extraHighPct = extraTotal > 0 ? (((generalExtra.riesgo_alto || 0) + (generalExtra.riesgo_muy_alto || 0)) / extraTotal * 100).toFixed(1) : 0;
+  const stressHighPct = stressTotal > 0 ? (((stressGeneral.riesgo_alto || 0) + (stressGeneral.riesgo_muy_alto || 0)) / stressTotal * 100).toFixed(1) : 0;
+  doc.text(`De los ${completedParticipants} participantes evaluados: el ${intraHighPct}% presenta riesgo alto o muy alto en condiciones intralaborales, el ${extraHighPct}% en condiciones extralaborales, y el ${stressHighPct}% en sintomatología asociada al estrés.`, { width: pageW, align: 'justify' });
 
   // ==========================================================
-  // PER-DOMAIN DETAILED ANALYSIS
+  // CONDICIONES INTRALABORALES - Color-Coded Table
   // ==========================================================
+  doc.addPage();
+  drawSectionBanner(doc, m, doc.y, pageW, 'CONDICIONES INTRALABORALES');
+  doc.y += 40;
+  doc.moveDown(0.5);
+
+  doc.fontSize(10).fillColor('#374151').font('Helvetica');
+  doc.text('Los factores intralaborales son entendidos como aquellas características del trabajo y de su organización que influyen en la salud y bienestar del individuo. A continuación se presenta la distribución porcentual de riesgo por dominio y dimensión.', { width: pageW, align: 'justify' });
+  doc.moveDown(0.5);
+
+  // Build data for color-coded table
+  const intraTableData = [];
   templates.DOMAIN_ORDER.forEach(domainKey => {
     const domainName = templates.DOMAIN_DISPLAY_NAMES[domainKey];
-    const dimsA = templates.DOMAIN_DIMENSIONS[domainKey].A;
-    const dimsB = templates.DOMAIN_DIMENSIONS[domainKey].B;
-
-    newPage();
-
-    // Forma A dimensions chart
-    if (dimsA.length > 0 && Object.keys(aggResults.intralaboralA.dimensions).length > 0) {
-      const dimLabelsA = dimsA.map(d => {
-        const name = templates.DIMENSION_SHORT_NAMES[d] || d;
-        return name.length > 20 ? name.substring(0, 18) + '...' : name;
-      });
-      const riskCountsDimsA = {};
-      dimsA.forEach(dk => {
-        riskCountsDimsA[dk] = aggResults.intralaboralA.dimensions[dk] || { sin_riesgo: 0, riesgo_bajo: 0, riesgo_medio: 0, riesgo_alto: 0, riesgo_muy_alto: 0 };
-      });
-      const seriesDimsA = createRiskSeries(riskCountsDimsA, dimsA);
-
-      drawGroupedBarChart(doc, m, doc.y + 15, pageW, 210, dimLabelsA, seriesDimsA, {
-        title: `${domainName} Forma A`, showLegend: true, showValues: true
-      });
-      doc.y += 235;
-
-      // Analysis text per dimension
-      doc.fontSize(9).fillColor('#374151').font('Helvetica');
-      dimsA.forEach(dk => {
-        const rc = aggResults.intralaboralA.dimensions[dk];
-        if (rc) {
-          ensureSpace(doc, 30);
-          doc.text(templates.generateDimensionAnalysis(dk, rc, aggResults.intralaboralA.participantCount), { width: pageW, align: 'justify' });
-          doc.moveDown(0.3);
-        }
-      });
+    // Domain total row
+    const domainCounts = {};
+    for (const level of RISK_ORDER) {
+      domainCounts[level] = ((aggResults.intralaboralA.domains[domainKey] || {})[level] || 0) + ((aggResults.intralaboralB.domains[domainKey] || {})[level] || 0);
     }
+    intraTableData.push({ isDomain: true, label: domainName });
 
-    // Forma B dimensions chart
-    if (dimsB.length > 0 && Object.keys(aggResults.intralaboralB.dimensions).length > 0) {
-      ensureSpace(doc, 280);
-      if (doc.y > 300) newPage();
+    // Get all dimensions for this domain (combine A and B lists, deduplicate)
+    const allDims = [...new Set([
+      ...(templates.DOMAIN_DIMENSIONS[domainKey].A || []),
+      ...(templates.DOMAIN_DIMENSIONS[domainKey].B || [])
+    ])];
 
-      const dimLabelsB = dimsB.map(d => {
-        const name = templates.DIMENSION_SHORT_NAMES[d] || d;
-        return name.length > 20 ? name.substring(0, 18) + '...' : name;
+    allDims.forEach(dimKey => {
+      const counts = getCombinedDimCounts(dimKey);
+      const total = sumCounts(counts);
+      if (total === 0) return;
+      const dimName = templates.DIMENSION_DISPLAY_NAMES[dimKey] || dimKey;
+      intraTableData.push({
+        label: dimName,
+        sin_riesgo: counts.sin_riesgo || 0,
+        riesgo_bajo: counts.riesgo_bajo || 0,
+        riesgo_medio: counts.riesgo_medio || 0,
+        riesgo_alto: counts.riesgo_alto || 0,
+        riesgo_muy_alto: counts.riesgo_muy_alto || 0
       });
-      const riskCountsDimsB = {};
-      dimsB.forEach(dk => {
-        riskCountsDimsB[dk] = aggResults.intralaboralB.dimensions[dk] || { sin_riesgo: 0, riesgo_bajo: 0, riesgo_medio: 0, riesgo_alto: 0, riesgo_muy_alto: 0 };
-      });
-      const seriesDimsB = createRiskSeries(riskCountsDimsB, dimsB);
-
-      drawGroupedBarChart(doc, m, doc.y + 15, pageW, 210, dimLabelsB, seriesDimsB, {
-        title: `${domainName} Forma B`, showLegend: true, showValues: true
-      });
-      doc.y += 235;
-
-      doc.fontSize(9).fillColor('#374151').font('Helvetica');
-      dimsB.forEach(dk => {
-        const rc = aggResults.intralaboralB.dimensions[dk];
-        if (rc) {
-          ensureSpace(doc, 30);
-          doc.text(templates.generateDimensionAnalysis(dk, rc, aggResults.intralaboralB.participantCount), { width: pageW, align: 'justify' });
-          doc.moveDown(0.3);
-        }
-      });
-    }
+    });
   });
 
+  drawColorCodedRiskTable(doc, m, doc.y, pageW, intraTableData);
+
   // ==========================================================
-  // CONDICIONES EXTRALABORALES
+  // DIMENSION ANALYSIS TEXT
   // ==========================================================
-  newPage();
-  sections.push({ title: 'CONDICIONES EXTRALABORALES', page: pageNum + 1 });
-  sectionTitle('CONDICIONES EXTRALABORALES');
+  doc.moveDown(1);
+  ensureSpace(doc, 100);
+  if (doc.y > 650) doc.addPage();
+
+  doc.fontSize(10).fillColor('#1F2937').font('Helvetica-Bold');
+  doc.text('Análisis por Dimensión');
+  doc.moveDown(0.5);
+  doc.fontSize(8).fillColor('#374151').font('Helvetica');
+
+  templates.DOMAIN_ORDER.forEach(domainKey => {
+    const allDims = [...new Set([
+      ...(templates.DOMAIN_DIMENSIONS[domainKey].A || []),
+      ...(templates.DOMAIN_DIMENSIONS[domainKey].B || [])
+    ])];
+    allDims.forEach(dimKey => {
+      const counts = getCombinedDimCounts(dimKey);
+      const total = sumCounts(counts);
+      if (total === 0) return;
+      ensureSpace(doc, 25);
+      const dimName = templates.DIMENSION_DISPLAY_NAMES[dimKey] || dimKey;
+      const highPct = (((counts.riesgo_alto || 0) + (counts.riesgo_muy_alto || 0)) / total * 100).toFixed(1);
+      const lowPct = (((counts.sin_riesgo || 0) + (counts.riesgo_bajo || 0)) / total * 100).toFixed(1);
+      doc.font('Helvetica-Bold').text(`• ${dimName}: `, { continued: true });
+      doc.font('Helvetica').text(`${lowPct}% sin riesgo/bajo, ${highPct}% alto/muy alto.`);
+      doc.moveDown(0.2);
+    });
+  });
+
+  doc.moveDown(0.5);
+  doc.fontSize(8).fillColor('#6B7280').font('Helvetica');
+  doc.text('Nota: Los resultados se interpretan de acuerdo a los baremos oficiales de la Resolución 2764 de 2022.', { width: pageW, align: 'justify' });
+
+  // ==========================================================
+  // CONDICIONES EXTRALABORALES - Color-Coded Table
+  // ==========================================================
+  doc.addPage();
+  drawSectionBanner(doc, m, doc.y, pageW, 'CONDICIONES EXTRALABORALES');
+  doc.y += 40;
+  doc.moveDown(0.5);
 
   doc.fontSize(10).fillColor('#374151').font('Helvetica');
   doc.text('Comprenden los aspectos del entorno familiar, social y económico del trabajador. A su vez, abarcan las condiciones del lugar de vivienda, que pueden influir en la salud y bienestar del individuo.', { width: pageW, align: 'justify' });
   doc.moveDown(0.5);
 
-  // General extralaboral
-  const extraDimKeys = templates.EXTRALABORAL_DIMENSIONS.filter(dk => aggResults.extralaboral.general.dimensions[dk]);
-  if (extraDimKeys.length > 0) {
-    const extraLabels = extraDimKeys.map(d => {
-      const name = templates.DIMENSION_SHORT_NAMES[d] || d;
-      return name.length > 20 ? name.substring(0, 18) + '...' : name;
-    });
-    const extraRiskCounts = {};
-    extraDimKeys.forEach(dk => {
-      extraRiskCounts[dk] = aggResults.extralaboral.general.dimensions[dk];
-    });
-    const extraSeries = createRiskSeries(extraRiskCounts, extraDimKeys);
-
-    ensureSpace(doc, 250);
-    drawGroupedBarChart(doc, m, doc.y + 15, pageW, 220, extraLabels, extraSeries, {
-      title: 'Riesgo Psicosocial Extralaboral', showLegend: true, showValues: true
-    });
-    doc.y += 245;
-
-    // Analysis per extralaboral dimension
-    doc.fontSize(9).fillColor('#374151').font('Helvetica');
-    extraDimKeys.forEach(dk => {
-      const rc = aggResults.extralaboral.general.dimensions[dk];
-      if (rc) {
-        ensureSpace(doc, 30);
-        doc.text(templates.generateDimensionAnalysis(dk, rc, sumCounts(rc)), { width: pageW, align: 'justify' });
-        doc.moveDown(0.3);
+  // Extralaboral total box
+  const extraOverall = aggResults.extralaboral.general.overall || {};
+  const extraOverallTotal = sumCounts(extraOverall);
+  if (extraOverallTotal > 0) {
+    // Find dominant risk level
+    let maxLevel = 'sin_riesgo';
+    let maxCount = 0;
+    for (const level of RISK_ORDER) {
+      if ((extraOverall[level] || 0) > maxCount) {
+        maxCount = extraOverall[level];
+        maxLevel = level;
       }
-    });
+    }
+    doc.save();
+    doc.rect(m, doc.y, pageW, 30).fillColor('#E0F2F1').fill();
+    doc.rect(m, doc.y, pageW, 30).strokeColor('#0D9488').lineWidth(1).stroke();
+    doc.fontSize(9).fillColor('#004D40').font('Helvetica-Bold');
+    doc.text(`Total cuestionario EXTRALABORAL: ${RISK_LABELS[maxLevel]} (${((maxCount / extraOverallTotal) * 100).toFixed(1)}% de la población)`, m + 10, doc.y + 9, { width: pageW - 20 });
+    doc.restore();
+    doc.y += 40;
+    doc.moveDown(0.5);
   }
 
-  // Extralaboral by Form A
-  const extraAKeys = templates.EXTRALABORAL_DIMENSIONS.filter(dk => aggResults.extralaboral.formaA.dimensions[dk]);
-  if (extraAKeys.length > 0) {
-    newPage();
-    const extraALabels = extraAKeys.map(d => {
-      const name = templates.DIMENSION_SHORT_NAMES[d] || d;
-      return name.length > 20 ? name.substring(0, 18) + '...' : name;
-    });
-    const extraARiskCounts = {};
-    extraAKeys.forEach(dk => { extraARiskCounts[dk] = aggResults.extralaboral.formaA.dimensions[dk]; });
-    const extraASeries = createRiskSeries(extraARiskCounts, extraAKeys);
+  // Build extralaboral color-coded table
+  const extraTableData = [];
+  const extraDimKeys = templates.EXTRALABORAL_DIMENSIONS.filter(dk => aggResults.extralaboral.general.dimensions[dk]);
 
-    drawGroupedBarChart(doc, m, doc.y + 15, pageW, 210, extraALabels, extraASeries, {
-      title: 'Riesgo Psicosocial Extralaboral Forma A', showLegend: true
+  extraDimKeys.forEach(dimKey => {
+    const counts = aggResults.extralaboral.general.dimensions[dimKey];
+    const total = sumCounts(counts);
+    if (total === 0) return;
+    const dimName = templates.DIMENSION_DISPLAY_NAMES[dimKey] || dimKey;
+    extraTableData.push({
+      label: dimName,
+      sin_riesgo: counts.sin_riesgo || 0,
+      riesgo_bajo: counts.riesgo_bajo || 0,
+      riesgo_medio: counts.riesgo_medio || 0,
+      riesgo_alto: counts.riesgo_alto || 0,
+      riesgo_muy_alto: counts.riesgo_muy_alto || 0
     });
-    doc.y += 235;
+  });
+
+  if (extraTableData.length > 0) {
+    drawColorCodedRiskTable(doc, m, doc.y, pageW, extraTableData);
   }
 
-  // Extralaboral by Form B
-  const extraBKeys = templates.EXTRALABORAL_DIMENSIONS.filter(dk => aggResults.extralaboral.formaB.dimensions[dk]);
-  if (extraBKeys.length > 0) {
-    ensureSpace(doc, 260);
-    const extraBLabels = extraBKeys.map(d => {
-      const name = templates.DIMENSION_SHORT_NAMES[d] || d;
-      return name.length > 20 ? name.substring(0, 18) + '...' : name;
-    });
-    const extraBRiskCounts = {};
-    extraBKeys.forEach(dk => { extraBRiskCounts[dk] = aggResults.extralaboral.formaB.dimensions[dk]; });
-    const extraBSeries = createRiskSeries(extraBRiskCounts, extraBKeys);
-
-    drawGroupedBarChart(doc, m, doc.y + 15, pageW, 210, extraBLabels, extraBSeries, {
-      title: 'Riesgo Psicosocial Extralaboral Forma B', showLegend: true
-    });
-    doc.y += 235;
-  }
+  // Extralaboral analysis text
+  doc.moveDown(1);
+  ensureSpace(doc, 60);
+  doc.fontSize(8).fillColor('#374151').font('Helvetica');
+  extraDimKeys.forEach(dk => {
+    const rc = aggResults.extralaboral.general.dimensions[dk];
+    if (!rc) return;
+    const total = sumCounts(rc);
+    if (total === 0) return;
+    ensureSpace(doc, 20);
+    const dimName = templates.DIMENSION_DISPLAY_NAMES[dk] || dk;
+    const highPct = (((rc.riesgo_alto || 0) + (rc.riesgo_muy_alto || 0)) / total * 100).toFixed(1);
+    const lowPct = (((rc.sin_riesgo || 0) + (rc.riesgo_bajo || 0)) / total * 100).toFixed(1);
+    doc.font('Helvetica-Bold').text(`• ${dimName}: `, { continued: true });
+    doc.font('Helvetica').text(`${lowPct}% sin riesgo/bajo, ${highPct}% alto/muy alto.`);
+    doc.moveDown(0.2);
+  });
 
   // ==========================================================
-  // EFECTOS POR LA EXPOSICION - ESTRES
+  // ESTRÉS
   // ==========================================================
-  newPage();
-  sections.push({ title: 'EFECTOS POR LA EXPOSICIÓN (ESTRÉS)', page: pageNum + 1 });
-  sectionTitle('EFECTOS POR LA EXPOSICIÓN');
+  doc.addPage();
+  drawSectionBanner(doc, m, doc.y, pageW, 'PERCEPCIÓN DE SINTOMATOLOGÍA ASOCIADA AL ESTRÉS');
+  doc.y += 40;
+  doc.moveDown(0.5);
 
   doc.fontSize(10).fillColor('#374151').font('Helvetica');
-  doc.text('El estrés es una respuesta del organismo ante una situación que genera tensión. Puede producir enfermedad a través del desencadenamiento de respuestas fisiológicas prolongadas y conductas de riesgo. A continuación se presentan los niveles de estrés identificados en la población evaluada.', { width: pageW, align: 'justify' });
-  doc.moveDown(1);
+  doc.text('El estrés es una respuesta del organismo ante situaciones que generan tensión. Puede producir enfermedad a través de respuestas fisiológicas prolongadas y conductas de riesgo.', { width: pageW, align: 'justify' });
+  doc.moveDown(0.5);
 
-  // Stress pie chart
-  const stressTotal = sumCounts(aggResults.estres.general);
   if (stressTotal > 0) {
-    const stressData = RISK_ORDER.map(key => ({
-      label: RISK_LABELS[key],
-      value: aggResults.estres.general[key],
-      color: RISK_COLORS[key]
+    // Simple 5-bar chart for stress
+    drawSimpleRiskBars(doc, m + 50, doc.y, pageW - 100, 170, stressGeneral, stressTotal, {
+      title: 'Sintomatología Asociada al Estrés'
+    });
+    doc.y += 185;
+    doc.moveDown(0.5);
+
+    const stHighPct = (((stressGeneral.riesgo_alto || 0) + (stressGeneral.riesgo_muy_alto || 0)) / stressTotal * 100).toFixed(1);
+    const stLowPct = (((stressGeneral.sin_riesgo || 0) + (stressGeneral.riesgo_bajo || 0)) / stressTotal * 100).toFixed(1);
+    doc.fontSize(9).fillColor('#374151').font('Helvetica');
+    doc.text(`El ${stLowPct}% de la población se encuentra sin riesgo o en riesgo bajo de estrés. El ${stHighPct}% presenta riesgo alto o muy alto y requiere intervención prioritaria.`, { width: pageW, align: 'justify' });
+    doc.moveDown(1);
+
+    // Stress typology chart
+    if (stressTypology && Object.keys(stressTypology).length > 0) {
+      ensureSpace(doc, 200);
+      if (doc.y > 500) doc.addPage();
+
+      doc.fontSize(10).fillColor('#1F2937').font('Helvetica-Bold');
+      doc.text('Tipología de Síntomas de Estrés');
+      doc.moveDown(0.5);
+
+      const typologyColors = ['#EF4444', '#F97316', '#3B82F6', '#8B5CF6'];
+      const typologyData = Object.entries(stressTypology).map(([label, value], i) => ({
+        label, value, color: typologyColors[i % typologyColors.length]
+      }));
+
+      drawBarChart(doc, m, doc.y + 10, pageW, 160, typologyData, {
+        title: 'Contribución por Tipo de Síntoma (%)', showValues: true
+      });
+      doc.y += 180;
+      doc.moveDown(0.5);
+
+      // TOP 3 symptoms text
+      const sortedTypes = Object.entries(stressTypology).sort((a, b) => b[1] - a[1]);
+      doc.fontSize(9).fillColor('#374151').font('Helvetica');
+      doc.text('Los principales tipos de sintomatología reportados son:', { width: pageW });
+      doc.moveDown(0.2);
+      sortedTypes.slice(0, 3).forEach(([name, pct], i) => {
+        doc.text(`  ${i + 1}. ${name}: ${pct}%`, { width: pageW });
+      });
+    }
+  }
+
+  // ==========================================================
+  // MATRIZ DE RIESGO PARA PRIORIZACIÓN
+  // ==========================================================
+  doc.addPage();
+  drawSectionBanner(doc, m, doc.y, pageW, 'MATRIZ DE RIESGO PARA PRIORIZACIÓN');
+  doc.y += 40;
+  doc.moveDown(0.5);
+
+  doc.fontSize(10).fillColor('#374151').font('Helvetica');
+  doc.text('La siguiente matriz permite priorizar las intervenciones considerando la magnitud del riesgo (proporción de trabajadores en riesgo medio, alto y muy alto) por cada dimensión evaluada.', { width: pageW, align: 'justify' });
+  doc.moveDown(0.5);
+
+  if (riskMatrix && riskMatrix.length > 0) {
+    // Sort by magnitud descending
+    const sortedMatrix = [...riskMatrix].sort((a, b) => b.magnitud - a.magnitud);
+    // Map dimension keys to display names
+    const matrixDisplayData = sortedMatrix.map(item => ({
+      ...item,
+      label: templates.DIMENSION_DISPLAY_NAMES[item.dimension] || item.dimension
+    }));
+    drawRiskPrioritizationMatrix(doc, m, doc.y, pageW, matrixDisplayData);
+  }
+
+  doc.moveDown(1);
+  ensureSpace(doc, 60);
+  doc.fontSize(8).fillColor('#6B7280').font('Helvetica');
+  doc.text('Magnitud: % de trabajadores en riesgo medio + alto + muy alto. Verde: <40%, Amarillo: 40-60%, Naranja: 60-80%, Rojo: >80%.', { width: pageW, align: 'justify' });
+
+  // ==========================================================
+  // DEMANDAS DEL TRABAJO POR TIPO DE CARGO
+  // ==========================================================
+  if (demandasPorCargo && demandasPorCargo.length > 0) {
+    doc.addPage();
+    drawSectionBanner(doc, m, doc.y, pageW, 'DEMANDAS DEL TRABAJO POR TIPO DE CARGO');
+    doc.y += 40;
+    doc.moveDown(0.5);
+
+    doc.fontSize(10).fillColor('#374151').font('Helvetica');
+    doc.text(
+      'Esta sección desglosa los resultados del dominio Demandas del Trabajo por tipo de cargo (Jefatura, Profesional / Técnico, Auxiliar / Asistente, Operario / Servicios generales). Es información de referencia para los Programas de Vigilancia Epidemiológica (PVE) y para sustentar solicitudes ante el Ministerio del Trabajo, ya que permite identificar grupos ocupacionales con mayor exposición a las exigencias del puesto.',
+      { width: pageW, align: 'justify' }
+    );
+    doc.moveDown(1);
+
+    // Resumen consolidado por cargo (gráfica de barras agrupadas: cargos × niveles de riesgo)
+    const cargoLabels = demandasPorCargo.map(c => `${c.cargo} (n=${c.participantCount})`);
+    const cargoSeries = RISK_ORDER.map(level => ({
+      label: RISK_LABELS[level],
+      color: RISK_COLORS[level],
+      values: demandasPorCargo.map(c => c.domainCounts[level] || 0)
     }));
 
-    const stressY = doc.y + chartRadius + 5;
-    drawPieChart(doc, chartCenterX, stressY, chartRadius, stressData, {
-      showPercentages: true,
-      showLegend: true,
-      legendX: chartCenterX + chartRadius + 30,
-      legendY: stressY - 40,
-      title: 'Nivel Estrés'
+    ensureSpace(doc, 260);
+    drawGroupedBarChart(doc, m, doc.y + 10, pageW, 220, cargoLabels, cargoSeries, {
+      title: 'Distribución de riesgo en Demandas del Trabajo (Total dominio)',
+      showLegend: true, showValues: true
     });
-    doc.y = stressY + chartRadius + 30;
+    doc.y += 245;
     doc.moveDown(0.5);
 
-    doc.fontSize(10).font('Helvetica-Bold').fillColor('#1F2937').text('Posibles efectos en la Salud de los Trabajadores:');
-    doc.moveDown(0.3);
-    doc.fontSize(9).font('Helvetica').fillColor('#374151');
-
-    const highStress = (aggResults.estres.general.riesgo_alto || 0) + (aggResults.estres.general.riesgo_muy_alto || 0);
-    const highStressPct = stressTotal > 0 ? ((highStress / stressTotal) * 100).toFixed(0) : 0;
-    doc.text(`En la gráfica se puede observar que, en relación con los niveles de sintomatología por estrés, el ${highStressPct}% de los funcionarios evaluados presentan riesgo alto o muy alto. Los trabajadores que se encuentran en un nivel de riesgo MEDIO y ALTO requieren implementar actividades de intervención y monitoreo.`, { width: pageW, align: 'justify' });
-    doc.moveDown(0.5);
-
-    doc.text('Los principales efectos del estrés en la salud pueden ser:', { width: pageW });
-    doc.moveDown(0.2);
-    ['Fisiológicos: los trastornos pueden ser de tipo cardiovascular o digestivo.',
-     'Psicológicos: alteraciones en la memoria, dificultades de atención y concentración.',
-     'Comportamentales: conductas de aislamiento, cambios en el estado de ánimo.'
-    ].forEach(e => {
-      doc.text(`  • ${e}`, { width: pageW });
+    // Texto interpretativo
+    ensureSpace(doc, 80);
+    doc.fontSize(9).fillColor('#374151').font('Helvetica');
+    demandasPorCargo.forEach(c => {
+      const total = sumCounts(c.domainCounts);
+      if (total === 0) return;
+      const high = (c.domainCounts.riesgo_alto || 0) + (c.domainCounts.riesgo_muy_alto || 0);
+      const highPct = (high / total * 100).toFixed(1);
+      const low = (c.domainCounts.sin_riesgo || 0) + (c.domainCounts.riesgo_bajo || 0);
+      const lowPct = (low / total * 100).toFixed(1);
+      ensureSpace(doc, 22);
+      doc.font('Helvetica-Bold').text(`• ${c.cargo} (n=${c.participantCount}): `, { continued: true });
+      doc.font('Helvetica').text(`${highPct}% en riesgo alto/muy alto, ${lowPct}% sin riesgo o riesgo bajo en Demandas del Trabajo.`);
       doc.moveDown(0.2);
     });
+    doc.moveDown(1);
+
+    // Tabla detallada por dimensión × cargo
+    demandasPorCargo.forEach(c => {
+      const dimensionEntries = Object.entries(c.dimensions);
+      if (dimensionEntries.length === 0) return;
+
+      ensureSpace(doc, 100);
+      if (doc.y > 600) doc.addPage();
+
+      doc.fontSize(11).fillColor('#1F2937').font('Helvetica-Bold');
+      doc.text(`${c.cargo} — Detalle por dimensión (n=${c.participantCount})`);
+      doc.moveDown(0.5);
+
+      const tableData = dimensionEntries.map(([dimKey, counts]) => ({
+        label: templates.DIMENSION_DISPLAY_NAMES[dimKey] || dimKey,
+        sin_riesgo: counts.sin_riesgo || 0,
+        riesgo_bajo: counts.riesgo_bajo || 0,
+        riesgo_medio: counts.riesgo_medio || 0,
+        riesgo_alto: counts.riesgo_alto || 0,
+        riesgo_muy_alto: counts.riesgo_muy_alto || 0
+      }));
+
+      drawColorCodedRiskTable(doc, m, doc.y, pageW, tableData);
+      doc.moveDown(1);
+    });
+
+    doc.moveDown(0.5);
+    ensureSpace(doc, 60);
+    doc.fontSize(8).fillColor('#6B7280').font('Helvetica');
+    doc.text('Nota: La clasificación por tipo de cargo proviene del campo "Tipo de cargo" diligenciado en la Ficha de Datos Generales (Resolución 2646/2008). Los participantes sin tipo de cargo registrado no se incluyen en esta tabla.', { width: pageW, align: 'justify' });
+  }
+
+  // ==========================================================
+  // RESULTADOS POR ÁREA (if applicable)
+  // ==========================================================
+  if (areaResults && Object.keys(areaResults).length > 0) {
+    for (const [areaName, areaAgg] of Object.entries(areaResults)) {
+      doc.addPage();
+      drawSectionBanner(doc, m, doc.y, pageW, `RESULTADOS: ${areaName.toUpperCase()}`);
+      doc.y += 40;
+      doc.moveDown(0.5);
+
+      // Semicircle gauge for area
+      const areaPop = areaAgg.population.total;
+      const areaGaugeX = m + pageW / 2;
+      const areaGaugeY = doc.y + 50;
+      drawSemicircleGauge(doc, areaGaugeX, areaGaugeY, 40, areaPop, {
+        label: 'Participantes'
+      });
+      doc.y = areaGaugeY + 40;
+      doc.moveDown(0.5);
+
+      // 3 bar charts for area
+      const aChartW = (pageW - 20) / 3;
+      const aChartH = 140;
+      const aChartsY = doc.y;
+
+      const areaIntra = {};
+      for (const level of RISK_ORDER) {
+        areaIntra[level] = (areaAgg.intralaboralA.overall[level] || 0) + (areaAgg.intralaboralB.overall[level] || 0);
+      }
+      const areaIntraTotal = sumCounts(areaIntra);
+
+      const areaExtra = areaAgg.extralaboral.general.overall || {};
+      const areaExtraTotal = sumCounts(areaExtra);
+
+      const areaStress = areaAgg.estres.general;
+      const areaStressTotal = sumCounts(areaStress);
+
+      drawSimpleRiskBars(doc, m, aChartsY, aChartW, aChartH, areaIntra, areaIntraTotal, {
+        title: 'Intralaboral'
+      });
+      drawSimpleRiskBars(doc, m + aChartW + 10, aChartsY, aChartW, aChartH, areaExtra, areaExtraTotal, {
+        title: 'Extralaboral'
+      });
+      drawSimpleRiskBars(doc, m + (aChartW + 10) * 2, aChartsY, aChartW, aChartH, areaStress, areaStressTotal, {
+        title: 'Estrés'
+      });
+      doc.y = aChartsY + aChartH + 15;
+
+      // Intralaboral color-coded table for area
+      doc.addPage();
+      doc.fontSize(10).fillColor('#1F2937').font('Helvetica-Bold');
+      doc.text(`Condiciones Intralaborales - ${areaName}`);
+      doc.moveDown(0.5);
+
+      const areaIntraTable = [];
+      templates.DOMAIN_ORDER.forEach(domainKey => {
+        const domainName = templates.DOMAIN_DISPLAY_NAMES[domainKey];
+        areaIntraTable.push({ isDomain: true, label: domainName });
+
+        const allDims = [...new Set([
+          ...(templates.DOMAIN_DIMENSIONS[domainKey].A || []),
+          ...(templates.DOMAIN_DIMENSIONS[domainKey].B || [])
+        ])];
+
+        allDims.forEach(dimKey => {
+          const a = areaAgg.intralaboralA.dimensions[dimKey] || { sin_riesgo: 0, riesgo_bajo: 0, riesgo_medio: 0, riesgo_alto: 0, riesgo_muy_alto: 0 };
+          const b = areaAgg.intralaboralB.dimensions[dimKey] || { sin_riesgo: 0, riesgo_bajo: 0, riesgo_medio: 0, riesgo_alto: 0, riesgo_muy_alto: 0 };
+          const counts = {};
+          for (const level of RISK_ORDER) counts[level] = (a[level] || 0) + (b[level] || 0);
+          const total = sumCounts(counts);
+          if (total === 0) return;
+          areaIntraTable.push({
+            label: templates.DIMENSION_DISPLAY_NAMES[dimKey] || dimKey,
+            sin_riesgo: counts.sin_riesgo || 0,
+            riesgo_bajo: counts.riesgo_bajo || 0,
+            riesgo_medio: counts.riesgo_medio || 0,
+            riesgo_alto: counts.riesgo_alto || 0,
+            riesgo_muy_alto: counts.riesgo_muy_alto || 0
+          });
+        });
+      });
+
+      if (areaIntraTable.length > 1) {
+        drawColorCodedRiskTable(doc, m, doc.y, pageW, areaIntraTable);
+      }
+
+      // Extralaboral color-coded table for area
+      doc.moveDown(1);
+      ensureSpace(doc, 100);
+      if (doc.y > 500) doc.addPage();
+
+      doc.fontSize(10).fillColor('#1F2937').font('Helvetica-Bold');
+      doc.text(`Condiciones Extralaborales - ${areaName}`);
+      doc.moveDown(0.5);
+
+      const areaExtraTable = [];
+      const areaExtraDims = templates.EXTRALABORAL_DIMENSIONS.filter(dk => areaAgg.extralaboral.general.dimensions[dk]);
+      areaExtraDims.forEach(dimKey => {
+        const counts = areaAgg.extralaboral.general.dimensions[dimKey];
+        const total = sumCounts(counts);
+        if (total === 0) return;
+        areaExtraTable.push({
+          label: templates.DIMENSION_DISPLAY_NAMES[dimKey] || dimKey,
+          sin_riesgo: counts.sin_riesgo || 0,
+          riesgo_bajo: counts.riesgo_bajo || 0,
+          riesgo_medio: counts.riesgo_medio || 0,
+          riesgo_alto: counts.riesgo_alto || 0,
+          riesgo_muy_alto: counts.riesgo_muy_alto || 0
+        });
+      });
+
+      if (areaExtraTable.length > 0) {
+        drawColorCodedRiskTable(doc, m, doc.y, pageW, areaExtraTable);
+      }
+    }
   }
 
   // ==========================================================
@@ -1035,15 +1310,18 @@ function generateOrganizationalPDF(doc, { evaluation, demographics, aggResults, 
   // ==========================================================
   const copingTotal = sumCounts(aggResults.coping.overall);
   if (copingTotal > 0) {
-    newPage();
-    sections.push({ title: 'ESTRATEGIAS DE AFRONTAMIENTO (BRIEF COPE)', page: pageNum + 1 });
-    sectionTitle('ESTRATEGIAS DE AFRONTAMIENTO');
+    doc.addPage();
+    drawSectionBanner(doc, m, doc.y, pageW, 'ESTRATEGIAS DE AFRONTAMIENTO (BRIEF COPE)');
+    doc.y += 40;
+    doc.moveDown(0.5);
 
     doc.fontSize(10).fillColor('#374151').font('Helvetica');
-    doc.text('El Brief COPE (COPE-28) es un instrumento que evalúa las estrategias de afrontamiento que utilizan las personas ante situaciones de estrés. Se compone de 14 subescalas agrupadas en tres macro-categorías: afrontamiento centrado en el problema, afrontamiento centrado en la emoción, y afrontamiento evitativo. Los resultados permiten identificar los estilos predominantes de afrontamiento en la población evaluada.', { width: pageW, align: 'justify' });
+    doc.text('El Brief COPE (COPE-28) evalúa las estrategias de afrontamiento ante situaciones de estrés. Se compone de 14 subescalas agrupadas en: afrontamiento centrado en el problema, centrado en la emoción, y evitativo.', { width: pageW, align: 'justify' });
     doc.moveDown(1);
 
     // Coping overall pie chart
+    const chartRadius = 70;
+    const chartCenterX = m + chartRadius + 10;
     const COPING_ORDER = ['muy_bajo', 'bajo', 'medio', 'alto', 'muy_alto'];
     const copingPieData = COPING_ORDER.map(key => ({
       label: COPING_LEVEL_LABELS[key],
@@ -1065,7 +1343,7 @@ function generateOrganizationalPDF(doc, { evaluation, demographics, aggResults, 
     // Category summary
     const categoryEntries = Object.entries(aggResults.coping.categories);
     if (categoryEntries.length > 0) {
-      doc.fontSize(10).font('Helvetica-Bold').fillColor('#1F2937').text('Resultados por Categoría de Afrontamiento:');
+      doc.fontSize(10).font('Helvetica-Bold').fillColor('#1F2937').text('Resultados por Categoría:');
       doc.moveDown(0.3);
       doc.fontSize(9).font('Helvetica').fillColor('#374151');
 
@@ -1080,16 +1358,18 @@ function generateOrganizationalPDF(doc, { evaluation, demographics, aggResults, 
         const highUse = (counts.alto || 0) + (counts.muy_alto || 0);
         const highPct = catTotal > 0 ? ((highUse / catTotal) * 100).toFixed(0) : 0;
         const catName = catNames[catKey] || catKey;
-        doc.text(`  • ${catName}: ${highPct}% de los funcionarios presentan uso alto o muy alto de estas estrategias.`, { width: pageW });
+        doc.text(`  • ${catName}: ${highPct}% uso alto o muy alto.`, { width: pageW });
         doc.moveDown(0.2);
       });
       doc.moveDown(0.5);
     }
 
-    // Subscale detail
+    // Subscale grouped bar chart
     const subscaleEntries = Object.entries(aggResults.coping.subscales);
     if (subscaleEntries.length > 0) {
       ensureSpace(doc, 250);
+      if (doc.y > 480) doc.addPage();
+
       const copingSubLabels = subscaleEntries.map(([key]) => {
         const name = templates.DIMENSION_DISPLAY_NAMES[key] || key;
         return name.length > 18 ? name.substring(0, 16) + '...' : name;
@@ -1099,7 +1379,6 @@ function generateOrganizationalPDF(doc, { evaluation, demographics, aggResults, 
       const copingSubRiskCounts = {};
       subscaleEntries.forEach(([key, counts]) => { copingSubRiskCounts[key] = counts; });
 
-      // Create series using coping levels
       const copingSeries = COPING_ORDER.map(riskKey => ({
         label: COPING_LEVEL_LABELS[riskKey],
         color: COPING_LEVEL_COLORS[riskKey],
@@ -1114,104 +1393,77 @@ function generateOrganizationalPDF(doc, { evaluation, demographics, aggResults, 
   }
 
   // ==========================================================
-  // TERCERA PARTE - INTERVENCION SUGERIDA
+  // RECOMENDACIONES
   // ==========================================================
-  newPage();
-  sections.push({ title: 'PLAN DE ACCIÓN SUGERIDO', page: pageNum + 1 });
-  doc.fontSize(14).fillColor('#1E40AF').font('Helvetica-Bold').text('TERCERA PARTE');
-  doc.fontSize(12).text('INTERVENCIÓN SUGERIDA');
-  doc.moveDown(0.3);
-  drawHorizontalLine(doc);
+  doc.addPage();
+  drawSectionBanner(doc, m, doc.y, pageW, 'RECOMENDACIONES');
+  doc.y += 40;
   doc.moveDown(0.5);
 
   doc.fontSize(10).fillColor('#374151').font('Helvetica');
-  doc.text('Con base en los resultados obtenidos, se presenta el siguiente plan de intervención con las recomendaciones específicas para cada dimensión que presenta niveles de riesgo significativos.', { width: pageW, align: 'justify' });
-  doc.moveDown(0.5);
-
-  doc.fontSize(11).font('Helvetica-Bold').fillColor('#1F2937').text('1. PLAN DE INTERVENCIÓN GLOBAL');
-  doc.moveDown(0.5);
-
-  // Intervention table
-  const interventionRows = atRiskDimensions
-    .filter(d => d.highRiskPct > 10)
-    .slice(0, 20)
-    .map(d => {
-      const dimName = templates.DIMENSION_DISPLAY_NAMES[d.dimension] || d.dimension;
-      const recommendation = templates.INTERVENTION_RECOMMENDATIONS[d.dimension] || 'Implementar acciones de prevención y monitoreo.';
-      const population = d.form === 'A y B' || d.form === 'TODOS' ? 'TODOS' : `Forma ${d.form}`;
-      return [dimName, recommendation, population];
-    });
-
-  if (interventionRows.length > 0) {
-    drawTable(doc, m, doc.y, pageW,
-      [
-        { label: 'DIMENSIÓN', width: 0.22 },
-        { label: 'RECOMENDACIÓN / INTERVENCIÓN MÍNIMA', width: 0.60 },
-        { label: 'POBLACIÓN', width: 0.18, align: 'center' }
-      ],
-      interventionRows,
-      { headerBgColor: '#BFDBFE', altRowColor: '#F0F9FF', fontSize: 6.5, rowHeight: 16 }
-    );
-  } else {
-    doc.fontSize(10).fillColor('#10B981').font('Helvetica');
-    doc.text('No se identificaron dimensiones con niveles significativos de riesgo alto. Se recomienda mantener las condiciones actuales y realizar seguimiento periódico.');
-  }
-
-  // ==========================================================
-  // RECOMENDACION PRIORITARIA
-  // ==========================================================
-  newPage();
-  sections.push({ title: 'RECOMENDACIÓN PRIORITARIA', page: pageNum + 1 });
-  sectionTitle('RECOMENDACIÓN PRIORITARIA');
-
-  doc.fontSize(10).fillColor('#374151').font('Helvetica');
-  doc.text('Se recomienda enfatizar las recomendaciones dadas en este diagnóstico psicosocial de acuerdo al Sistema de Gestión de Seguridad y Salud en el Trabajo, contemplando las siguientes acciones prioritarias:', { width: pageW, align: 'justify' });
+  doc.text('Con base en los resultados obtenidos se recomienda:', { width: pageW, align: 'justify' });
   doc.moveDown(0.5);
 
   const priorities = [
-    'Intervención general: abordar las dimensiones en riesgo alto prioritario para la totalidad de la población.',
-    `Estructurar programas de prevención y promoción de la salud mental y bienestar de los funcionarios de ${evaluation.company_name}.`,
+    `Implementar un programa de vigilancia epidemiológica en riesgo psicosocial para los funcionarios de ${evaluation.company_name}, de acuerdo con la Resolución 2764 de 2022.`,
+    'Abordar de manera prioritaria las dimensiones que presentan niveles de riesgo alto y muy alto, mediante intervenciones tanto a nivel organizacional como individual.',
+    'Diseñar programas de promoción y prevención orientados a fortalecer los factores protectores identificados y disminuir los factores de riesgo.',
     'Realizar evaluaciones de seguimiento cada 12 meses para monitorear la evolución de los indicadores de riesgo.',
-    'Implementar un programa de vigilancia epidemiológica en riesgo psicosocial.',
-    'Diversas estrategias basadas en las características de la población y la cultura organizacional.'
+    'Implementar estrategias de intervención diferenciadas por áreas, teniendo en cuenta las particularidades de cada grupo poblacional.'
   ];
   priorities.forEach((p, i) => {
+    ensureSpace(doc, 30);
     doc.fontSize(10).fillColor('#374151').font('Helvetica');
     doc.text(`${i + 1}. ${p}`, { width: pageW, align: 'justify' });
     doc.moveDown(0.3);
   });
 
+  doc.moveDown(0.5);
+  doc.fontSize(10).fillColor('#1F2937').font('Helvetica-Bold');
+  doc.text('Intervención prioritaria:');
+  doc.moveDown(0.3);
+  doc.fontSize(9).fillColor('#374151').font('Helvetica');
+  doc.text('Se entiende como intervención prioritaria aquella que se dirige a las dimensiones que presentan niveles de riesgo alto y muy alto en un porcentaje significativo de la población evaluada. Estas dimensiones requieren atención inmediata y acciones de intervención a corto plazo.', { width: pageW, align: 'justify' });
+
+  // List priority dimensions
+  const topRisk = atRiskDimensions.filter(d => d.highRiskPct > 20).slice(0, 10);
+  if (topRisk.length > 0) {
+    doc.moveDown(0.5);
+    topRisk.forEach(d => {
+      ensureSpace(doc, 15);
+      const name = templates.DIMENSION_DISPLAY_NAMES[d.dimension] || d.dimension;
+      doc.text(`  • ${name} (${d.highRiskPct.toFixed(0)}% en riesgo alto/muy alto)`, { width: pageW });
+    });
+  }
+
   // ==========================================================
   // CONCLUSIONES
   // ==========================================================
-  newPage();
-  sections.push({ title: 'CONCLUSIONES', page: pageNum + 1 });
-  sectionTitle('CONCLUSIONES');
+  doc.addPage();
+  drawSectionBanner(doc, m, doc.y, pageW, 'CONCLUSIONES');
+  doc.y += 40;
+  doc.moveDown(0.5);
 
   doc.fontSize(10).fillColor('#374151').font('Helvetica');
-
   const totalEvaluated = aggResults.population.total;
-  doc.text(`Se realizó la evaluación de riesgo psicosocial a ${totalEvaluated} trabajadores de ${evaluation.company_name}, teniendo en cuenta la distribución en Forma A (${aggResults.population.formaA}) y en Forma B (${aggResults.population.formaB}).`, { width: pageW, align: 'justify' });
+
+  doc.text(`Se realizó la evaluación de riesgo psicosocial a ${totalEvaluated} trabajadores de ${evaluation.company_name}, mediante la aplicación de la Batería de Instrumentos para la Evaluación de Factores de Riesgo Psicosocial del Ministerio de la Protección Social, en cumplimiento de la Resolución 2764 de 2022 (Art. 3).`, { width: pageW, align: 'justify' });
   doc.moveDown(0.5);
 
-  doc.text('Teniendo en cuenta los hallazgos significativos, se recomienda estructurar un plan de acción enmarcado bajo un sistema de vigilancia epidemiológica psicosocial donde se logre un cumplimiento regulatorio adecuado.', { width: pageW, align: 'justify' });
+  doc.text('Los resultados obtenidos permiten identificar las condiciones de riesgo psicosocial que requieren intervención, así como los factores protectores que deben ser fortalecidos. Se recomienda estructurar un plan de acción enmarcado en el Sistema de Gestión de Seguridad y Salud en el Trabajo.', { width: pageW, align: 'justify' });
   doc.moveDown(0.5);
 
-  doc.text('Realizando el análisis de resultados con los trabajadores, para en general su aumento o mantenimiento de riesgo significativo en las condiciones psicosociales, diseñando e implementando actividades que apunten a fortalecer los factores protectores y a disminuir los factores de riesgo identificados.', { width: pageW, align: 'justify' });
-  doc.moveDown(0.5);
-
-  const topRisk = atRiskDimensions.filter(d => d.highRiskPct > 20).slice(0, 5);
   if (topRisk.length > 0) {
     doc.text('Las dimensiones que requieren mayor atención son:', { width: pageW });
     doc.moveDown(0.2);
-    topRisk.forEach(d => {
+    topRisk.slice(0, 5).forEach(d => {
       const name = templates.DIMENSION_DISPLAY_NAMES[d.dimension] || d.dimension;
       doc.text(`  • ${name} (${d.highRiskPct.toFixed(0)}% en riesgo alto/muy alto)`, { width: pageW });
     });
     doc.moveDown(0.5);
   }
 
-  doc.text(`Como conclusión general del análisis diagnóstico psicosocial de ${evaluation.company_name}, se puede observar que se deben tener en cuenta las dimensiones con mayor nivel de riesgo e implementar acciones oportunas de mejora, identificando las necesidades más importantes de la población.`, { width: pageW, align: 'justify' });
+  doc.text(`Es fundamental que ${evaluation.company_name} implemente las acciones de intervención sugeridas de manera oportuna, priorizando las dimensiones con mayor nivel de riesgo y garantizando el seguimiento continuo de la salud psicosocial de sus trabajadores.`, { width: pageW, align: 'justify' });
 
   // Signature
   doc.moveDown(4);
@@ -1219,27 +1471,6 @@ function generateOrganizationalPDF(doc, { evaluation, demographics, aggResults, 
   doc.text(evaluatorEmail || 'Evaluador BRS Digital', { align: 'center' });
   doc.fontSize(10).fillColor('#6B7280').font('Helvetica');
   doc.text('Especialista en Psicología Ocupacional y Organizacional', { align: 'center' });
-
-  // ==========================================================
-  // BACKFILL TABLE OF CONTENTS
-  // ==========================================================
-  // Prevent PDFKit from creating new pages during TOC backfill
-  const origAddPage = doc.addPage;
-  doc.addPage = function() { return doc; };
-
-  doc.switchToPage(tocPageIndex);
-  doc.y = doc.page.margins.top;
-  let tocY = tocStartY + 25;
-  doc.fontSize(10).fillColor('#374151').font('Helvetica');
-  sections.forEach(section => {
-    doc.y = doc.page.margins.top;
-    doc.text(section.title, m, tocY, { lineBreak: false });
-    doc.y = doc.page.margins.top;
-    doc.text(String(section.page), m, tocY, { width: pageW, align: 'right', lineBreak: false });
-    tocY += 18;
-  });
-
-  doc.addPage = origAddPage;
 
   // ==========================================================
   // FOOTERS

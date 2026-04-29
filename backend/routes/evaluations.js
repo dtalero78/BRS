@@ -91,6 +91,7 @@ router.get('/', auth, async (req, res) => {
           startDate: evaluation.start_date,
           endDate: evaluation.end_date,
           status: evaluation.status,
+          paid: !!evaluation.paid,
           totalParticipants: total,
           completedParticipants: completed,
           progress: total > 0 ? Math.round((completed / total) * 100) : 0,

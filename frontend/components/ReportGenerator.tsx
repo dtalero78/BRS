@@ -94,6 +94,15 @@ const ReportGenerator: React.FC<ReportGeneratorProps> = ({
         body: JSON.stringify(body)
       });
 
+      if (response.status === 403) {
+        const errorData = await response.json().catch(() => ({} as any));
+        if (errorData.error === 'payment_required') {
+          alert(errorData.message || 'Esta evaluación no está habilitada para descarga. Contacta al administrador.');
+          return;
+        }
+        throw new Error(errorData.error || 'No autorizado');
+      }
+
       if (response.ok) {
         // El servidor devuelve el archivo PDF directamente
         const blob = await response.blob();

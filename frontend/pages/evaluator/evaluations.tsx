@@ -36,6 +36,7 @@ interface Evaluation {
   startDate: string;
   endDate: string;
   status: 'active' | 'completed' | 'cancelled';
+  paid: boolean;
   totalParticipants: number;
   completedParticipants: number;
   progress: number;
@@ -476,6 +477,15 @@ export default function EvaluatorEvaluations() {
                           </div>
                           <div className="ml-2">
                             {getStatusBadge(evaluation.status)}
+                          </div>
+                          <div className="ml-2">
+                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                              evaluation.paid
+                                ? 'bg-emerald-100 text-emerald-800'
+                                : 'bg-amber-100 text-amber-800'
+                            }`}>
+                              {evaluation.paid ? 'Pagada' : 'Pendiente de pago'}
+                            </span>
                           </div>
                         </div>
                         <div className="text-sm text-gray-500">

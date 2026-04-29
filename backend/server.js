@@ -261,6 +261,14 @@ app.use('/api/reports', require('./routes/reports'));
 console.log('✅ Results routes loaded');
 console.log('✅ Reports routes loaded');
 
+// Super-admin (cross-tenant) routes
+try {
+  app.use('/api/admin', require('./routes/admin'));
+  console.log('✅ Admin routes loaded');
+} catch (error) {
+  console.error('❌ Error loading admin routes:', error.message);
+}
+
 // Photo import (Claude Vision) routes
 try {
   app.use('/api/photo-import', require('./routes/photo-import'));
