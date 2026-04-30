@@ -433,12 +433,456 @@ function lightenColor(hex, factor) {
   return `#${Math.round(r).toString(16).padStart(2, '0')}${Math.round(g).toString(16).padStart(2, '0')}${Math.round(b).toString(16).padStart(2, '0')}`;
 }
 
+// ============================================================
+// DONUT CHART
+// ============================================================
+function drawDonutChart(doc, cx, cy, outerRadius, innerRadius, data, options = {}) {
+  const total = data.reduce((sum, d) => sum + d.value, 0);
+  if (total === 0) return;
+  const nonZero = data.filter(d => d.value > 0);
+  let startAngle = -Math.PI / 2;
+
+  nonZero.forEach(slice => {
+    const sliceAngle = (slice.value / total) * 2 * Math.PI;
+    const endAngle = startAngle + sliceAngle;
+    const midR = (outerRadius + innerRadius) / 2;
+
+    if (nonZero.length === 1) {
+      doc.save();
+      doc.circle(cx, cy, outerRadius).fillColor(slice.color).fill();
+      doc.circle(cx, cy, innerRadius).fillColor('#FFFFFF').fill();
+      doc.restore();
+    } else {
+      // Outer arc points
+      const ox1 = cx + outerRadius * Math.cos(startAngle);
+      const oy1 = cy + outerRadius * Math.sin(startAngle);
+      const ox2 = cx + outerRadius * Math.cos(endAngle);
+      const oy2 = cy + outerRadius * Math.sin(endAngle);
+      // Inner arc points (reverse direction)
+      const ix1 = cx + innerRadius * Math.cos(endAngle);
+      const iy1 = cy + innerRadius * Math.sin(endAngle);
+      const ix2 = cx + innerRadius * Math.cos(startAngle);
+      const iy2 = cy + innerRadius * Math.sin(startAngle);
+      const largeArc = sliceAngle > Math.PI ? 1 : 0;
+
+      doc.save();
+      doc.path(
+        `M ${ox1} ${oy1} A ${outerRadius} ${outerRadius} 0 ${largeArc} 1 ${ox2} ${oy2}` +
+        ` L ${ix1} ${iy1} A ${innerRadius} ${innerRadius} 0 ${largeArc} 0 ${ix2} ${iy2} Z`
+      ).fillColor(slice.color).fill();
+      doc.restore();
+    }
+
+    // Label inside arc
+    if (options.showPercentages !== false && sliceAngle > 0.4) {
+      const midAngle = startAngle + sliceAngle / 2;
+      const lx = cx + midR * Math.cos(midAngle);
+      const ly = cy + midR * Math.sin(midAngle);
+      const count = slice.value;
+      const pct = ((count / total) * 100).toFixed(0);
+      doc.save();
+      doc.fontSize(7).fillColor('#FFFFFF').font('Helvetica-Bold');
+      doc.text(`${count} (${pct}%)`, lx - 25, ly - 5, { width: 50, align: 'center' });
+      doc.restore();
+    }
+    startAngle = endAngle;
+  });
+
+  // Legend below
+  if (options.showLegend !== false) {
+    let lx = cx - outerRadius;
+    const legendY = cy + outerRadius + 10;
+    data.forEach(slice => {
+      if (slice.value === 0) return;
+      doc.save();
+      doc.rect(lx, legendY, 8, 8).fillColor(slice.color).fill();
+      doc.fontSize(7).fillColor('#374151').font('Helvetica');
+      doc.text(slice.label, lx + 10, legendY, { width: 80 });
+      doc.restore();
+      lx += 90;
+    });
+  }
+
+  if (options.title) {
+    doc.save();
+    doc.fontSize(9).fillColor('#4B5563').font('Helvetica-Bold');
+    doc.text(options.title, cx - outerRadius - 10, cy - outerRadius - 18, {
+      width: (outerRadius + 10) * 2, align: 'center'
+    });
+    doc.restore();
+  }
+}
+
+// ============================================================
+// SEMICIRCLE GAUGE
+// ============================================================
+function drawSemicircleGauge(doc, cx, cy, radius, value, options = {}) {
+  const bgColor = options.bgColor || '#E5E7EB';
+  const fillColor = options.fillColor || '#0D9488';
+  const fillPct = options.fillPercent || 0.75;
+
+  // Background semicircle (top half)
+  const segments = 50;
+  const startAngle = Math.PI;
+  const endAngle = 2 * Math.PI;
+
+  // Draw background arc
+  for (let i = 0; i < segments; i++) {
+    const a1 = startAngle + (i / segments) * Math.PI;
+    const a2 = startAngle + ((i + 1) / segments) * Math.PI;
+    const x1 = cx + radius * Math.cos(a1);
+    const y1 = cy + radius * Math.sin(a1);
+    const x2 = cx + radius * Math.cos(a2);
+    const y2 = cy + radius * Math.sin(a2);
+    doc.save();
+    doc.path(`M ${cx} ${cy} L ${x1} ${y1} A ${radius} ${radius} 0 0 1 ${x2} ${y2} Z`)
+      .fillColor(bgColor).fill();
+    doc.restore();
+  }
+
+  // Filled portion
+  const fillEnd = startAngle + fillPct * Math.PI;
+  for (let i = 0; i < Math.floor(segments * fillPct); i++) {
+    const a1 = startAngle + (i / segments) * Math.PI;
+    const a2 = Math.min(startAngle + ((i + 1) / segments) * Math.PI, fillEnd);
+    const x1 = cx + radius * Math.cos(a1);
+    const y1 = cy + radius * Math.sin(a1);
+    const x2 = cx + radius * Math.cos(a2);
+    const y2 = cy + radius * Math.sin(a2);
+    doc.save();
+    doc.path(`M ${cx} ${cy} L ${x1} ${y1} A ${radius} ${radius} 0 0 1 ${x2} ${y2} Z`)
+      .fillColor(fillColor).fill();
+    doc.restore();
+  }
+
+  // Inner white circle to create donut effect
+  doc.save();
+  doc.circle(cx, cy, radius * 0.65).fillColor('#FFFFFF').fill();
+  doc.restore();
+
+  // Number in center
+  doc.save();
+  doc.fontSize(18).fillColor('#1F2937').font('Helvetica-Bold');
+  doc.text(String(value), cx - 40, cy - 18, { width: 80, align: 'center' });
+  doc.restore();
+
+  // Label below
+  if (options.label) {
+    doc.save();
+    doc.fontSize(7).fillColor('#6B7280').font('Helvetica');
+    doc.text(options.label, cx - 50, cy + 5, { width: 100, align: 'center' });
+    doc.restore();
+  }
+}
+
+// ============================================================
+// SIMPLE RISK BARS (5 bars: muy_alto → sin_riesgo)
+// ============================================================
+function drawSimpleRiskBars(doc, x, y, width, height, riskCounts, total, options = {}) {
+  if (total === 0) return;
+  const margin = { left: 25, right: 5, top: 5, bottom: 35 };
+  const plotW = width - margin.left - margin.right;
+  const plotH = height - margin.top - margin.bottom;
+  const plotX = x + margin.left;
+  const plotY = y + margin.top;
+
+  // Order: muy_alto, alto, medio, bajo, sin_riesgo (left to right, like reference)
+  const order = ['riesgo_muy_alto', 'riesgo_alto', 'riesgo_medio', 'riesgo_bajo', 'sin_riesgo'];
+  const shortLabels = ['muy alto', 'alto', 'medio', 'bajo', 'sin riesgo'];
+  const colors = order.map(k => RISK_COLORS[k]);
+  const pcts = order.map(k => total > 0 ? ((riskCounts[k] || 0) / total * 100) : 0);
+  const maxPct = Math.max(...pcts, 10);
+  const yMax = Math.ceil(maxPct / 10) * 10;
+
+  doc.save();
+  // Y axis
+  doc.moveTo(plotX, plotY).lineTo(plotX, plotY + plotH).strokeColor('#9CA3AF').lineWidth(0.5).stroke();
+  // Y ticks
+  for (let i = 0; i <= 5; i++) {
+    const tickY = plotY + plotH - (i / 5) * plotH;
+    const tickVal = Math.round((i / 5) * yMax);
+    doc.fontSize(6).fillColor('#6B7280').font('Helvetica');
+    doc.text(tickVal + '%', x, tickY - 4, { width: margin.left - 4, align: 'right' });
+    if (i > 0) {
+      doc.moveTo(plotX, tickY).lineTo(plotX + plotW, tickY).strokeColor('#E5E7EB').lineWidth(0.3).stroke();
+    }
+  }
+  // X axis
+  doc.moveTo(plotX, plotY + plotH).lineTo(plotX + plotW, plotY + plotH).strokeColor('#9CA3AF').lineWidth(0.5).stroke();
+
+  // Bars
+  const barGap = 6;
+  const barWidth = Math.min((plotW - barGap * 6) / 5, 35);
+  const totalBW = 5 * barWidth + 4 * barGap;
+  const startBX = plotX + (plotW - totalBW) / 2;
+
+  order.forEach((_, i) => {
+    const bx = startBX + i * (barWidth + barGap);
+    const barH = yMax > 0 ? (pcts[i] / yMax) * plotH : 0;
+    const by = plotY + plotH - barH;
+    const depth = 3;
+
+    // 3D effect
+    if (barH > 0) {
+      doc.path(`M ${bx + barWidth} ${by} L ${bx + barWidth + depth} ${by - depth} L ${bx + barWidth + depth} ${by - depth + barH} L ${bx + barWidth} ${by + barH} Z`)
+        .fillColor(darkenColor(colors[i], 0.7)).fill();
+      doc.path(`M ${bx} ${by} L ${bx + depth} ${by - depth} L ${bx + barWidth + depth} ${by - depth} L ${bx + barWidth} ${by} Z`)
+        .fillColor(lightenColor(colors[i], 1.15)).fill();
+      doc.rect(bx, by, barWidth, barH).fillColor(colors[i]).fill();
+    }
+
+    // Pct on top
+    doc.fontSize(7).fillColor('#1F2937').font('Helvetica-Bold');
+    doc.text(pcts[i].toFixed(0) + '%', bx - 5, by - 10, { width: barWidth + 10, align: 'center' });
+    // Label
+    doc.fontSize(5.5).fillColor('#374151').font('Helvetica');
+    doc.text(shortLabels[i], bx - 5, plotY + plotH + 3, { width: barWidth + 10, align: 'center' });
+  });
+  doc.restore();
+
+  if (options.title) {
+    doc.save();
+    doc.fontSize(7).fillColor('#1F2937').font('Helvetica-Bold');
+    doc.text(options.title, x, y - 12, { width, align: 'center' });
+    doc.restore();
+  }
+}
+
+// ============================================================
+// COLOR-CODED RISK TABLE (like reference informe)
+// ============================================================
+function drawColorCodedRiskTable(doc, x, startY, tableWidth, data, options = {}) {
+  const fontSize = options.fontSize || 7;
+  const cellPad = 3;
+  const rowH = options.rowHeight || 16;
+  const headerBg = options.headerBg || '#0D9488';
+  const headerText = '#FFFFFF';
+  const domainBg = options.domainBg || '#1F6F6A';
+  const borderColor = '#B0BEC5';
+
+  // Columns: Dominio | sin_riesgo | bajo | medio | alto | muy_alto | Total
+  const colWidths = [0.34, 0.11, 0.11, 0.11, 0.11, 0.11, 0.11];
+  const colLabels = ['Dominio', 'sin riesgo', 'bajo', 'medio', 'alto', 'muy alto', 'Total'];
+
+  function drawHeader(atY) {
+    doc.save();
+    doc.rect(x, atY, tableWidth, rowH + 2).fillColor(headerBg).fill();
+    doc.rect(x, atY, tableWidth, rowH + 2).strokeColor(borderColor).lineWidth(0.5).stroke();
+    let colX = x;
+    colLabels.forEach((label, ci) => {
+      const colW = colWidths[ci] * tableWidth;
+      doc.fontSize(fontSize).font('Helvetica-Bold').fillColor(headerText);
+      doc.text(label, colX + cellPad, atY + cellPad, { width: colW - cellPad * 2, align: ci === 0 ? 'left' : 'center' });
+      colX += colW;
+    });
+    doc.restore();
+    return atY + rowH + 2;
+  }
+
+  let currentY = drawHeader(startY);
+
+  // Title row if provided
+  if (options.tableTitle) {
+    doc.save();
+    doc.fontSize(10).fillColor('#0D9488').font('Helvetica-Bold');
+    doc.text(options.tableTitle, x, startY - 18, { width: tableWidth, align: 'center' });
+    doc.restore();
+  }
+
+  data.forEach(row => {
+    // Page break check
+    if (currentY + rowH > doc.page.height - doc.page.margins.bottom - 20) {
+      doc.addPage();
+      currentY = doc.page.margins.top;
+      currentY = drawHeader(currentY);
+    }
+
+    if (row.isDomain) {
+      // Domain header row
+      doc.save();
+      doc.rect(x, currentY, tableWidth, rowH).fillColor(domainBg).fill();
+      doc.rect(x, currentY, tableWidth, rowH).strokeColor(borderColor).lineWidth(0.3).stroke();
+      doc.fontSize(fontSize).font('Helvetica-Bold').fillColor('#FFFFFF');
+      doc.text(row.label, x + cellPad, currentY + cellPad, { width: tableWidth - cellPad * 2 });
+      doc.restore();
+      currentY += rowH;
+    } else {
+      // Dimension data row
+      const total = (row.sin_riesgo || 0) + (row.riesgo_bajo || 0) + (row.riesgo_medio || 0) + (row.riesgo_alto || 0) + (row.riesgo_muy_alto || 0);
+      const pcts = total > 0 ? {
+        sin_riesgo: (row.sin_riesgo / total * 100),
+        riesgo_bajo: (row.riesgo_bajo / total * 100),
+        riesgo_medio: (row.riesgo_medio / total * 100),
+        riesgo_alto: (row.riesgo_alto / total * 100),
+        riesgo_muy_alto: (row.riesgo_muy_alto / total * 100)
+      } : { sin_riesgo: 0, riesgo_bajo: 0, riesgo_medio: 0, riesgo_alto: 0, riesgo_muy_alto: 0 };
+
+      const lowSum = pcts.sin_riesgo + pcts.riesgo_bajo;
+      const highSum = pcts.riesgo_alto + pcts.riesgo_muy_alto;
+
+      // Background: white default
+      doc.save();
+      doc.rect(x, currentY, tableWidth, rowH).fillColor('#FFFFFF').fill();
+
+      // Cell backgrounds based on thresholds
+      const riskKeys = ['sin_riesgo', 'riesgo_bajo', 'riesgo_medio', 'riesgo_alto', 'riesgo_muy_alto'];
+      let colX = x + colWidths[0] * tableWidth;
+
+      riskKeys.forEach((key, ki) => {
+        const colW = colWidths[ki + 1] * tableWidth;
+        let cellBg = '#FFFFFF';
+        if (key === 'sin_riesgo' || key === 'riesgo_bajo') {
+          if (lowSum >= 60) cellBg = '#C6EFCE'; // green
+        }
+        if (key === 'riesgo_alto' || key === 'riesgo_muy_alto') {
+          if (highSum >= 40) cellBg = '#FFC7CE'; // red
+        }
+        if (cellBg !== '#FFFFFF') {
+          doc.rect(colX, currentY, colW, rowH).fillColor(cellBg).fill();
+        }
+        colX += colW;
+      });
+
+      // Border
+      doc.rect(x, currentY, tableWidth, rowH).strokeColor(borderColor).lineWidth(0.3).stroke();
+
+      // Cell text
+      colX = x;
+      // Name column
+      doc.fontSize(fontSize).font('Helvetica').fillColor('#374151');
+      doc.text(row.label || '', colX + cellPad, currentY + cellPad, { width: colWidths[0] * tableWidth - cellPad * 2 });
+      colX += colWidths[0] * tableWidth;
+
+      // Data columns
+      const values = [pcts.sin_riesgo, pcts.riesgo_bajo, pcts.riesgo_medio, pcts.riesgo_alto, pcts.riesgo_muy_alto, 100];
+      values.forEach((val, vi) => {
+        const colW = colWidths[vi + 1] * tableWidth;
+        doc.fontSize(fontSize).font('Helvetica').fillColor('#374151');
+        const txt = vi < 5 ? val.toFixed(1) + ' %' : '100,0 %';
+        doc.text(txt, colX + cellPad, currentY + cellPad, { width: colW - cellPad * 2, align: 'center' });
+        colX += colW;
+      });
+
+      doc.restore();
+      currentY += rowH;
+    }
+  });
+
+  return currentY;
+}
+
+// ============================================================
+// RISK PRIORITIZATION MATRIX
+// ============================================================
+function drawRiskPrioritizationMatrix(doc, x, startY, tableWidth, data, options = {}) {
+  const fontSize = options.fontSize || 7;
+  const cellPad = 3;
+  const rowH = 16;
+  const headerBg = '#0D9488';
+  const borderColor = '#B0BEC5';
+
+  const colWidths = [0.38, 0.15, 0.17, 0.15, 0.15];
+  const colLabels = ['Dominio', 'Magnitud', 'Indice Asociacion', 'Estres', 'Intra'];
+
+  function drawHeader(atY) {
+    doc.save();
+    doc.rect(x, atY, tableWidth, rowH + 2).fillColor(headerBg).fill();
+    doc.rect(x, atY, tableWidth, rowH + 2).strokeColor(borderColor).lineWidth(0.5).stroke();
+    let colX = x;
+    colLabels.forEach((label, ci) => {
+      const colW = colWidths[ci] * tableWidth;
+      doc.fontSize(fontSize).font('Helvetica-Bold').fillColor('#FFFFFF');
+      doc.text(label, colX + cellPad, atY + cellPad, { width: colW - cellPad * 2, align: ci === 0 ? 'left' : 'center' });
+      colX += colW;
+    });
+    doc.restore();
+    return atY + rowH + 2;
+  }
+
+  let currentY = drawHeader(startY);
+
+  data.forEach(row => {
+    if (currentY + rowH > doc.page.height - doc.page.margins.bottom - 20) {
+      doc.addPage();
+      currentY = doc.page.margins.top;
+      currentY = drawHeader(currentY);
+    }
+
+    if (row.isDomain) {
+      // Domain header
+      doc.save();
+      doc.rect(x, currentY, tableWidth, rowH).fillColor('#E8F5E9').fill();
+      doc.rect(x, currentY, tableWidth, rowH).strokeColor(borderColor).lineWidth(0.3).stroke();
+      doc.fontSize(fontSize).font('Helvetica-Bold').fillColor('#1B5E20');
+      doc.text(row.label, x + cellPad, currentY + cellPad, { width: tableWidth - cellPad * 2 });
+      doc.restore();
+      currentY += rowH;
+    } else {
+      doc.save();
+      doc.rect(x, currentY, tableWidth, rowH).fillColor('#FFFFFF').fill();
+
+      // Magnitud cell color
+      const magCol = x + colWidths[0] * tableWidth;
+      const magW = colWidths[1] * tableWidth;
+      let magBg = '#C6EFCE'; // green < 40%
+      if (row.magnitud >= 60) magBg = '#FFC7CE'; // red
+      else if (row.magnitud >= 40) magBg = '#FFEB9C'; // yellow
+      doc.rect(magCol, currentY, magW, rowH).fillColor(magBg).fill();
+
+      doc.rect(x, currentY, tableWidth, rowH).strokeColor(borderColor).lineWidth(0.3).stroke();
+
+      // Cell text
+      let colX = x;
+      doc.fontSize(fontSize).font('Helvetica').fillColor('#374151');
+      doc.text(row.label, colX + cellPad, currentY + cellPad, { width: colWidths[0] * tableWidth - cellPad * 2 });
+      colX += colWidths[0] * tableWidth;
+
+      doc.text(row.magnitud.toFixed(0) + ' %', colX + cellPad, currentY + cellPad, { width: colWidths[1] * tableWidth - cellPad * 2, align: 'center' });
+      colX += colWidths[1] * tableWidth;
+
+      doc.text(row.indiceAsociacion.toFixed(1), colX + cellPad, currentY + cellPad, { width: colWidths[2] * tableWidth - cellPad * 2, align: 'center' });
+      colX += colWidths[2] * tableWidth;
+
+      doc.text(String(row.estres), colX + cellPad, currentY + cellPad, { width: colWidths[3] * tableWidth - cellPad * 2, align: 'center' });
+      colX += colWidths[3] * tableWidth;
+
+      doc.text(String(row.intra), colX + cellPad, currentY + cellPad, { width: colWidths[4] * tableWidth - cellPad * 2, align: 'center' });
+      doc.restore();
+      currentY += rowH;
+    }
+  });
+
+  return currentY;
+}
+
+// ============================================================
+// SECTION HEADER BANNER (turquoise banner like reference)
+// ============================================================
+function drawSectionBanner(doc, x, y, width, text, options = {}) {
+  const h = options.height || 30;
+  const bgColor = options.bgColor || '#0D9488';
+  doc.save();
+  doc.rect(x, y, width, h).fillColor(bgColor).fill();
+  doc.fontSize(options.fontSize || 12).fillColor('#FFFFFF').font('Helvetica-Bold');
+  doc.text(text, x, y + (h - 14) / 2, { width, align: 'center' });
+  doc.restore();
+  return y + h;
+}
+
 module.exports = {
   drawPieChart,
   drawBarChart,
   drawGroupedBarChart,
   drawTable,
   createRiskSeries,
+  drawDonutChart,
+  drawSemicircleGauge,
+  drawSimpleRiskBars,
+  drawColorCodedRiskTable,
+  drawRiskPrioritizationMatrix,
+  drawSectionBanner,
+  darkenColor,
+  lightenColor,
   RISK_COLORS,
   RISK_ORDER,
   RISK_LABELS

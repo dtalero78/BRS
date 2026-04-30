@@ -165,7 +165,250 @@ const INTERVENTION_RECOMMENDATIONS = {
 };
 
 // ============================================================
-// STATIC TEXT SECTIONS
+// INTRALABORAL DEFINITIONS (for definition tables)
+// ============================================================
+const INTRALABORAL_DEFINITIONS = {
+  liderazgo_relaciones_sociales: {
+    label: 'LIDERAZGO Y RELACIONES SOCIALES EN EL TRABAJO',
+    dimensions: {
+      'Características del liderazgo': 'Atributos de la gestión de los jefes inmediatos en relación con la planificación y asignación del trabajo, consecución de resultados, resolución de conflictos, participación, motivación, apoyo, interacción y comunicación con sus colaboradores.',
+      'Relaciones sociales en el trabajo': 'Interacción que se establece con otras personas en el trabajo, posibilidad de establecer contacto con otras personas, calidad de las interacciones, apoyo social, trabajo en equipo, cohesión.',
+      'Retroalimentación del desempeño': 'Información que un trabajador recibe sobre la forma como realiza su trabajo, la cual le permite identificar fortalezas y debilidades para tomar acciones para mantener o mejorar su desempeño.',
+      'Relación con los colaboradores': 'Atributos de la gestión de los subordinados en relación con la ejecución del trabajo, consecución de resultados, interacción y formas de comunicación con la jefatura.'
+    }
+  },
+  control_trabajo: {
+    label: 'CONTROL SOBRE EL TRABAJO',
+    dimensions: {
+      'Capacitación': 'Actividades de inducción, entrenamiento y formación que la organización brinda al trabajador con el fin de desarrollar y fortalecer sus conocimientos y habilidades.',
+      'Claridad de rol': 'Es la definición y comunicación del papel que se espera que el trabajador desempeñe en la organización, específicamente en torno a los objetivos del trabajo, las funciones y resultados, el margen de autonomía y el impacto del ejercicio del cargo en la empresa.',
+      'Control y autonomía sobre el trabajo': 'Margen de decisión que tiene el trabajador sobre aspectos como el orden de las actividades, la cantidad, el ritmo, la forma de trabajar, las pausas durante la jornada.',
+      'Oportunidades para el uso y desarrollo de habilidades y conocimiento': 'Posibilidad que el trabajo le brinda al trabajador de aplicar, aprender y desarrollar sus habilidades y conocimientos.',
+      'Participación y manejo del cambio': 'Conjunto de mecanismos organizacionales orientados a incrementar la capacidad de adaptación de los colaboradores a las diferentes transformaciones que se presentan en el contexto laboral.'
+    }
+  },
+  demandas_trabajo: {
+    label: 'DEMANDAS DEL TRABAJO',
+    dimensions: {
+      'Consistencia del rol': 'Compatibilidad o consistencia entre las diversas exigencias relacionadas con los principios de eficiencia, calidad técnica y ética, propias del servicio o producto que tiene un trabajador en el desempeño de su cargo.',
+      'Demandas ambientales y de esfuerzo físico': 'Condiciones del lugar de trabajo y carga física que involucran las actividades que se desarrollan, que bajo ciertas circunstancias exigen del individuo un esfuerzo de adaptación.',
+      'Demandas cuantitativas': 'Exigencias relativas a la cantidad de trabajo que se debe ejecutar, en relación con el tiempo disponible para hacerlo.',
+      'Demandas de carga mental': 'Exigencias de procesamiento cognitivo que implica la tarea y que involucra procesos mentales superiores de atención, memoria y análisis de información para generar una respuesta.',
+      'Demandas de la jornada de trabajo': 'Exigencias del tiempo laboral que se hacen al individuo en términos de la duración de la jornada, así como los periodos destinados a pausas y descansos.',
+      'Demandas emocionales': 'Situaciones afectivas y emocionales propias del contenido de la tarea que tienen el potencial de interferir con los sentimientos y emociones del trabajador.',
+      'Exigencias de responsabilidad del cargo': 'Conjunto de obligaciones implícitas en el desempeño de un cargo cuyos resultados no pueden ser transferidos a otras personas. (Responsabilidad por resultados, dirección, bienes, información confidencial, etc.)',
+      'Influencia del trabajo sobre el entorno extralaboral': 'Condición que se presenta cuando las exigencias de tiempo y esfuerzo que se hacen a un individuo en su trabajo impactan su vida extralaboral.'
+    }
+  },
+  recompensas: {
+    label: 'RECOMPENSA',
+    dimensions: {
+      'Recompensas derivadas de la pertenencia a la organización': 'Sentimiento de orgullo y percepción de estabilidad laboral que experimenta el trabajador por estar vinculado a la organización, así como de autorrealización por efectuar su trabajo.',
+      'Reconocimiento y compensación': 'Conjunto de retribuciones que la organización otorga al trabajador en contraprestación por el esfuerzo realizado, tales como compensación económica, reconocimiento, servicios de bienestar y posibilidad de desarrollo.'
+    }
+  }
+};
+
+const EXTRALABORAL_DEFINITIONS = {
+  'Características de la vivienda y de su entorno': 'Condiciones de infraestructura, ubicación y entorno de las instalaciones físicas del lugar habitual de residencia del trabajador y de su grupo familiar.',
+  'Comunicación y relaciones interpersonales': 'Cualidades que caracterizan la comunicación e interacciones del individuo con sus allegados y amigos.',
+  'Desplazamiento vivienda-trabajo-vivienda': 'Condiciones en que se realiza el traslado del trabajador desde su sitio de vivienda hasta su lugar de trabajo y viceversa. Facilidad y comodidad del transporte y duración del recorrido.',
+  'Influencia del entorno extralaboral en el trabajo': 'Influencia de las exigencias de los roles familiares y personales en el bienestar y en la actividad laboral del trabajador.',
+  'Relaciones familiares': 'Propiedades que caracterizan las interacciones del individuo con su núcleo familiar.',
+  'Situación económica del grupo familiar': 'Disponibilidad de medios económicos para que el trabajador y su grupo familiar cubran sus gastos básicos.',
+  'Tiempo fuera del trabajo': 'Tiempo que el trabajador dedica a actividades diferentes al trabajo para descansar, compartir con familia, amigos, atender responsabilidades domésticas, actividades de recreación y ocio.'
+};
+
+// ============================================================
+// NEW CONCISE TEXT SECTIONS (matching reference informe)
+// ============================================================
+
+function writeObjetivosMetodologia(doc, pageW, companyName) {
+  const colW = (pageW - 20) / 2;
+  const startY = doc.y;
+  const bannerH = 25;
+
+  // LEFT: Objetivos
+  doc.save();
+  doc.rect(doc.page.margins.left, startY, colW, bannerH).fillColor('#B2DFDB').fill();
+  doc.fontSize(11).fillColor('#004D40').font('Helvetica-Bold');
+  doc.text('OBJETIVOS', doc.page.margins.left, startY + 7, { width: colW, align: 'center' });
+  doc.restore();
+
+  let ly = startY + bannerH + 10;
+  doc.fontSize(9).font('Helvetica-Bold').fillColor('#1F2937');
+  doc.text('GENERAL', doc.page.margins.left, ly, { width: colW });
+  ly += 14;
+  doc.fontSize(8).font('Helvetica').fillColor('#374151');
+  doc.text(`• Identificar la percepción de riesgo psicosocial de los colaboradores de la ${companyName}.`, doc.page.margins.left, ly, { width: colW, align: 'justify' });
+  ly = doc.y + 10;
+
+  doc.fontSize(9).font('Helvetica-Bold').fillColor('#1F2937');
+  doc.text('ESPECÍFICOS', doc.page.margins.left, ly, { width: colW });
+  ly += 14;
+  doc.fontSize(8).font('Helvetica').fillColor('#374151');
+  const especificos = [
+    `Evaluar los posibles factores de riesgo intralaborales y extralaborales, presentes en los colaboradores de la ${companyName}.`,
+    `Reconocer las probables sintomatologías asociadas al estrés en la ${companyName}.`,
+    `Recomendar a la empresa pautas de acción claras para la mitigación de la percepción de los riesgos identificados.`
+  ];
+  especificos.forEach(t => {
+    doc.text(`• ${t}`, doc.page.margins.left, ly, { width: colW, align: 'justify' });
+    ly = doc.y + 4;
+  });
+
+  // RIGHT: Metodología
+  const rightX = doc.page.margins.left + colW + 20;
+  doc.save();
+  doc.rect(rightX, startY, colW, bannerH).fillColor('#B2DFDB').fill();
+  doc.fontSize(11).fillColor('#004D40').font('Helvetica-Bold');
+  doc.text('METODOLOGÍA', rightX, startY + 7, { width: colW, align: 'center' });
+  doc.restore();
+
+  let ry = startY + bannerH + 10;
+  doc.fontSize(9).font('Helvetica-Bold').fillColor('#1F2937');
+  doc.text('Instrumento:', rightX, ry, { width: colW });
+  ry += 14;
+  doc.fontSize(8).font('Helvetica').fillColor('#374151');
+  doc.text('Para la medición de la percepción de riesgos psicosociales y de acuerdo con la Resolución 2764/2022, se utilizó la fase I de la batería de instrumentos diseñados por el Ministerio de la Protección Social, denominados Batería de Instrumentos para la Evaluación de Factores de Riesgo Psicosocial, (2010).', rightX, ry, { width: colW, align: 'justify' });
+  ry = doc.y + 8;
+
+  const instruments = [
+    'Ficha de datos generales.',
+    'Cuestionario para la evaluación de factores de riesgo psicosocial intralaboral (forma A y forma B).',
+    'Cuestionario de factores de riesgo psicosocial extralaboral.',
+    'Cuestionario para la evaluación del estrés.'
+  ];
+  instruments.forEach((inst, i) => {
+    doc.fontSize(8).font('Helvetica').fillColor('#374151');
+    doc.text(`${i + 1}. ${inst}`, rightX, ry, { width: colW });
+    ry = doc.y + 3;
+  });
+
+  doc.y = Math.max(ly, ry) + 10;
+}
+
+function writeProcedimientos(doc, pageW) {
+  doc.fontSize(9).font('Helvetica').fillColor('#374151');
+  doc.text('Para llevar a cabo la presente medición, se realizó una sensibilización a todos los colaboradores donde se especificó ampliamente el proceso a seguir, los instrumentos a emplear, la importancia de los resultados obtenidos y la confidencialidad de la información. Seguido a ello, se aplicó el consentimiento informado, donde los colaboradores autorizaron su participación voluntaria en el estudio y se clarificó desde el marco legal las condiciones éticas de la medición.', { width: pageW, align: 'justify' });
+  doc.moveDown(0.5);
+  doc.text('Luego de haberse realizado el proceso descrito, se aplicó la Batería para la Evaluación de Riesgo Psicosocial de la Universidad Javeriana - Ministerio de la Protección Social (2010), a través de la plataforma BRS Digital. Una vez consolidada la información se procede a la realización del informe general de la percepción de riesgo psicosocial.', { width: pageW, align: 'justify' });
+  doc.moveDown(0.5);
+
+  doc.fontSize(9).font('Helvetica-Bold').fillColor('#1F2937');
+  doc.text('Criterios de inclusión y exclusión', { width: pageW });
+  doc.moveDown(0.2);
+  doc.fontSize(8).font('Helvetica').fillColor('#374151');
+  doc.text('Para la medición de riesgo psicosocial se tuvieron en cuenta criterios de inclusión tales como: Que el trabajador se encontrara en la nómina de la empresa, que estuviera ejerciendo sus labores y que su vinculación laboral no fuera menor a 3 meses. Como criterios de exclusión, no se tuvieron en cuenta los trabajadores que se encontraran en licencia de maternidad, licencia por luto e incapacitados el día de la medición.', { width: pageW, align: 'justify' });
+  doc.moveDown(0.5);
+}
+
+function writeDefinicionesIntralaborales(doc, pageW, drawTableFn) {
+  const m = doc.page.margins.left;
+  const rows = [];
+  for (const [domainKey, domain] of Object.entries(INTRALABORAL_DEFINITIONS)) {
+    rows.push({ isDomain: true, label: domain.label });
+    for (const [dimName, def] of Object.entries(domain.dimensions)) {
+      rows.push([dimName, def]);
+    }
+  }
+
+  // Draw as custom table with domain headers
+  const fontSize = 6.5;
+  const cellPad = 3;
+  const headerH = 18;
+  const rowH = 14;
+  const headerBg = '#B2DFDB';
+  const domainBg = '#E0F2F1';
+  const borderColor = '#B0BEC5';
+  const colWidths = [0.30, 0.70];
+
+  // Table header
+  doc.save();
+  doc.rect(m, doc.y, pageW, headerH).fillColor(headerBg).fill();
+  doc.rect(m, doc.y, pageW, headerH).strokeColor(borderColor).lineWidth(0.5).stroke();
+  doc.fontSize(fontSize).font('Helvetica-Bold').fillColor('#004D40');
+  doc.text('DOMINIO', m + cellPad, doc.y + cellPad, { width: pageW * 0.3 - cellPad * 2 });
+  doc.restore();
+  let currentY = doc.y + headerH;
+
+  rows.forEach(row => {
+    if (currentY + rowH * 2 > doc.page.height - doc.page.margins.bottom - 20) {
+      doc.addPage();
+      currentY = doc.page.margins.top;
+    }
+
+    if (row.isDomain) {
+      doc.save();
+      doc.rect(m, currentY, pageW, rowH).fillColor(domainBg).fill();
+      doc.rect(m, currentY, pageW, rowH).strokeColor(borderColor).lineWidth(0.3).stroke();
+      doc.fontSize(fontSize).font('Helvetica-Bold').fillColor('#004D40');
+      doc.text(row.label, m + cellPad, currentY + cellPad, { width: pageW - cellPad * 2 });
+      doc.restore();
+      currentY += rowH;
+    } else {
+      const textHeight = doc.fontSize(fontSize).font('Helvetica').heightOfString(row[1], { width: pageW * colWidths[1] - cellPad * 2 });
+      const actualRowH = Math.max(rowH, textHeight + cellPad * 2);
+
+      if (currentY + actualRowH > doc.page.height - doc.page.margins.bottom - 20) {
+        doc.addPage();
+        currentY = doc.page.margins.top;
+      }
+
+      doc.save();
+      doc.rect(m, currentY, pageW, actualRowH).strokeColor(borderColor).lineWidth(0.3).stroke();
+      doc.fontSize(fontSize).font('Helvetica-Bold').fillColor('#374151');
+      doc.text(row[0], m + cellPad, currentY + cellPad, { width: pageW * colWidths[0] - cellPad * 2 });
+      doc.fontSize(fontSize).font('Helvetica').fillColor('#374151');
+      doc.text(row[1], m + pageW * colWidths[0] + cellPad, currentY + cellPad, { width: pageW * colWidths[1] - cellPad * 2 });
+      doc.restore();
+      currentY += actualRowH;
+    }
+  });
+
+  doc.y = currentY + 5;
+}
+
+function writeDefinicionesExtralaborales(doc, pageW, drawTableFn) {
+  const m = doc.page.margins.left;
+  const fontSize = 6.5;
+  const cellPad = 3;
+  const headerH = 18;
+  const borderColor = '#B0BEC5';
+
+  // Header
+  doc.save();
+  doc.rect(m, doc.y, pageW, headerH).fillColor('#B2DFDB').fill();
+  doc.rect(m, doc.y, pageW, headerH).strokeColor(borderColor).lineWidth(0.5).stroke();
+  doc.fontSize(fontSize).font('Helvetica-Bold').fillColor('#004D40');
+  doc.text('DIMENSIÓN', m + cellPad, doc.y + cellPad, { width: pageW - cellPad * 2 });
+  doc.restore();
+  let currentY = doc.y + headerH;
+
+  for (const [dimName, def] of Object.entries(EXTRALABORAL_DEFINITIONS)) {
+    const textHeight = doc.fontSize(fontSize).font('Helvetica').heightOfString(def, { width: pageW * 0.7 - cellPad * 2 });
+    const rowH = Math.max(14, textHeight + cellPad * 2);
+
+    if (currentY + rowH > doc.page.height - doc.page.margins.bottom - 20) {
+      doc.addPage();
+      currentY = doc.page.margins.top;
+    }
+
+    doc.save();
+    doc.rect(m, currentY, pageW, rowH).strokeColor(borderColor).lineWidth(0.3).stroke();
+    doc.fontSize(fontSize).font('Helvetica-Bold').fillColor('#374151');
+    doc.text(dimName.toUpperCase(), m + cellPad, currentY + cellPad, { width: pageW * 0.30 - cellPad * 2 });
+    doc.fontSize(fontSize).font('Helvetica').fillColor('#374151');
+    doc.text(def, m + pageW * 0.30 + cellPad, currentY + cellPad, { width: pageW * 0.70 - cellPad * 2 });
+    doc.restore();
+    currentY += rowH;
+  }
+
+  doc.y = currentY + 5;
+}
+
+// ============================================================
+// STATIC TEXT SECTIONS (kept for backward compatibility)
 // ============================================================
 
 function writeIntroduccion(doc, pageW) {
@@ -404,12 +647,18 @@ module.exports = {
   DOMAIN_DIMENSIONS,
   EXTRALABORAL_DIMENSIONS,
   INTERVENTION_RECOMMENDATIONS,
+  INTRALABORAL_DEFINITIONS,
+  EXTRALABORAL_DEFINITIONS,
   DEMOGRAPHIC_COLORS,
   writeIntroduccion,
   writeMarcoReferencial,
   writeMarcoTeorico,
   writeMetodologia,
   writeProcedimiento,
+  writeObjetivosMetodologia,
+  writeProcedimientos,
+  writeDefinicionesIntralaborales,
+  writeDefinicionesExtralaborales,
   generateDimensionAnalysis,
   generateOverallRiskText
 };
