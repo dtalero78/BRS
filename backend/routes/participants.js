@@ -596,9 +596,9 @@ router.put('/:id', auth, authorize('admin', 'evaluator'), async (req, res) => {
     await db('audit_logs').insert({
       user_id: req.user.userId,
       action: 'update_participant',
-      entity_type: 'participant',
-      entity_id: id,
-      details: { updatedFields: Object.keys(req.body) }
+      table_name: 'participants',
+      record_id: id,
+      new_values: { updatedFields: Object.keys(req.body) }
     });
 
     res.json({

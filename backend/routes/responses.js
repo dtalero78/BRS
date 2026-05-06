@@ -128,9 +128,9 @@ router.post('/', auth, async (req, res) => {
     await db('audit_logs').insert({
       user_id: req.user.userId,
       action: 'save_responses',
-      entity_type: 'participant',
-      entity_id: participantId,
-      details: {
+      table_name: 'responses',
+      record_id: participantId,
+      new_values: {
         questionnaireType,
         responseCount: responses.length
       }
