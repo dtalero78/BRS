@@ -310,33 +310,36 @@ router.put('/:id', auth, authorize('admin', 'evaluator'), async (req, res) => {
 });
 
 // Delete evaluation
-router.delete('/:id', auth, authorize('admin'), async (req, res) => {
+router.delete('/:id', auth, authorize('admin', 'evaluator'), async (req, res) => {
   try {
     const { id } = req.params;
 
-    // Check if evaluation exists and belongs to evaluator's companies
-    const ownedIds = await getOwnedCompanyIds(req.user.userId);
-    const evaluation = await db('evaluations')
-      .where('id', id)
-      .whereIn('company_id', ownedIds)
-      .first();
+    // Admin can delete any evaluation; evaluator only their own companies' evaluations
+    const baseQuery = db('evaluations').where('id', id);
+    if (req.user.role !== 'admin') {
+      const ownedIds = await getOwnedCompanyIds(req.user.userId);
+      baseQuery.whereIn('company_id', ownedIds);
+    }
+    const evaluation = await baseQuery.first();
 
     if (!evaluation) {
       return res.status(404).json({ error: 'Evaluación no encontrada' });
     }
 
-    // Check if evaluation has participants
-    const participantCount = await db('participants')
-      .where('evaluation_id', id)
+    // Block deletion if any participant has already submitted responses
+    const completedRow = await db('responses')
+      .join('participant_evaluations', 'responses.participant_evaluation_id', 'participant_evaluations.id')
+      .where('participant_evaluations.evaluation_id', id)
       .count('* as count')
       .first();
 
-    if (participantCount.count > 0) {
-      return res.status(400).json({ 
-        error: 'No se puede eliminar una evaluación con participantes. Considera cambiar el estado a "cancelada"' 
+    if (parseInt(completedRow.count) > 0) {
+      return res.status(400).json({
+        error: 'No se puede eliminar una evaluación con respuestas registradas. Considera cambiar el estado a "cancelada".'
       });
     }
 
+    // FK cascade removes participant_evaluations, responses and results
     await db('evaluations').where('id', id).del();
 
     // Log deletion
