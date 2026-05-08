@@ -42,6 +42,7 @@ interface Participant {
   workHoursPerDay: number;
   workDaysPerWeek: number;
   formType: 'A' | 'B';
+  phone?: string;
   evaluationId: string;
   evaluationUrl?: string;
   status: 'pending' | 'in_progress' | 'completed';
@@ -99,7 +100,8 @@ export default function EvaluatorParticipants() {
     salaryRange: '1-2 SMMLV',
     workHoursPerDay: 8,
     workDaysPerWeek: 5,
-    formType: 'A' as 'A' | 'B'
+    formType: 'A' as 'A' | 'B',
+    phone: ''
   });
 
   useEffect(() => {
@@ -228,7 +230,8 @@ export default function EvaluatorParticipants() {
       salaryRange: participant.salaryRange,
       workHoursPerDay: participant.workHoursPerDay,
       workDaysPerWeek: participant.workDaysPerWeek,
-      formType: participant.formType
+      formType: participant.formType,
+      phone: participant.phone || ''
     });
     setShowModal(true);
   };
@@ -279,7 +282,8 @@ export default function EvaluatorParticipants() {
       salaryRange: '1-2 SMMLV',
       workHoursPerDay: 8,
       workDaysPerWeek: 5,
-      formType: 'A'
+      formType: 'A',
+      phone: ''
     });
   };
 
@@ -415,6 +419,12 @@ export default function EvaluatorParticipants() {
     const nombre = `${p.firstName} ${p.lastName}`;
     const url = p.evaluationUrl || '';
     return `Hola ${nombre}, te invitamos a completar la Batería de Riesgo Psicosocial. Puedes acceder a través de este enlace: ${url}`;
+  };
+
+  const waLink = (p: Participant) => {
+    const msg = encodeURIComponent(waMessage(p));
+    const phone = (p.phone || '').replace(/\D/g, '');
+    return phone ? `https://wa.me/57${phone}?text=${msg}` : `https://wa.me/?text=${msg}`;
   };
 
   if (loading) {
@@ -983,6 +993,19 @@ export default function EvaluatorParticipants() {
                       placeholder=""
                     />
                   </div>
+
+                  <div className="sm:col-span-2">
+                    <label className="block text-sm font-medium text-gray-700">
+                      Teléfono / Celular
+                    </label>
+                    <input
+                      type="tel"
+                      value={formData.phone}
+                      onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                      className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                      placeholder="3001234567"
+                    />
+                  </div>
                 </div>
 
                 <div className="flex justify-end space-x-3 pt-4 border-t">
@@ -1050,7 +1073,7 @@ export default function EvaluatorParticipants() {
                         <DocumentTextIcon className="h-5 w-5" />
                       </button>
                       <a
-                        href={`https://wa.me/?text=${encodeURIComponent(waMessage(p))}`}
+                        href={waLink(p)}
                         target="_blank"
                         rel="noopener noreferrer"
                         title="Enviar por WhatsApp"

@@ -35,7 +35,8 @@ const createParticipantSchema = Joi.object({
   salaryRange: Joi.string().allow('').optional(),
   workHoursPerDay: Joi.number().integer().min(1).max(24).required(),
   workDaysPerWeek: Joi.number().integer().min(1).max(7).required(),
-  formType: Joi.string().valid('A', 'B').required()
+  formType: Joi.string().valid('A', 'B').required(),
+  phone: Joi.string().allow('').optional()
 });
 
 // Create participant
@@ -89,7 +90,8 @@ router.post('/', auth, authorize('admin', 'evaluator'), async (req, res) => {
         salaryRange: participantData.salaryRange,
         workHoursPerDay: participantData.workHoursPerDay,
         workDaysPerWeek: participantData.workDaysPerWeek,
-        formType: participantData.formType
+        formType: participantData.formType,
+        phone: participantData.phone || ''
       };
 
       [participant] = await db('participants')
@@ -306,6 +308,7 @@ router.get('/', auth, async (req, res) => {
         workHoursPerDay: demographicData.workHoursPerDay || 8,
         workDaysPerWeek: demographicData.workDaysPerWeek || 5,
         formType: demographicData.formType || 'A',
+        phone: demographicData.phone || '',
         evaluationId: p.evaluation_id,
         evaluationName: p.evaluation_name,
         status: p.evaluation_status || 'pending',
@@ -499,6 +502,7 @@ const FIELD_KEYWORDS = {
   workHoursPerDay: [/horas.*(d[ií]a|day)/i, /horas\/d/i],
   workDaysPerWeek: [/d[ií]as.*semana/i, /d[ií]as\/sem/i],
   formType:        [/^forma$/i, /^formulario$/i, /^form$/i, /tipo.*forma/i],
+  phone:           [/tel[eé]fono/i, /celular/i, /m[oó]vil/i, /^tel$/i, /^phone$/i, /whatsapp/i],
 };
 
 function detectColumn(header) {
@@ -548,11 +552,11 @@ function normalizeContract(v) {
 router.get('/import-excel/template', (req, res) => {
   const wb = XLSX.utils.book_new();
   const ws = XLSX.utils.aoa_to_sheet([
-    ['Tipo Documento','Número Documento','Nombres','Apellidos','Año Nacimiento','Género','Estado Civil','Nivel Educativo','Área/Departamento','Cargo','Tipo Contrato','Tipo Empleo','Meses en Cargo','Rango Salarial','Horas/Día','Días/Semana','Forma (A/B)'],
-    ['CC','10234567','Juan','Pérez García','1990','Masculino','Soltero(a)','Universitario','Administración','Coordinador','Indefinido','Tiempo completo','24','3-Entre 2 y 3 SM','8','5','A'],
-    ['CC','98765432','María','López Torres','1985','Femenino','Casado(a)','Técnico','Operaciones','Auxiliar','Fijo','Tiempo completo','12','2-Entre 1 y 2 SM','8','5','B'],
+    ['Tipo Documento','Número Documento','Nombres','Apellidos','Año Nacimiento','Género','Estado Civil','Nivel Educativo','Área/Departamento','Cargo','Tipo Contrato','Tipo Empleo','Meses en Cargo','Rango Salarial','Horas/Día','Días/Semana','Forma (A/B)','Teléfono/Celular'],
+    ['CC','10234567','Juan','Pérez García','1990','Masculino','Soltero(a)','Universitario','Administración','Coordinador','Indefinido','Tiempo completo','24','3-Entre 2 y 3 SM','8','5','A','3001234567'],
+    ['CC','98765432','María','López Torres','1985','Femenino','Casado(a)','Técnico','Operaciones','Auxiliar','Fijo','Tiempo completo','12','2-Entre 1 y 2 SM','8','5','B','3109876543'],
   ]);
-  ws['!cols'] = Array(17).fill({ wch: 20 });
+  ws['!cols'] = Array(18).fill({ wch: 20 });
   XLSX.utils.book_append_sheet(wb, ws, 'Participantes');
   const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
   res.setHeader('Content-Disposition', 'attachment; filename="plantilla_participantes.xlsx"');
@@ -618,7 +622,8 @@ router.post('/import-excel', auth, authorize('admin', 'evaluator'), upload.singl
         const formType         = colMap.formType         !== undefined ? (String(row[colMap.formType]).trim().toUpperCase() === 'B' ? 'B' : 'A') : 'A';
 
         const email = `cc_${docNum}@temp.com`.toLowerCase();
-        const demographicData = { firstName, lastName, documentType: docType, documentNumber: docNum, birthYear, gender, maritalStatus, educationLevel, department, position, contractType, employmentType, tenureMonths, salaryRange, workHoursPerDay, workDaysPerWeek, formType };
+        const phone = colMap.phone !== undefined ? String(row[colMap.phone] ?? '').trim() : '';
+        const demographicData = { firstName, lastName, documentType: docType, documentNumber: docNum, birthYear, gender, maritalStatus, educationLevel, department, position, contractType, employmentType, tenureMonths, salaryRange, workHoursPerDay, workDaysPerWeek, formType, phone };
 
         // Upsert participant
         let participant = await db('participants').where({ company_id: evaluation.company_id, email }).first();
