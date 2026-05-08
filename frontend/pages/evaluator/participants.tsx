@@ -43,6 +43,7 @@ interface Participant {
   workDaysPerWeek: number;
   formType: 'A' | 'B';
   evaluationId: string;
+  evaluationUrl?: string;
   status: 'pending' | 'in_progress' | 'completed';
   completionPercentage: number;
   startedAt?: string;
@@ -69,6 +70,10 @@ export default function EvaluatorParticipants() {
   const [editingParticipant, setEditingParticipant] = useState<Participant | null>(null);
   const [photoTarget, setPhotoTarget] = useState<Participant | null>(null);
   const [manualTarget, setManualTarget] = useState<Participant | null>(null);
+
+  // WhatsApp selection state
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [showWaModal, setShowWaModal] = useState(false);
 
   // Excel import state
   const [showExcelModal, setShowExcelModal] = useState(false);
@@ -333,6 +338,14 @@ export default function EvaluatorParticipants() {
     );
   };
 
+  const toggleSelect = (id: number) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+
   const handleExcelImport = async () => {
     if (!excelEvaluationId || !excelFile) {
       toast.error('Selecciona una evaluación y un archivo');
@@ -364,7 +377,7 @@ export default function EvaluatorParticipants() {
   };
 
   // Filtrar solo por búsqueda local y tipo de formulario (los otros se filtran en el backend)
-  const filteredParticipants = participants.filter(participant => {
+  const filteredParticipants = participants.filter((participant: Participant) => {
     const matchesSearch = searchTerm === '' || 
                          participant.firstName.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          participant.lastName.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -376,6 +389,33 @@ export default function EvaluatorParticipants() {
     
     return matchesSearch && matchesFormType;
   });
+
+  const allFilteredSelected = filteredParticipants.length > 0 && filteredParticipants.every(p => selectedIds.has(p.id));
+  const someFilteredSelected = filteredParticipants.some(p => selectedIds.has(p.id));
+
+  const toggleSelectAll = () => {
+    if (allFilteredSelected) {
+      setSelectedIds(prev => {
+        const next = new Set(prev);
+        filteredParticipants.forEach(p => next.delete(p.id));
+        return next;
+      });
+    } else {
+      setSelectedIds(prev => {
+        const next = new Set(prev);
+        filteredParticipants.forEach(p => next.add(p.id));
+        return next;
+      });
+    }
+  };
+
+  const selectedParticipants = filteredParticipants.filter(p => selectedIds.has(p.id));
+
+  const waMessage = (p: Participant) => {
+    const nombre = `${p.firstName} ${p.lastName}`;
+    const url = p.evaluationUrl || '';
+    return `Hola ${nombre}, te invitamos a completar la Batería de Riesgo Psicosocial. Puedes acceder a través de este enlace: ${url}`;
+  };
 
   if (loading) {
     return (
@@ -398,6 +438,18 @@ export default function EvaluatorParticipants() {
             </p>
           </div>
           <div className="mt-4 sm:mt-0 flex gap-2">
+            {selectedIds.size > 0 && (
+              <button
+                onClick={() => setShowWaModal(true)}
+                className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
+              >
+                <svg className="h-4 w-4 mr-2" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/>
+                  <path d="M12 0C5.373 0 0 5.373 0 12c0 2.127.559 4.122 1.534 5.854L.046 23.953a.5.5 0 0 0 .612.612l6.1-1.488A11.945 11.945 0 0 0 12 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.9a9.878 9.878 0 0 1-5.031-1.374l-.36-.214-3.732.91.936-3.63-.235-.374A9.867 9.867 0 0 1 2.1 12C2.1 6.534 6.534 2.1 12 2.1S21.9 6.534 21.9 12 17.466 21.9 12 21.9z"/>
+                </svg>
+                WhatsApp ({selectedIds.size})
+              </button>
+            )}
             <button
               onClick={() => {
                 setExcelFile(null);
@@ -604,6 +656,15 @@ export default function EvaluatorParticipants() {
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50 sticky top-0 z-10 shadow-sm">
                   <tr>
+                    <th className="px-4 py-3 w-10">
+                      <input
+                        type="checkbox"
+                        checked={allFilteredSelected}
+                        ref={el => { if (el) el.indeterminate = someFilteredSelected && !allFilteredSelected; }}
+                        onChange={toggleSelectAll}
+                        className="h-4 w-4 rounded border-gray-300 text-green-600 focus:ring-green-500"
+                      />
+                    </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Participante
                     </th>
@@ -634,7 +695,15 @@ export default function EvaluatorParticipants() {
                   {filteredParticipants.map((participant) => {
                     const evaluation = evaluations.find(e => e.id === participant.evaluationId);
                     return (
-                      <tr key={participant.id} className="hover:bg-gray-50">
+                      <tr key={participant.id} className={`hover:bg-gray-50 ${selectedIds.has(participant.id) ? 'bg-green-50' : ''}`}>
+                        <td className="px-4 py-4 w-10">
+                          <input
+                            type="checkbox"
+                            checked={selectedIds.has(participant.id)}
+                            onChange={() => toggleSelect(participant.id)}
+                            className="h-4 w-4 rounded border-gray-300 text-green-600 focus:ring-green-500"
+                          />
+                        </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div className="flex items-center">
                             <div className="h-10 w-10 flex items-center justify-center rounded-full bg-gray-100">
@@ -936,6 +1005,88 @@ export default function EvaluatorParticipants() {
                   </button>
                 </div>
               </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* WhatsApp Modal */}
+      {showWaModal && (
+        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+          <div className="relative top-10 mx-auto p-6 border w-full max-w-2xl shadow-lg rounded-md bg-white">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-medium text-gray-900">
+                Enviar links por WhatsApp — {selectedParticipants.length} participante(s)
+              </h3>
+              <button onClick={() => setShowWaModal(false)} className="text-gray-400 hover:text-gray-600 text-xl leading-none">&times;</button>
+            </div>
+
+            <p className="text-sm text-gray-500 mb-4">
+              Haz clic en el ícono de WhatsApp de cada participante para abrir la conversación con el mensaje pre-cargado. O copia el link individualmente.
+            </p>
+
+            <div className="space-y-2 max-h-[60vh] overflow-y-auto pr-1">
+              {selectedParticipants.map(p => (
+                <div key={p.id} className="flex items-center gap-3 p-3 rounded-lg border border-gray-200 hover:bg-gray-50">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-900 truncate">{p.firstName} {p.lastName}</p>
+                    <p className="text-xs text-gray-500">{p.documentType}: {p.documentNumber} · {p.position}</p>
+                    {p.evaluationUrl ? (
+                      <p className="text-xs text-blue-600 truncate">{p.evaluationUrl}</p>
+                    ) : (
+                      <p className="text-xs text-red-500">Sin link generado</p>
+                    )}
+                  </div>
+                  {p.evaluationUrl && (
+                    <>
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText(p.evaluationUrl!);
+                          toast.success('Link copiado');
+                        }}
+                        title="Copiar link"
+                        className="flex-shrink-0 text-gray-400 hover:text-blue-600"
+                      >
+                        <DocumentTextIcon className="h-5 w-5" />
+                      </button>
+                      <a
+                        href={`https://wa.me/?text=${encodeURIComponent(waMessage(p))}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title="Enviar por WhatsApp"
+                        className="flex-shrink-0 text-gray-400 hover:text-green-600"
+                      >
+                        <svg className="h-6 w-6" viewBox="0 0 24 24" fill="currentColor">
+                          <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/>
+                          <path d="M12 0C5.373 0 0 5.373 0 12c0 2.127.559 4.122 1.534 5.854L.046 23.953a.5.5 0 0 0 .612.612l6.1-1.488A11.945 11.945 0 0 0 12 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.9a9.878 9.878 0 0 1-5.031-1.374l-.36-.214-3.732.91.936-3.63-.235-.374A9.867 9.867 0 0 1 2.1 12C2.1 6.534 6.534 2.1 12 2.1S21.9 6.534 21.9 12 17.466 21.9 12 21.9z"/>
+                        </svg>
+                      </a>
+                    </>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            <div className="flex justify-between items-center pt-4 border-t mt-4">
+              <button
+                onClick={() => {
+                  const text = selectedParticipants
+                    .filter(p => p.evaluationUrl)
+                    .map(p => waMessage(p))
+                    .join('\n\n---\n\n');
+                  navigator.clipboard.writeText(text);
+                  toast.success('Todos los mensajes copiados');
+                }}
+                className="text-sm text-blue-600 hover:underline"
+              >
+                Copiar todos los mensajes
+              </button>
+              <button
+                onClick={() => setShowWaModal(false)}
+                className="px-4 py-2 text-sm font-medium text-white bg-gray-600 rounded-md hover:bg-gray-700"
+              >
+                Cerrar
+              </button>
             </div>
           </div>
         </div>
