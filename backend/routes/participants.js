@@ -545,7 +545,7 @@ function normalizeContract(v) {
   return 'Otro';
 }
 
-router.get('/import-excel/template', auth, authorize('admin', 'evaluator'), (req, res) => {
+router.get('/import-excel/template', (req, res) => {
   const wb = XLSX.utils.book_new();
   const ws = XLSX.utils.aoa_to_sheet([
     ['Tipo Documento','Número Documento','Nombres','Apellidos','Año Nacimiento','Género','Estado Civil','Nivel Educativo','Área/Departamento','Cargo','Tipo Contrato','Tipo Empleo','Meses en Cargo','Rango Salarial','Horas/Día','Días/Semana','Forma (A/B)'],
