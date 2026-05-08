@@ -3,6 +3,10 @@ const router = express.Router();
 const Joi = require('joi');
 const { auth, authorize, getOwnedCompanyIds } = require('../middleware/auth');
 const db = require('../config/database');
+const multer = require('multer');
+const XLSX = require('xlsx');
+
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 
 // Helper to get the base URL for participant evaluation links
 function getBaseUrl(req) {
@@ -474,6 +478,180 @@ router.get('/evaluation/:evaluationId', auth, async (req, res) => {
     res.status(500).json({ error: 'Error interno del servidor' });
   }
 });
+
+// ─── Excel Import ────────────────────────────────────────────────────────────
+
+const FIELD_KEYWORDS = {
+  documentType:    [/tipo.*(doc|cc|c[eé]dula)/i, /tipo documento/i],
+  documentNumber:  [/n[uú]mero.*(doc|cc)/i, /n[uú]m.*doc/i, /no.*doc/i, /^c[eé]dula$/i, /^cc$/i, /^documento$/i, /^n[uú]mero$/i],
+  firstName:       [/^nombres?$/i, /first.*name/i],
+  lastName:        [/^apellidos?$/i, /last.*name/i],
+  birthYear:       [/a[ñn]o.*nac/i, /nacimiento/i, /birth/i],
+  gender:          [/^g[eé]nero$/i, /^sexo$/i, /sex$/i],
+  maritalStatus:   [/estado.*civil/i, /civil/i, /marital/i],
+  educationLevel:  [/nivel.*educ/i, /educac/i, /escolar/i, /estudio/i],
+  department:      [/^[aá]rea$/i, /departamento/i, /department/i],
+  position:        [/^cargo$/i, /^puesto$/i, /^rol$/i, /position/i],
+  contractType:    [/tipo.*contrato/i, /contrato/i],
+  employmentType:  [/tipo.*empleo/i, /tipo.*vinc/i, /vinculaci/i],
+  tenureMonths:    [/meses/i, /antig[uü]edad/i, /tenure/i],
+  salaryRange:     [/salario/i, /sueldo/i, /rango.*sal/i, /salary/i],
+  workHoursPerDay: [/horas.*(d[ií]a|day)/i, /horas\/d/i],
+  workDaysPerWeek: [/d[ií]as.*semana/i, /d[ií]as\/sem/i],
+  formType:        [/^forma$/i, /^formulario$/i, /^form$/i, /tipo.*forma/i],
+};
+
+function detectColumn(header) {
+  const h = String(header).trim();
+  for (const [field, patterns] of Object.entries(FIELD_KEYWORDS)) {
+    if (patterns.some(p => p.test(h))) return field;
+  }
+  return null;
+}
+
+function normalizeGender(v) {
+  const u = String(v).trim().toUpperCase();
+  if (u === 'M' || /^MAS|^HOM/i.test(u)) return 'Masculino';
+  if (u === 'F' || /^FEM|^MUJ/i.test(u)) return 'Femenino';
+  return 'Otro';
+}
+function normalizeMaritalStatus(v) {
+  const l = String(v).trim().toLowerCase();
+  if (/cas/.test(l)) return 'Casado(a)';
+  if (/uni|libre|convi/.test(l)) return 'Unión libre';
+  if (/sep/.test(l)) return 'Separado(a)';
+  if (/div/.test(l)) return 'Divorciado(a)';
+  if (/viu/.test(l)) return 'Viudo(a)';
+  return 'Soltero(a)';
+}
+function normalizeEducation(v) {
+  const l = String(v).trim().toLowerCase();
+  if (/doc/.test(l)) return 'Doctorado';
+  if (/maes|master/.test(l)) return 'Maestría';
+  if (/espec|posg/.test(l)) return 'Especialización';
+  if (/univ|prof|licenc/.test(l)) return 'Universitario';
+  if (/tecno.*log/.test(l)) return 'Tecnólogo';
+  if (/tecn/.test(l)) return 'Técnico';
+  if (/bach|secu|media/.test(l)) return 'Bachiller';
+  if (/prim/.test(l)) return 'Primaria';
+  return String(v).trim() || 'Bachiller';
+}
+function normalizeContract(v) {
+  const l = String(v).trim().toLowerCase();
+  if (/indef/.test(l)) return 'Indefinido';
+  if (/fijo/.test(l)) return 'Fijo';
+  if (/prest|servic|honor/.test(l)) return 'Prestación de servicios';
+  if (/aprendiz|sena|pasant/.test(l)) return 'Aprendizaje';
+  return 'Otro';
+}
+
+router.get('/import-excel/template', auth, authorize('admin', 'evaluator'), (req, res) => {
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet([
+    ['Tipo Documento','Número Documento','Nombres','Apellidos','Año Nacimiento','Género','Estado Civil','Nivel Educativo','Área/Departamento','Cargo','Tipo Contrato','Tipo Empleo','Meses en Cargo','Rango Salarial','Horas/Día','Días/Semana','Forma (A/B)'],
+    ['CC','10234567','Juan','Pérez García','1990','Masculino','Soltero(a)','Universitario','Administración','Coordinador','Indefinido','Tiempo completo','24','3-Entre 2 y 3 SM','8','5','A'],
+    ['CC','98765432','María','López Torres','1985','Femenino','Casado(a)','Técnico','Operaciones','Auxiliar','Fijo','Tiempo completo','12','2-Entre 1 y 2 SM','8','5','B'],
+  ]);
+  ws['!cols'] = Array(17).fill({ wch: 20 });
+  XLSX.utils.book_append_sheet(wb, ws, 'Participantes');
+  const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+  res.setHeader('Content-Disposition', 'attachment; filename="plantilla_participantes.xlsx"');
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.send(buf);
+});
+
+router.post('/import-excel', auth, authorize('admin', 'evaluator'), upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'No se recibió archivo' });
+    const { evaluationId } = req.body;
+    if (!evaluationId) return res.status(400).json({ error: 'evaluationId es requerido' });
+
+    const companyIds = await getOwnedCompanyIds(req.user.userId);
+    const evaluation = await db('evaluations')
+      .where('id', evaluationId)
+      .whereIn('company_id', companyIds)
+      .first();
+    if (!evaluation) return res.status(404).json({ error: 'Evaluación no encontrada' });
+
+    const wb = XLSX.read(req.file.buffer, { type: 'buffer' });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+    if (rows.length < 2) return res.status(400).json({ error: 'El archivo no tiene datos' });
+
+    // Map headers to fields
+    const headers = rows[0];
+    const colMap = {};
+    headers.forEach((h, i) => {
+      const field = detectColumn(h);
+      if (field && !(field in colMap)) colMap[field] = i;
+    });
+
+    if (!colMap.documentNumber) {
+      return res.status(400).json({ error: 'No se encontró columna de número de documento. Revisa la plantilla.' });
+    }
+
+    const results = { created: 0, skipped: 0, errors: [] };
+
+    for (let r = 1; r < rows.length; r++) {
+      const row = rows[r];
+      const docNum = String(row[colMap.documentNumber] ?? '').trim();
+      if (!docNum) continue;
+
+      try {
+        const docType = colMap.documentType !== undefined
+          ? (() => { const v = String(row[colMap.documentType]).trim().toUpperCase(); return v.includes('EX') || v === 'CE' ? 'CE' : v.includes('PAS') ? 'Pasaporte' : 'CC'; })()
+          : 'CC';
+        const firstName   = colMap.firstName   !== undefined ? String(row[colMap.firstName]).trim()   : 'Sin nombre';
+        const lastName    = colMap.lastName    !== undefined ? String(row[colMap.lastName]).trim()    : 'Sin apellido';
+        const birthYear   = colMap.birthYear   !== undefined ? parseInt(row[colMap.birthYear]) || 1990 : 1990;
+        const gender      = colMap.gender      !== undefined ? normalizeGender(row[colMap.gender])   : 'Masculino';
+        const maritalStatus    = colMap.maritalStatus    !== undefined ? normalizeMaritalStatus(row[colMap.maritalStatus])    : 'Soltero(a)';
+        const educationLevel   = colMap.educationLevel   !== undefined ? normalizeEducation(row[colMap.educationLevel])      : 'Bachiller';
+        const department       = colMap.department       !== undefined ? String(row[colMap.department]).trim()               : 'General';
+        const position         = colMap.position         !== undefined ? String(row[colMap.position]).trim()                 : 'Empleado';
+        const contractType     = colMap.contractType     !== undefined ? normalizeContract(row[colMap.contractType])         : 'Indefinido';
+        const employmentType   = colMap.employmentType   !== undefined ? String(row[colMap.employmentType]).trim() || 'Tiempo completo' : 'Tiempo completo';
+        const tenureMonths     = colMap.tenureMonths     !== undefined ? parseInt(row[colMap.tenureMonths]) || 0              : 0;
+        const salaryRange      = colMap.salaryRange      !== undefined ? String(row[colMap.salaryRange]).trim()               : '';
+        const workHoursPerDay  = colMap.workHoursPerDay  !== undefined ? parseInt(row[colMap.workHoursPerDay]) || 8           : 8;
+        const workDaysPerWeek  = colMap.workDaysPerWeek  !== undefined ? parseInt(row[colMap.workDaysPerWeek]) || 5           : 5;
+        const formType         = colMap.formType         !== undefined ? (String(row[colMap.formType]).trim().toUpperCase() === 'B' ? 'B' : 'A') : 'A';
+
+        const email = `cc_${docNum}@temp.com`.toLowerCase();
+        const demographicData = { firstName, lastName, documentType: docType, documentNumber: docNum, birthYear, gender, maritalStatus, educationLevel, department, position, contractType, employmentType, tenureMonths, salaryRange, workHoursPerDay, workDaysPerWeek, formType };
+
+        // Upsert participant
+        let participant = await db('participants').where({ company_id: evaluation.company_id, email }).first();
+        if (!participant) {
+          [participant] = await db('participants').insert({ company_id: evaluation.company_id, email, demographic_data: JSON.stringify(demographicData) }).returning('*');
+        } else {
+          await db('participants').where('id', participant.id).update({ demographic_data: JSON.stringify(demographicData), updated_at: new Date() });
+        }
+
+        // Assign to evaluation if not already assigned
+        const existing = await db('participant_evaluations').where({ evaluation_id: evaluationId, participant_id: participant.id }).first();
+        if (!existing) {
+          const { v4: uuidv4 } = require('uuid');
+          const accessToken = uuidv4();
+          const tokenExpiresAt = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000);
+          await db('participant_evaluations').insert({ evaluation_id: evaluationId, participant_id: participant.id, status: 'assigned', assigned_at: new Date(), access_token: accessToken, token_expires_at: tokenExpiresAt });
+          results.created++;
+        } else {
+          results.skipped++;
+        }
+      } catch (rowErr) {
+        results.errors.push({ row: r + 1, error: rowErr.message });
+      }
+    }
+
+    res.json({ message: 'Importación completada', ...results });
+  } catch (error) {
+    console.error('Import participants excel error:', error);
+    res.status(500).json({ error: 'Error interno del servidor' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 // Get participant by ID
 router.get('/:id', auth, async (req, res) => {

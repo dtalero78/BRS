@@ -13,7 +13,11 @@ import {
   MagnifyingGlassIcon,
   FunnelIcon,
   CameraIcon,
-  DocumentTextIcon
+  DocumentTextIcon,
+  ArrowUpTrayIcon,
+  ArrowDownTrayIcon,
+  CheckCircleIcon,
+  ExclamationCircleIcon,
 } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import PhotoImportModal from '../../components/PhotoImportModal';
@@ -65,6 +69,13 @@ export default function EvaluatorParticipants() {
   const [editingParticipant, setEditingParticipant] = useState<Participant | null>(null);
   const [photoTarget, setPhotoTarget] = useState<Participant | null>(null);
   const [manualTarget, setManualTarget] = useState<Participant | null>(null);
+
+  // Excel import state
+  const [showExcelModal, setShowExcelModal] = useState(false);
+  const [excelEvaluationId, setExcelEvaluationId] = useState('');
+  const [excelFile, setExcelFile] = useState<File | null>(null);
+  const [excelLoading, setExcelLoading] = useState(false);
+  const [excelResult, setExcelResult] = useState<{ created: number; skipped: number; errors: { row: number; error: string }[] } | null>(null);
   const [formData, setFormData] = useState({
     evaluationId: '',
     firstName: '',
@@ -322,6 +333,36 @@ export default function EvaluatorParticipants() {
     );
   };
 
+  const handleExcelImport = async () => {
+    if (!excelEvaluationId || !excelFile) {
+      toast.error('Selecciona una evaluación y un archivo');
+      return;
+    }
+    setExcelLoading(true);
+    try {
+      const token = localStorage.getItem('token');
+      const body = new FormData();
+      body.append('file', excelFile);
+      body.append('evaluationId', excelEvaluationId);
+      const response = await fetch('/api/participants/import-excel', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body,
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        toast.error(data.error || 'Error al importar');
+        return;
+      }
+      setExcelResult(data);
+      fetchParticipants();
+    } catch {
+      toast.error('Error de conexión');
+    } finally {
+      setExcelLoading(false);
+    }
+  };
+
   // Filtrar solo por búsqueda local y tipo de formulario (los otros se filtran en el backend)
   const filteredParticipants = participants.filter(participant => {
     const matchesSearch = searchTerm === '' || 
@@ -356,7 +397,19 @@ export default function EvaluatorParticipants() {
               Gestiona los participantes de las evaluaciones de riesgo psicosocial
             </p>
           </div>
-          <div className="mt-4 sm:mt-0">
+          <div className="mt-4 sm:mt-0 flex gap-2">
+            <button
+              onClick={() => {
+                setExcelFile(null);
+                setExcelEvaluationId('');
+                setExcelResult(null);
+                setShowExcelModal(true);
+              }}
+              className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+            >
+              <ArrowUpTrayIcon className="h-4 w-4 mr-2" />
+              Importar Excel
+            </button>
             <button
               onClick={() => {
                 setEditingParticipant(null);
@@ -884,6 +937,124 @@ export default function EvaluatorParticipants() {
                 </div>
               </form>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Excel Import Modal */}
+      {showExcelModal && (
+        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+          <div className="relative top-20 mx-auto p-6 border w-full max-w-lg shadow-lg rounded-md bg-white">
+            <h3 className="text-lg font-medium text-gray-900 mb-4">Importar participantes desde Excel</h3>
+
+            {!excelResult ? (
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Evaluación *</label>
+                  <select
+                    value={excelEvaluationId}
+                    onChange={(e) => setExcelEvaluationId(e.target.value)}
+                    className="block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                  >
+                    <option value="">Seleccionar evaluación</option>
+                    {evaluations.filter(e => e.status === 'active').map(ev => (
+                      <option key={ev.id} value={ev.id}>{ev.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Archivo Excel *</label>
+                  <input
+                    type="file"
+                    accept=".xlsx,.xls,.csv"
+                    onChange={(e) => setExcelFile(e.target.files?.[0] ?? null)}
+                    className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                  />
+                  <p className="mt-1 text-xs text-gray-500">Formatos: .xlsx, .xls, .csv — máx. 5 MB</p>
+                </div>
+
+                <a
+                  href="/api/participants/import-excel/template"
+                  className="inline-flex items-center text-sm text-blue-600 hover:underline"
+                  download
+                >
+                  <ArrowDownTrayIcon className="h-4 w-4 mr-1" />
+                  Descargar plantilla de ejemplo
+                </a>
+
+                <div className="flex justify-end gap-2 pt-2 border-t">
+                  <button
+                    onClick={() => setShowExcelModal(false)}
+                    className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={handleExcelImport}
+                    disabled={excelLoading || !excelEvaluationId || !excelFile}
+                    className="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50"
+                  >
+                    {excelLoading ? (
+                      <span className="flex items-center gap-2"><span className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />Importando...</span>
+                    ) : (
+                      <><ArrowUpTrayIcon className="h-4 w-4 mr-1" />Importar</>
+                    )}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="grid grid-cols-3 gap-3 text-center">
+                  <div className="bg-green-50 rounded-lg p-3">
+                    <p className="text-2xl font-bold text-green-700">{excelResult.created}</p>
+                    <p className="text-xs text-green-600">Creados</p>
+                  </div>
+                  <div className="bg-yellow-50 rounded-lg p-3">
+                    <p className="text-2xl font-bold text-yellow-700">{excelResult.skipped}</p>
+                    <p className="text-xs text-yellow-600">Ya existían</p>
+                  </div>
+                  <div className="bg-red-50 rounded-lg p-3">
+                    <p className="text-2xl font-bold text-red-700">{excelResult.errors.length}</p>
+                    <p className="text-xs text-red-600">Errores</p>
+                  </div>
+                </div>
+
+                {excelResult.errors.length > 0 && (
+                  <div className="max-h-32 overflow-y-auto rounded-md bg-red-50 p-3 space-y-1">
+                    {excelResult.errors.map((e, i) => (
+                      <p key={i} className="text-xs text-red-700">Fila {e.row}: {e.error}</p>
+                    ))}
+                  </div>
+                )}
+
+                {excelResult.created > 0 && (
+                  <p className="flex items-center gap-1 text-sm text-green-700">
+                    <CheckCircleIcon className="h-4 w-4" />
+                    {excelResult.created} participante(s) asignado(s) a la evaluación
+                  </p>
+                )}
+
+                <div className="flex justify-end gap-2 pt-2 border-t">
+                  <button
+                    onClick={() => {
+                      setExcelFile(null);
+                      setExcelEvaluationId('');
+                      setExcelResult(null);
+                    }}
+                    className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+                  >
+                    Importar otro
+                  </button>
+                  <button
+                    onClick={() => { setShowExcelModal(false); setExcelResult(null); }}
+                    className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700"
+                  >
+                    Cerrar
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
