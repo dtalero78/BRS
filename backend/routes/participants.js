@@ -185,6 +185,7 @@ router.get('/', auth, async (req, res) => {
     let query = db('participants')
       [joinType]('participant_evaluations as pe', 'participants.id', 'pe.participant_id')
       [joinType]('evaluations', 'pe.evaluation_id', 'evaluations.id')
+      .leftJoin('companies', 'participants.company_id', 'companies.id')
       .whereIn('participants.company_id', companyIds)
       .orderBy('participants.created_at', 'desc');
 
@@ -206,7 +207,8 @@ router.get('/', auth, async (req, res) => {
         'pe.status as evaluation_status',
         'pe.assigned_at',
         'pe.completed_at',
-        'pe.access_token'
+        'pe.access_token',
+        'companies.name as company_name'
       );
 
     // Get total count usando el mismo tipo de JOIN
@@ -311,6 +313,7 @@ router.get('/', auth, async (req, res) => {
         phone: demographicData.phone || '',
         evaluationId: p.evaluation_id,
         evaluationName: p.evaluation_name,
+        companyName: p.company_name || '',
         status: p.evaluation_status || 'pending',
         completionPercentage: completionPercentage,
         startedAt: p.assigned_at,
