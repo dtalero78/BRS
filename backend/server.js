@@ -108,6 +108,71 @@ app.post('/api/visitor-notify', visitNotifyLimiter, async (req, res) => {
   }
 });
 
+// --- Visitor Live Chat ---
+const chatSessions = new Map(); // sessionId -> { messages, lastActivity, hasVisitorMessages }
+
+setInterval(() => {
+  const cutoff = Date.now() - 2 * 60 * 60 * 1000;
+  for (const [sid, session] of chatSessions) {
+    if (session.lastActivity < cutoff) chatSessions.delete(sid);
+  }
+}, 60 * 60 * 1000);
+
+app.post('/api/chat/send', async (req, res) => {
+  const { sessionId, message } = req.body || {};
+  if (!sessionId || !message?.trim()) return res.status(400).json({ error: 'Missing fields' });
+
+  if (!chatSessions.has(sessionId)) {
+    chatSessions.set(sessionId, { messages: [], lastActivity: Date.now(), hasVisitorMessages: false });
+  }
+  const session = chatSessions.get(sessionId);
+  const text = message.trim().slice(0, 500);
+  session.messages.push({ role: 'visitor', text, ts: Date.now() });
+  session.lastActivity = Date.now();
+  session.hasVisitorMessages = true;
+
+  const WHAPI_TOKEN = process.env.WHAPI_TOKEN;
+  const NOTIFY_NUMBER = (process.env.VISITOR_NOTIFY_NUMBER || '573008021701').replace(/[+\-\s]/g, '');
+  if (WHAPI_TOKEN) {
+    const waMsg = `💬 *Visitante web:*\n${text}`;
+    const fetch = (await import('node-fetch')).default;
+    fetch('https://gate.whapi.cloud/messages/text', {
+      method: 'POST',
+      headers: { 'accept': 'application/json', 'authorization': `Bearer ${WHAPI_TOKEN}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ typing_time: 0, to: `${NOTIFY_NUMBER}@s.whatsapp.net`, body: waMsg })
+    }).catch(err => console.error('Chat WA send error:', err.message));
+  }
+
+  res.json({ ok: true });
+});
+
+app.post('/api/chat/webhook', (req, res) => {
+  try {
+    const { messages = [] } = req.body || {};
+    for (const msg of messages) {
+      if (!msg.from_me || msg.source === 'api' || msg.type !== 'text') continue;
+      const text = msg.text?.body?.trim();
+      if (!text) continue;
+      const cutoff = Date.now() - 30 * 60 * 1000;
+      for (const [, session] of chatSessions) {
+        if (session.hasVisitorMessages && session.lastActivity > cutoff) {
+          session.messages.push({ role: 'agent', text, ts: Date.now() });
+          session.lastActivity = Date.now();
+        }
+      }
+    }
+  } catch (err) {
+    console.error('Chat webhook error:', err.message);
+  }
+  res.json({ ok: true });
+});
+
+app.get('/api/chat/messages/:sessionId', (req, res) => {
+  const session = chatSessions.get(req.params.sessionId);
+  if (session) session.lastActivity = Date.now();
+  res.json({ messages: session?.messages || [] });
+});
+
 // Health check endpoint
 app.get('/health', (req, res) => {
   res.status(200).json({
