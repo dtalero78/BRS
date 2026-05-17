@@ -1,6 +1,67 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../config/database');
+const calculateResults = require('../utils/calculate-results');
+const { calculateCopingResults } = require('../utils/calculate-coping');
+
+async function autoCalculateResults(peId) {
+  try {
+    const responses = await db('responses').where('participant_evaluation_id', peId).select('*');
+    const toProcess = responses.filter(r => r.questionnaire_type !== 'ficha_datos');
+    if (toProcess.length === 0) return;
+
+    const hasBForm = toProcess.some(r => r.questionnaire_type === 'intralaboral_b');
+    const occupationalGroup = hasBForm ? 'auxiliares' : 'jefes';
+    const allResults = [];
+
+    for (const responseRecord of toProcess) {
+      let responseData = typeof responseRecord.responses === 'string'
+        ? JSON.parse(responseRecord.responses)
+        : responseRecord.responses;
+
+      const formattedResponses = Array.isArray(responseData)
+        ? responseData.map(item => ({
+            question_number: parseInt(item.questionNumber || item.question_number),
+            response_value: parseInt(item.responseValue || item.response_value) || 0
+          }))
+        : Object.entries(responseData).map(([q, v]) => ({
+            question_number: parseInt(q),
+            response_value: parseInt(v) || 0
+          }));
+
+      const calculated = responseRecord.questionnaire_type === 'coping'
+        ? calculateCopingResults(formattedResponses)
+        : await calculateResults(responseRecord.questionnaire_type, formattedResponses, { occupationalGroup });
+
+      allResults.push(...calculated);
+    }
+
+    const resultsByType = {};
+    allResults.forEach(r => {
+      if (!resultsByType[r.questionnaireType]) resultsByType[r.questionnaireType] = [];
+      resultsByType[r.questionnaireType].push({
+        dimension: r.dimension,
+        rawScore: r.rawScore,
+        transformedScore: r.transformedScore,
+        percentile: r.percentile,
+        riskLevel: r.riskLevel
+      });
+    });
+
+    await db.transaction(async (trx) => {
+      await trx('results').where('participant_evaluation_id', peId).del();
+      const rows = Object.entries(resultsByType).map(([qType, res]) => ({
+        participant_evaluation_id: peId,
+        questionnaire_type: qType,
+        results: JSON.stringify(res),
+        calculated_at: new Date()
+      }));
+      if (rows.length > 0) await trx('results').insert(rows);
+    });
+  } catch (err) {
+    console.error('Auto-calculate error for PE', peId, ':', err.message);
+  }
+}
 
 // Validate access token and get participant data
 router.get('/validate/:token', async (req, res) => {
@@ -404,6 +465,10 @@ router.post('/:token/responses', async (req, res) => {
           .update(updateData);
       }
     });
+
+    if (isCompleted) {
+      autoCalculateResults(participantEvaluation.pe_id);
+    }
 
     res.json({
       message: 'Respuestas guardadas exitosamente',
