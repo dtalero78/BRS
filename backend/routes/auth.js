@@ -65,7 +65,8 @@ router.post('/register', async (req, res) => {
     await db('users').insert({
       email,
       password_hash: passwordHash,
-      role: 'evaluator'
+      role: 'evaluator',
+      full_name: `${firstName} ${lastName}`.trim()
     });
 
     res.status(201).json({
@@ -148,7 +149,7 @@ router.post('/login', async (req, res) => {
 router.get('/profile', auth, async (req, res) => {
   try {
     const user = await db('users')
-      .select('id', 'email', 'role')
+      .select('id', 'email', 'role', 'full_name', 'professional_title', 'license_number', 'signature_image')
       .where('id', req.user.userId)
       .first();
 
@@ -166,11 +167,77 @@ router.get('/profile', auth, async (req, res) => {
       id: user.id,
       email: user.email,
       role: user.role,
+      full_name: user.full_name,
+      professional_title: user.professional_title,
+      license_number: user.license_number,
+      signature_image: user.signature_image,
       companies
     });
 
   } catch (error) {
     console.error('Profile error:', error);
+    res.status(500).json({ error: 'Error interno del servidor' });
+  }
+});
+
+// Update profile
+router.put('/profile', auth, async (req, res) => {
+  try {
+    const { full_name, professional_title, license_number } = req.body;
+
+    await db('users')
+      .where('id', req.user.userId)
+      .update({
+        full_name: full_name || null,
+        professional_title: professional_title || null,
+        license_number: license_number || null,
+        updated_at: db.fn.now()
+      });
+
+    res.json({ message: 'Perfil actualizado exitosamente' });
+  } catch (error) {
+    console.error('Update profile error:', error);
+    res.status(500).json({ error: 'Error interno del servidor' });
+  }
+});
+
+// Upload signature image (base64)
+router.post('/profile/signature', auth, async (req, res) => {
+  try {
+    const { signature_image } = req.body;
+
+    if (!signature_image) {
+      return res.status(400).json({ error: 'No se recibió imagen' });
+    }
+    if (!signature_image.startsWith('data:image/')) {
+      return res.status(400).json({ error: 'Formato de imagen inválido' });
+    }
+    // ~500KB limit (base64 is ~1.33x the binary size)
+    if (signature_image.length > 700000) {
+      return res.status(400).json({ error: 'La imagen es demasiado grande. Máximo 500KB.' });
+    }
+
+    await db('users')
+      .where('id', req.user.userId)
+      .update({ signature_image, updated_at: db.fn.now() });
+
+    res.json({ message: 'Firma guardada exitosamente' });
+  } catch (error) {
+    console.error('Upload signature error:', error);
+    res.status(500).json({ error: 'Error interno del servidor' });
+  }
+});
+
+// Delete signature image
+router.delete('/profile/signature', auth, async (req, res) => {
+  try {
+    await db('users')
+      .where('id', req.user.userId)
+      .update({ signature_image: null, updated_at: db.fn.now() });
+
+    res.json({ message: 'Firma eliminada' });
+  } catch (error) {
+    console.error('Delete signature error:', error);
     res.status(500).json({ error: 'Error interno del servidor' });
   }
 });

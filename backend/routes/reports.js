@@ -85,6 +85,19 @@ router.post('/individual', auth, async (req, res) => {
       .first();
     const ficha = fichaRow ? resolveFicha(fichaRow.responses) : null;
 
+    // Get evaluator info
+    const evaluatorRow = await db('users')
+      .where('id', req.user.userId)
+      .select('email', 'full_name', 'professional_title', 'license_number', 'signature_image')
+      .first();
+    const evaluator = {
+      email: evaluatorRow?.email || '',
+      fullName: evaluatorRow?.full_name || evaluatorRow?.email || 'Evaluador BRS Digital',
+      title: evaluatorRow?.professional_title || 'Especialista en Psicología Ocupacional y Organizacional',
+      license: evaluatorRow?.license_number || null,
+      signatureImage: evaluatorRow?.signature_image || null,
+    };
+
     // Generate PDF
     const doc = new PDFDocument({ size: 'A4', margin: 50, bufferPages: true });
 
@@ -97,6 +110,7 @@ router.post('/individual', auth, async (req, res) => {
       demo,
       resultsByType,
       ficha,
+      evaluator,
     });
 
     doc.end();
@@ -181,7 +195,7 @@ router.post('/organizational', auth, async (req, res) => {
     // Get evaluator info
     const evaluator = await db('users')
       .where('id', req.user.userId)
-      .select('email')
+      .select('email', 'full_name', 'professional_title', 'license_number', 'signature_image')
       .first();
 
     // Aggregate data
@@ -212,7 +226,13 @@ router.post('/organizational', auth, async (req, res) => {
       demandasPorCargo,
       totalParticipants: parseInt(totalParticipants.count),
       completedParticipants: parseInt(completedParticipants.count),
-      evaluatorEmail: evaluator?.email || ''
+      evaluator: {
+        email: evaluator?.email || '',
+        fullName: evaluator?.full_name || evaluator?.email || 'Evaluador BRS Digital',
+        title: evaluator?.professional_title || 'Especialista en Psicología Ocupacional y Organizacional',
+        license: evaluator?.license_number || null,
+        signatureImage: evaluator?.signature_image || null,
+      }
     });
 
     doc.end();
@@ -303,7 +323,7 @@ function drawRiskBar(doc, x, y, width, score, riskLevel) {
 // ============================================================
 // INDIVIDUAL PDF
 // ============================================================
-function generateIndividualPDF(doc, { participant, demo, resultsByType, ficha }) {
+function generateIndividualPDF(doc, { participant, demo, resultsByType, ficha, evaluator }) {
   const m = doc.page.margins.left;
   const pageW = doc.page.width - m * 2;
 
@@ -553,6 +573,12 @@ function generateIndividualPDF(doc, { participant, demo, resultsByType, ficha })
     { width: pageW, align: 'justify' }
   );
 
+  // Evaluator signature
+  if (evaluator) {
+    ensureSpace(doc, 120);
+    drawEvaluatorSignature(doc, evaluator, pageW, m);
+  }
+
   // Footer on all pages
   addFooters(doc);
 }
@@ -560,7 +586,35 @@ function generateIndividualPDF(doc, { participant, demo, resultsByType, ficha })
 // ============================================================
 // ORGANIZATIONAL PDF - Full professional report (~35 pages)
 // ============================================================
-function generateOrganizationalPDF(doc, { evaluation, demographics, aggResults, atRiskDimensions, stressTypology, riskMatrix, areaResults, demandasPorCargo, totalParticipants, completedParticipants, evaluatorEmail }) {
+function drawEvaluatorSignature(doc, evaluator, pageW, m) {
+  doc.moveDown(3);
+  const lineY = doc.y;
+  doc.moveTo(m + pageW * 0.25, lineY).lineTo(m + pageW * 0.75, lineY)
+    .strokeColor('#9CA3AF').lineWidth(0.5).stroke();
+  doc.moveDown(0.5);
+
+  if (evaluator.signatureImage) {
+    try {
+      const base64Data = evaluator.signatureImage.replace(/^data:image\/\w+;base64,/, '');
+      const imgBuffer = Buffer.from(base64Data, 'base64');
+      const imgX = m + (pageW - 160) / 2;
+      doc.image(imgBuffer, imgX, doc.y, { fit: [160, 65] });
+      doc.moveDown(3.5);
+    } catch (e) {
+      // Skip image if corrupt
+    }
+  }
+
+  doc.fontSize(12).fillColor('#1F2937').font('Helvetica-Bold');
+  doc.text(evaluator.fullName, { align: 'center' });
+  doc.fontSize(10).fillColor('#6B7280').font('Helvetica');
+  doc.text(evaluator.title, { align: 'center' });
+  if (evaluator.license) {
+    doc.text(`T.P. No. ${evaluator.license}`, { align: 'center' });
+  }
+}
+
+function generateOrganizationalPDF(doc, { evaluation, demographics, aggResults, atRiskDimensions, stressTypology, riskMatrix, areaResults, demandasPorCargo, totalParticipants, completedParticipants, evaluator }) {
   const m = doc.page.margins.left;
   const pageW = doc.page.width - m * 2;
 
@@ -587,8 +641,11 @@ function generateOrganizationalPDF(doc, { evaluation, demographics, aggResults, 
   doc.text(evaluation.company_name.toUpperCase(), { align: 'center' });
   doc.moveDown(4);
   doc.fontSize(12).fillColor('#4B5563').font('Helvetica');
-  doc.text(evaluatorEmail || 'Evaluador BRS Digital', { align: 'center' });
-  doc.text('Especialista en Psicología Ocupacional y Organizacional', { align: 'center' });
+  doc.text(evaluator.fullName, { align: 'center' });
+  doc.text(evaluator.title, { align: 'center' });
+  if (evaluator.license) {
+    doc.text(`T.P. No. ${evaluator.license}`, { align: 'center' });
+  }
   doc.moveDown(6);
   const now = new Date();
   const months = ['ENERO', 'FEBRERO', 'MARZO', 'ABRIL', 'MAYO', 'JUNIO', 'JULIO', 'AGOSTO', 'SEPTIEMBRE', 'OCTUBRE', 'NOVIEMBRE', 'DICIEMBRE'];
@@ -1466,11 +1523,7 @@ function generateOrganizationalPDF(doc, { evaluation, demographics, aggResults, 
   doc.text(`Es fundamental que ${evaluation.company_name} implemente las acciones de intervención sugeridas de manera oportuna, priorizando las dimensiones con mayor nivel de riesgo y garantizando el seguimiento continuo de la salud psicosocial de sus trabajadores.`, { width: pageW, align: 'justify' });
 
   // Signature
-  doc.moveDown(4);
-  doc.fontSize(12).fillColor('#1F2937').font('Helvetica-Bold');
-  doc.text(evaluatorEmail || 'Evaluador BRS Digital', { align: 'center' });
-  doc.fontSize(10).fillColor('#6B7280').font('Helvetica');
-  doc.text('Especialista en Psicología Ocupacional y Organizacional', { align: 'center' });
+  drawEvaluatorSignature(doc, evaluator, pageW, m);
 
   // ==========================================================
   // FOOTERS

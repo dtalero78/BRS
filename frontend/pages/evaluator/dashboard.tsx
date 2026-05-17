@@ -11,6 +11,7 @@ import {
   DocumentChartBarIcon,
   BuildingOfficeIcon,
   ShieldCheckIcon,
+  UserCircleIcon,
 } from '@heroicons/react/24/outline';
 
 const SUPER_ADMIN_EMAILS = ['d_talero@yahoo.com'];
@@ -76,7 +77,8 @@ export default function EvaluatorDashboard() {
     { key: 'C', href: '/evaluator/participants' },
     { key: 'D', href: '/evaluator/results' },
     { key: 'E', href: '/evaluator/reports' },
-    ...(isSuperAdmin(user) ? [{ key: 'F', href: '/evaluator/admin-clients' }] : []),
+    { key: 'F', href: '/evaluator/profile' },
+    ...(isSuperAdmin(user) ? [{ key: 'G', href: '/evaluator/admin-clients' }] : []),
   ]);
 
   if (loading) {
@@ -147,9 +149,17 @@ export default function EvaluatorDashboard() {
           icon={DocumentChartBarIcon}
         />
 
+        <FlowOption
+          letter="F"
+          title="Mi perfil"
+          description="Gestionar nombre, título, tarjeta profesional y firma digital para los informes"
+          href="/evaluator/profile"
+          icon={UserCircleIcon}
+        />
+
         {isSuperAdmin(user) && (
           <FlowOption
-            letter="F"
+            letter="G"
             title="Administración de clientes"
             description="Ver usuarios registrados, empresas, pruebas realizadas y marcar evaluaciones como pagadas"
             href="/evaluator/admin-clients"
