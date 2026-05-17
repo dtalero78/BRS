@@ -188,9 +188,9 @@ function aggregateResultsByForm(allResults) {
     intralaboralB: { dimensions: {}, domains: {}, overall: newRiskCounts(), participantCount: 0 },
     // Extralaboral: general + by form
     extralaboral: {
-      general: { dimensions: {} },
-      formaA: { dimensions: {} },
-      formaB: { dimensions: {} }
+      general: { dimensions: {}, overall: newRiskCounts() },
+      formaA: { dimensions: {}, overall: newRiskCounts() },
+      formaB: { dimensions: {}, overall: newRiskCounts() }
     },
     // Stress: general risk distribution
     estres: { general: newRiskCounts(), formaA: newRiskCounts(), formaB: newRiskCounts() },

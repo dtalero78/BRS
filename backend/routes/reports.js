@@ -211,6 +211,9 @@ router.post('/organizational', auth, async (req, res) => {
     // Generate PDF
     const doc = new PDFDocument({ size: 'A4', margin: 50, bufferPages: true });
 
+    doc.on('error', (err) => console.error('PDFKit error:', err));
+    res.on('error', (err) => console.error('Response stream error:', err));
+
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename=Informe_BRS_${evaluation.company_name.replace(/\s+/g, '_')}_${Date.now()}.pdf`);
     doc.pipe(res);
@@ -241,6 +244,8 @@ router.post('/organizational', auth, async (req, res) => {
     console.error('Error generating organizational report:', error);
     if (!res.headersSent) {
       res.status(500).json({ error: 'Error interno del servidor' });
+    } else {
+      try { res.destroy(); } catch (_) {}
     }
   }
 });
