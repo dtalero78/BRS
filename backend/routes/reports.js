@@ -977,7 +977,7 @@ function generateOrganizationalPDF(doc, { evaluation, demographics, aggResults, 
   if (doc.y > 650) doc.addPage();
 
   doc.fontSize(10).fillColor('#1F2937').font('Helvetica-Bold');
-  doc.text('Análisis por Dimensión');
+  doc.text('Análisis por Dimensión', { width: pageW });
   doc.moveDown(0.5);
   doc.fontSize(8).fillColor('#374151').font('Helvetica');
 
@@ -994,8 +994,8 @@ function generateOrganizationalPDF(doc, { evaluation, demographics, aggResults, 
       const dimName = templates.DIMENSION_DISPLAY_NAMES[dimKey] || dimKey;
       const highPct = (((counts.riesgo_alto || 0) + (counts.riesgo_muy_alto || 0)) / total * 100).toFixed(1);
       const lowPct = (((counts.sin_riesgo || 0) + (counts.riesgo_bajo || 0)) / total * 100).toFixed(1);
-      doc.font('Helvetica-Bold').text(`• ${dimName}: `, { continued: true });
-      doc.font('Helvetica').text(`${lowPct}% sin riesgo/bajo, ${highPct}% alto/muy alto.`);
+      doc.font('Helvetica-Bold').text(`• ${dimName}: `, { continued: true, width: pageW });
+      doc.font('Helvetica').text(`${lowPct}% sin riesgo/bajo, ${highPct}% alto/muy alto.`, { width: pageW });
       doc.moveDown(0.2);
     });
   });
@@ -1112,7 +1112,7 @@ function generateOrganizationalPDF(doc, { evaluation, demographics, aggResults, 
       if (doc.y > 500) doc.addPage();
 
       doc.fontSize(10).fillColor('#1F2937').font('Helvetica-Bold');
-      doc.text('Tipología de Síntomas de Estrés');
+      doc.text('Tipología de Síntomas de Estrés', { width: pageW });
       doc.moveDown(0.5);
 
       const typologyColors = ['#EF4444', '#F97316', '#3B82F6', '#8B5CF6'];
@@ -1223,7 +1223,7 @@ function generateOrganizationalPDF(doc, { evaluation, demographics, aggResults, 
       if (doc.y > 600) doc.addPage();
 
       doc.fontSize(11).fillColor('#1F2937').font('Helvetica-Bold');
-      doc.text(`${c.cargo} — Detalle por dimensión (n=${c.participantCount})`);
+      doc.text(`${c.cargo} — Detalle por dimensión (n=${c.participantCount})`, { width: pageW });
       doc.moveDown(0.5);
 
       const tableData = dimensionEntries.map(([dimKey, counts]) => ({
@@ -1477,7 +1477,7 @@ function generateOrganizationalPDF(doc, { evaluation, demographics, aggResults, 
 
   doc.moveDown(0.5);
   doc.fontSize(10).fillColor('#1F2937').font('Helvetica-Bold');
-  doc.text('Intervención prioritaria:');
+  doc.text('Intervención prioritaria:', { width: pageW });
   doc.moveDown(0.3);
   doc.fontSize(9).fillColor('#374151').font('Helvetica');
   doc.text('Se entiende como intervención prioritaria aquella que se dirige a las dimensiones que presentan niveles de riesgo alto y muy alto en un porcentaje significativo de la población evaluada. Estas dimensiones requieren atención inmediata y acciones de intervención a corto plazo.', { width: pageW, align: 'justify' });

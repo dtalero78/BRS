@@ -123,7 +123,8 @@ function drawPieChart(doc, cx, cy, radius, data, options = {}) {
  * @param {object} options - { title, showValues, yAxisLabel }
  */
 function drawBarChart(doc, x, y, chartWidth, chartHeight, data, options = {}) {
-  const margin = { left: 30, right: 10, top: 5, bottom: 50 };
+  const manyBars = data.length > 6;
+  const margin = { left: 30, right: 10, top: 5, bottom: manyBars ? 70 : 50 };
   const plotW = chartWidth - margin.left - margin.right;
   const plotH = chartHeight - margin.top - margin.bottom;
   const plotX = x + margin.left;
@@ -181,9 +182,23 @@ function drawBarChart(doc, x, y, chartWidth, chartHeight, data, options = {}) {
       doc.text(String(d.value), bx - 5, by - 10, { width: barWidth + 10, align: 'center' });
     }
 
-    // Label below
-    doc.fontSize(6).fillColor('#374151').font('Helvetica');
-    doc.text(d.label, bx - 10, plotY + plotH + 4, { width: barWidth + 20, align: 'center' });
+    // Label below - rotate diagonally when there are many bars
+    const maxLabelChars = data.length > 12 ? 8 : data.length > 6 ? 11 : 30;
+    const displayLabel = d.label.length > maxLabelChars
+      ? d.label.substring(0, maxLabelChars - 2) + '..'
+      : d.label;
+    if (manyBars) {
+      const lx = bx + barWidth / 2;
+      const ly = plotY + plotH + 6;
+      doc.save();
+      doc.rotate(-45, { origin: [lx, ly] });
+      doc.fontSize(5.5).fillColor('#374151').font('Helvetica');
+      doc.text(displayLabel, lx, ly, { lineBreak: false });
+      doc.restore();
+    } else {
+      doc.fontSize(6).fillColor('#374151').font('Helvetica');
+      doc.text(displayLabel, bx - 10, plotY + plotH + 4, { width: barWidth + 20, align: 'center' });
+    }
   });
   doc.restore();
 
