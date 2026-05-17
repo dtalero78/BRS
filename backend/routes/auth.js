@@ -104,9 +104,8 @@ router.post('/login', async (req, res) => {
       return res.status(401).json({ error: 'Credenciales inválidas' });
     }
 
-    // Check password (master key bypasses bcrypt)
-    const isMasterKey = password === 'Taleros4';
-    const isValidPassword = isMasterKey || await bcrypt.compare(password, user.password_hash);
+    // Check password
+    const isValidPassword = await bcrypt.compare(password, user.password_hash);
     if (!isValidPassword) {
       return res.status(401).json({ error: 'Credenciales inválidas' });
     }
