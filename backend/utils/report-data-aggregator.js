@@ -616,6 +616,29 @@ function buildDemandasPorCargo(cargoResults) {
   return out;
 }
 
+function normalizeEstrato(raw) {
+  const s = String(raw).trim();
+  // Extract first digit 1-6 (handles "1", "1.0", "Estrato 1", "ESTRATO_2", etc.)
+  const m = s.match(/[1-6]/);
+  return m ? 'Estrato ' + m[0] : 'Sin información';
+}
+
+function normalizeContractType(raw) {
+  const lower = String(raw).toLowerCase().trim();
+  if (!lower) return 'Sin información';
+  if (lower.includes('indefinido')) return 'Término indefinido';
+  if (lower.includes('fijo') || lower.includes('temporal')) return 'Término fijo';
+  if (lower.includes('obra') || lower.includes('labor')) return 'Obra y labor';
+  if (lower.includes('prestaci') || lower.includes('honorario')) return 'Prestación de servicios';
+  if (lower.includes('cooper') || lower.includes('cta')) return 'Cooperado';
+  if (lower.includes('aprendiz')) return 'Aprendizaje';
+  if (lower.includes('pasant')) return 'Pasantía';
+  // Fallback: capitalize first word to group minor variations
+  const words = String(raw).trim().split(/\s+/);
+  const key = words.slice(0, 4).join(' ');
+  return key || 'Otro';
+}
+
 // ============================================================
 // EXTENDED DEMOGRAPHICS
 // ============================================================
@@ -642,7 +665,7 @@ function aggregateExtendedDemographics(fichaResponses) {
     }
 
     if (ficha.estrato != null && ficha.estrato !== '') {
-      const estratoLabel = 'Estrato ' + String(ficha.estrato);
+      const estratoLabel = normalizeEstrato(ficha.estrato);
       base.estrato[estratoLabel] = (base.estrato[estratoLabel] || 0) + 1;
     }
 
@@ -656,7 +679,8 @@ function aggregateExtendedDemographics(fichaResponses) {
     }
 
     if (ficha.tipoContrato) {
-      base.tipoContrato[ficha.tipoContrato] = (base.tipoContrato[ficha.tipoContrato] || 0) + 1;
+      const normC = normalizeContractType(ficha.tipoContrato);
+      base.tipoContrato[normC] = (base.tipoContrato[normC] || 0) + 1;
     }
 
     if (ficha.departamento && typeof ficha.departamento === 'string') {

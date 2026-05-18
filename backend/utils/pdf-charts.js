@@ -212,6 +212,82 @@ function drawBarChart(doc, x, y, chartWidth, chartHeight, data, options = {}) {
 }
 
 // ============================================================
+// HORIZONTAL BAR CHART (for many-category data)
+// ============================================================
+function drawHorizontalBarChart(doc, x, y, chartWidth, data, options = {}) {
+  if (!data || data.length === 0) return;
+
+  const labelWidth = options.labelWidth || 120;
+  const valueMargin = 28;
+  const marginTop = options.title ? 18 : 5;
+  const marginBottom = 8;
+  const barH = options.barHeight || 14;
+  const barGap = 5;
+  const plotX = x + labelWidth;
+  const plotW = chartWidth - labelWidth - valueMargin;
+  const totalH = marginTop + data.length * (barH + barGap) - barGap + marginBottom;
+  const plotY = y + marginTop;
+
+  const maxVal = Math.max(...data.map(d => d.value), 1);
+
+  doc.save();
+
+  // Y axis line
+  doc.moveTo(plotX, plotY).lineTo(plotX, plotY + totalH - marginTop - marginBottom)
+    .strokeColor('#9CA3AF').lineWidth(0.5).stroke();
+
+  // X grid lines + ticks
+  const xTicks = 4;
+  for (let i = 1; i <= xTicks; i++) {
+    const tx = plotX + (i / xTicks) * plotW;
+    const tv = Math.round((i / xTicks) * maxVal);
+    doc.moveTo(tx, plotY).lineTo(tx, plotY + totalH - marginTop - marginBottom)
+      .strokeColor('#E5E7EB').lineWidth(0.3).stroke();
+    doc.fontSize(5.5).fillColor('#6B7280').font('Helvetica');
+    doc.text(String(tv), tx - 10, plotY + totalH - marginTop - marginBottom + 2, { width: 20, align: 'center' });
+  }
+
+  data.forEach((d, i) => {
+    const by = plotY + i * (barH + barGap);
+    const barW = maxVal > 0 ? (d.value / maxVal) * plotW : 0;
+
+    // Label on left
+    const maxChars = 22;
+    const displayLabel = d.label.length > maxChars ? d.label.substring(0, maxChars - 1) + '…' : d.label;
+    doc.fontSize(6).fillColor('#374151').font('Helvetica');
+    doc.text(displayLabel, x, by + (barH - 6) / 2, { width: labelWidth - 4, align: 'right' });
+
+    // Bar with 3D effect
+    if (barW > 0) {
+      const depth = 3;
+      doc.path(`M ${plotX} ${by} L ${plotX + depth} ${by - depth} L ${plotX + depth + barW} ${by - depth} L ${plotX + barW} ${by} Z`)
+        .fillColor(lightenColor(d.color, 1.15)).fill();
+      doc.path(`M ${plotX + barW} ${by} L ${plotX + depth + barW} ${by - depth} L ${plotX + depth + barW} ${by - depth + barH} L ${plotX + barW} ${by + barH} Z`)
+        .fillColor(darkenColor(d.color, 0.7)).fill();
+      doc.rect(plotX, by, barW, barH).fillColor(d.color).fill();
+    }
+
+    // Value label
+    if (options.showValues !== false) {
+      doc.fontSize(6.5).fillColor('#1F2937').font('Helvetica-Bold');
+      doc.text(String(d.value), plotX + barW + 3, by + (barH - 7) / 2, { width: valueMargin - 3 });
+    }
+  });
+
+  doc.restore();
+
+  if (options.title) {
+    doc.save();
+    doc.fontSize(9).fillColor('#1F2937').font('Helvetica-Bold');
+    doc.text(options.title, x, y - 2, { width: chartWidth, align: 'center' });
+    doc.restore();
+  }
+
+  doc.x = x;
+  doc.y = y + totalH;
+}
+
+// ============================================================
 // GROUPED BAR CHART
 // ============================================================
 /**
@@ -783,6 +859,8 @@ function drawColorCodedRiskTable(doc, x, startY, tableWidth, data, options = {})
     }
   });
 
+  doc.x = x;
+  doc.y = currentY;
   return currentY;
 }
 
@@ -867,6 +945,8 @@ function drawRiskPrioritizationMatrix(doc, x, startY, tableWidth, data, options 
     }
   });
 
+  doc.x = x;
+  doc.y = currentY;
   return currentY;
 }
 
@@ -887,6 +967,7 @@ function drawSectionBanner(doc, x, y, width, text, options = {}) {
 module.exports = {
   drawPieChart,
   drawBarChart,
+  drawHorizontalBarChart,
   drawGroupedBarChart,
   drawTable,
   createRiskSeries,

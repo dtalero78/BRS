@@ -3,7 +3,7 @@ const router = express.Router();
 const PDFDocument = require('pdfkit');
 const db = require('../config/database');
 const { auth, getOwnedCompanyIds, isSuperAdmin } = require('../middleware/auth');
-const { drawPieChart, drawBarChart, drawGroupedBarChart, drawTable, createRiskSeries, drawDonutChart, drawSemicircleGauge, drawSimpleRiskBars, drawColorCodedRiskTable, drawRiskPrioritizationMatrix, drawSectionBanner, RISK_COLORS, RISK_ORDER, RISK_LABELS } = require('../utils/pdf-charts');
+const { drawPieChart, drawBarChart, drawHorizontalBarChart, drawGroupedBarChart, drawTable, createRiskSeries, drawDonutChart, drawSemicircleGauge, drawSimpleRiskBars, drawColorCodedRiskTable, drawRiskPrioritizationMatrix, drawSectionBanner, RISK_COLORS, RISK_ORDER, RISK_LABELS } = require('../utils/pdf-charts');
 const { aggregateDemographics, aggregateExtendedDemographics, aggregateResultsByForm, getAtRiskDimensions, aggregateStressTypology, buildRiskPrioritizationMatrix, aggregateResultsByArea, aggregateResultsByCargo, buildDemandasPorCargo, resolveFicha, sumCounts } = require('../utils/report-data-aggregator');
 const templates = require('../utils/report-templates');
 
@@ -807,18 +807,20 @@ function generateOrganizationalPDF(doc, { evaluation, demographics, aggResults, 
     doc.moveDown(0.5);
   }
 
-  // Bar chart: Tipo de contrato
+  // Horizontal bar chart: Tipo de contrato (many categories with long names)
   if (demographics.tipoContrato && Object.keys(demographics.tipoContrato).length > 0) {
-    ensureSpace(doc, 210);
-    if (doc.y > 550) doc.addPage();
-    const contratoData = Object.entries(demographics.tipoContrato).map(([label, value], i) => ({
-      label, value, color: templates.DEMOGRAPHIC_COLORS[i % templates.DEMOGRAPHIC_COLORS.length]
-    }));
-    drawBarChart(doc, m, doc.y + 10, pageW, 160, contratoData, {
-      title: 'Distribución por Tipo de Contrato', showValues: true
+    const contratoData = Object.entries(demographics.tipoContrato)
+      .sort((a, b) => b[1] - a[1])
+      .map(([label, value], i) => ({
+        label, value, color: templates.DEMOGRAPHIC_COLORS[i % templates.DEMOGRAPHIC_COLORS.length]
+      }));
+    const contratoH = contratoData.length * 19 + 30;
+    ensureSpace(doc, contratoH + 30);
+    if (doc.y > 700 - contratoH) doc.addPage();
+    drawHorizontalBarChart(doc, m, doc.y + 18, pageW, contratoData, {
+      title: 'Distribución por Tipo de Contrato', showValues: true, labelWidth: 130
     });
-    doc.y += 180;
-    doc.moveDown(0.5);
+    doc.moveDown(1);
   }
 
   // Bar chart: Antigüedad en la empresa
@@ -918,6 +920,7 @@ function generateOrganizationalPDF(doc, { evaluation, demographics, aggResults, 
   });
 
   doc.y = chartsY + chartH + 15;
+  doc.x = m;
   doc.moveDown(0.5);
 
   // Interpretive text
@@ -925,7 +928,7 @@ function generateOrganizationalPDF(doc, { evaluation, demographics, aggResults, 
   const intraHighPct = intraTotal > 0 ? (((generalIntra.riesgo_alto || 0) + (generalIntra.riesgo_muy_alto || 0)) / intraTotal * 100).toFixed(1) : 0;
   const extraHighPct = extraTotal > 0 ? (((generalExtra.riesgo_alto || 0) + (generalExtra.riesgo_muy_alto || 0)) / extraTotal * 100).toFixed(1) : 0;
   const stressHighPct = stressTotal > 0 ? (((stressGeneral.riesgo_alto || 0) + (stressGeneral.riesgo_muy_alto || 0)) / stressTotal * 100).toFixed(1) : 0;
-  doc.text(`De los ${completedParticipants} participantes evaluados: el ${intraHighPct}% presenta riesgo alto o muy alto en condiciones intralaborales, el ${extraHighPct}% en condiciones extralaborales, y el ${stressHighPct}% en sintomatología asociada al estrés.`, { width: pageW, align: 'justify' });
+  doc.text(`De los ${completedParticipants} participantes evaluados: el ${intraHighPct}% presenta riesgo alto o muy alto en condiciones intralaborales, el ${extraHighPct}% en condiciones extralaborales, y el ${stressHighPct}% en sintomatología asociada al estrés.`, m, doc.y, { width: pageW, align: 'justify' });
 
   // ==========================================================
   // CONDICIONES INTRALABORALES - Color-Coded Table
@@ -1080,8 +1083,8 @@ function generateOrganizationalPDF(doc, { evaluation, demographics, aggResults, 
     const dimName = templates.DIMENSION_DISPLAY_NAMES[dk] || dk;
     const highPct = (((rc.riesgo_alto || 0) + (rc.riesgo_muy_alto || 0)) / total * 100).toFixed(1);
     const lowPct = (((rc.sin_riesgo || 0) + (rc.riesgo_bajo || 0)) / total * 100).toFixed(1);
-    doc.font('Helvetica-Bold').text(`• ${dimName}: `, { continued: true });
-    doc.font('Helvetica').text(`${lowPct}% sin riesgo/bajo, ${highPct}% alto/muy alto.`);
+    doc.font('Helvetica-Bold').text(`• ${dimName}: `, { continued: true, width: pageW });
+    doc.font('Helvetica').text(`${lowPct}% sin riesgo/bajo, ${highPct}% alto/muy alto.`, { width: pageW });
     doc.moveDown(0.2);
   });
 
@@ -1200,6 +1203,7 @@ function generateOrganizationalPDF(doc, { evaluation, demographics, aggResults, 
       showLegend: true, showValues: true
     });
     doc.y += 245;
+    doc.x = m;
     doc.moveDown(0.5);
 
     // Texto interpretativo
@@ -1213,8 +1217,8 @@ function generateOrganizationalPDF(doc, { evaluation, demographics, aggResults, 
       const low = (c.domainCounts.sin_riesgo || 0) + (c.domainCounts.riesgo_bajo || 0);
       const lowPct = (low / total * 100).toFixed(1);
       ensureSpace(doc, 22);
-      doc.font('Helvetica-Bold').text(`• ${c.cargo} (n=${c.participantCount}): `, { continued: true });
-      doc.font('Helvetica').text(`${highPct}% en riesgo alto/muy alto, ${lowPct}% sin riesgo o riesgo bajo en Demandas del Trabajo.`);
+      doc.font('Helvetica-Bold').text(`• ${c.cargo} (n=${c.participantCount}): `, { continued: true, width: pageW });
+      doc.font('Helvetica').text(`${highPct}% en riesgo alto/muy alto, ${lowPct}% sin riesgo o riesgo bajo en Demandas del Trabajo.`, { width: pageW });
       doc.moveDown(0.2);
     });
     doc.moveDown(1);
@@ -1228,7 +1232,7 @@ function generateOrganizationalPDF(doc, { evaluation, demographics, aggResults, 
       if (doc.y > 600) doc.addPage();
 
       doc.fontSize(11).fillColor('#1F2937').font('Helvetica-Bold');
-      doc.text(`${c.cargo} — Detalle por dimensión (n=${c.participantCount})`, { width: pageW });
+      doc.text(`${c.cargo} — Detalle por dimensión (n=${c.participantCount})`, m, doc.y, { width: pageW });
       doc.moveDown(0.5);
 
       const tableData = dimensionEntries.map(([dimKey, counts]) => ({
@@ -1297,11 +1301,12 @@ function generateOrganizationalPDF(doc, { evaluation, demographics, aggResults, 
         title: 'Estrés'
       });
       doc.y = aChartsY + aChartH + 15;
+      doc.x = m;
 
       // Intralaboral color-coded table for area
       doc.addPage();
       doc.fontSize(10).fillColor('#1F2937').font('Helvetica-Bold');
-      doc.text(`Condiciones Intralaborales - ${areaName}`);
+      doc.text(`Condiciones Intralaborales - ${areaName}`, m, doc.y, { width: pageW });
       doc.moveDown(0.5);
 
       const areaIntraTable = [];
@@ -1342,7 +1347,7 @@ function generateOrganizationalPDF(doc, { evaluation, demographics, aggResults, 
       if (doc.y > 500) doc.addPage();
 
       doc.fontSize(10).fillColor('#1F2937').font('Helvetica-Bold');
-      doc.text(`Condiciones Extralaborales - ${areaName}`);
+      doc.text(`Condiciones Extralaborales - ${areaName}`, m, doc.y, { width: pageW });
       doc.moveDown(0.5);
 
       const areaExtraTable = [];
