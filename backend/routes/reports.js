@@ -811,12 +811,12 @@ function generateOrganizationalPDF(doc, { evaluation, demographics, aggResults, 
   if (demographics.tipoContrato && Object.keys(demographics.tipoContrato).length > 0) {
     const contratoData = Object.entries(demographics.tipoContrato)
       .sort((a, b) => b[1] - a[1])
+      .slice(0, 10)
       .map(([label, value], i) => ({
         label, value, color: templates.DEMOGRAPHIC_COLORS[i % templates.DEMOGRAPHIC_COLORS.length]
       }));
     const contratoH = contratoData.length * 19 + 30;
-    ensureSpace(doc, contratoH + 30);
-    if (doc.y > 700 - contratoH) doc.addPage();
+    if (doc.y + contratoH + 40 > 750) doc.addPage();
     drawHorizontalBarChart(doc, m, doc.y + 18, pageW, contratoData, {
       title: 'Distribución por Tipo de Contrato', showValues: true, labelWidth: 130
     });

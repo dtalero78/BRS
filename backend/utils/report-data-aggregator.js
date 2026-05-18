@@ -633,10 +633,7 @@ function normalizeContractType(raw) {
   if (lower.includes('cooper') || lower.includes('cta')) return 'Cooperado';
   if (lower.includes('aprendiz')) return 'Aprendizaje';
   if (lower.includes('pasant')) return 'Pasantía';
-  // Fallback: capitalize first word to group minor variations
-  const words = String(raw).trim().split(/\s+/);
-  const key = words.slice(0, 4).join(' ');
-  return key || 'Otro';
+  return 'Otro';
 }
 
 // ============================================================
