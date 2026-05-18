@@ -258,35 +258,13 @@ router.get('/', auth, async (req, res) => {
             .select('questionnaire_type');
 
           const formType = demographicData.formType || 'A';
-          const requiredQuestionnaires = {
-            'A': ['ficha_datos', 'intralaboral_a', 'extralaboral', 'estres'],
-            'B': ['ficha_datos', 'intralaboral_b', 'extralaboral', 'estres']
-          };
+          const requiredTypes = formType === 'A'
+            ? ['intralaboral_a', 'extralaboral', 'estres']
+            : ['intralaboral_b', 'extralaboral', 'estres'];
 
-          const totalQuestionsByType = {
-            'ficha_datos': 18,
-            'intralaboral_a': 123,
-            'intralaboral_b': 97,
-            'extralaboral': 31,
-            'estres': 31
-          };
-
-          const requiredTypes = requiredQuestionnaires[formType];
           const completedTypes = responses.map(r => r.questionnaire_type);
-          
-          let totalCompleted = 0;
-          let totalRequired = 0;
-
-          requiredTypes.forEach(type => {
-            if (completedTypes.includes(type)) {
-              totalCompleted += totalQuestionsByType[type];
-            }
-            totalRequired += totalQuestionsByType[type];
-          });
-
-          completionPercentage = totalRequired > 0 
-            ? Math.round((totalCompleted / totalRequired) * 100) 
-            : 0;
+          const completedRequired = requiredTypes.filter(t => completedTypes.includes(t)).length;
+          completionPercentage = Math.round((completedRequired / requiredTypes.length) * 100);
         }
       }
 
