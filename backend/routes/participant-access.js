@@ -367,12 +367,14 @@ router.post('/:token/responses', async (req, res) => {
       .join('participants', 'participant_evaluations.participant_id', 'participants.id')
       .where('participant_evaluations.access_token', token)
       .where('participant_evaluations.token_expires_at', '>', new Date())
-      .select('participants.*', 'participant_evaluations.id as pe_id')
+      .select('participants.*', 'participant_evaluations.id as pe_id', 'participant_evaluations.status as pe_status')
       .first();
 
     if (!participantEvaluation) {
       return res.status(404).json({ error: 'Token inválido o expirado' });
     }
+
+    let isCompleted = false;
 
     await db.transaction(async (trx) => {
       // Check if response already exists for this questionnaire type
@@ -396,24 +398,6 @@ router.post('/:token/responses', async (req, res) => {
         await trx('responses').insert(responseData);
       }
 
-      // Update participant progress
-      const totalQuestionsByType = {
-        'ficha_datos': 18,
-        'intralaboral_a': 123,
-        'intralaboral_b': 97,
-        'extralaboral': 31,
-        'estres': 31,
-        'stress': 31,
-        'coping': 28
-      };
-
-      const completedQuestionnaires = await trx('responses')
-        .where('participant_evaluation_id', participantEvaluation.pe_id)
-        .select('questionnaire_type', 'responses');
-
-      let totalCompleted = 0;
-      let totalRequired = 0;
-
       // Parse demographic data to get form type
       let demographicData = {};
       try {
@@ -426,40 +410,32 @@ router.post('/:token/responses', async (req, res) => {
 
       const formType = demographicData.formType || 'A';
 
-      // Determine required questionnaires based on form type
-      const requiredQuestionnaires = formType === 'A' 
-        ? ['ficha_datos', 'intralaboral_a', 'extralaboral', 'estres']
-        : ['ficha_datos', 'intralaboral_b', 'extralaboral', 'estres'];
+      const completedQuestionnaires = await trx('responses')
+        .where('participant_evaluation_id', participantEvaluation.pe_id)
+        .select('questionnaire_type');
 
-      requiredQuestionnaires.forEach(type => {
-        const completed = completedQuestionnaires.find(q => q.questionnaire_type === type);
-        if (completed && completed.responses) {
-          try {
-            const parsedResponses = JSON.parse(completed.responses);
-            totalCompleted += parsedResponses.length;
-          } catch (e) {
-            // Skip if responses can't be parsed
-          }
-        }
-        totalRequired += totalQuestionsByType[type === 'estres' ? 'stress' : type] || 0;
-      });
+      const completedTypes = completedQuestionnaires.map(q => q.questionnaire_type);
 
-      const completionPercentage = totalRequired > 0 ? Math.round((totalCompleted / totalRequired) * 100) : 0;
-      const isCompleted = completionPercentage === 100;
+      // Presence-based completion: all required questionnaire types must exist
+      const requiredQuestionnaires = formType === 'A'
+        ? ['intralaboral_a', 'extralaboral', 'estres']
+        : ['intralaboral_b', 'extralaboral', 'estres'];
+
+      isCompleted = requiredQuestionnaires.every(type => completedTypes.includes(type));
 
       // Update participant evaluation status
       const updateData = {};
 
-      if (participantEvaluation.status === 'assigned' && totalCompleted > 0) {
-        updateData.status = 'in_progress';
-      }
-
-      if (isCompleted) {
-        updateData.status = 'completed';
-        updateData.completed_at = new Date();
+      if (participantEvaluation.pe_status !== 'completed') {
+        if (completedTypes.length > 0) updateData.status = 'in_progress';
+        if (isCompleted) {
+          updateData.status = 'completed';
+          updateData.completed_at = new Date();
+        }
       }
 
       if (Object.keys(updateData).length > 0) {
+        updateData.updated_at = new Date();
         await trx('participant_evaluations')
           .where('id', participantEvaluation.pe_id)
           .update(updateData);

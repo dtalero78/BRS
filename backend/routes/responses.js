@@ -30,7 +30,7 @@ router.post('/', auth, async (req, res) => {
       .leftJoin('evaluations', 'pe.evaluation_id', 'evaluations.id')
       .where('participants.id', participantId)
       .whereIn('participants.company_id', await getOwnedCompanyIds(req.user.userId))
-      .select('participants.*', 'pe.id as pe_id', 'evaluations.name as evaluation_name')
+      .select('participants.*', 'pe.id as pe_id', 'pe.status as pe_status', 'evaluations.name as evaluation_name')
       .first();
 
     if (!participantEvaluation) {
@@ -74,46 +74,27 @@ router.post('/', auth, async (req, res) => {
 
       const formType = demographicData.formType || 'A';
 
-      const totalQuestionsByType = {
-        'intralaboral_a': 123,
-        'intralaboral_b': 97,
-        'extralaboral': 31,
-        'estres': 31,
-        'coping': 28
-      };
-
       const completedQuestionnaires = await trx('responses')
         .where('participant_evaluation_id', participantEvaluation.pe_id)
         .select('questionnaire_type');
 
-      let totalCompleted = 0;
-      let totalRequired = 0;
       const completedTypes = completedQuestionnaires.map(q => q.questionnaire_type);
 
-      // Determine required questionnaires based on form type
-      const requiredQuestionnaires = formType === 'A' 
+      const requiredQuestionnaires = formType === 'A'
         ? ['intralaboral_a', 'extralaboral', 'estres']
         : ['intralaboral_b', 'extralaboral', 'estres'];
 
-      requiredQuestionnaires.forEach(type => {
-        if (completedTypes.includes(type)) {
-          totalCompleted += totalQuestionsByType[type];
-        }
-        totalRequired += totalQuestionsByType[type];
-      });
-
-      const completionPercentage = Math.round((totalCompleted / totalRequired) * 100);
+      const allRequiredDone = requiredQuestionnaires.every(type => completedTypes.includes(type));
 
       // Update participant_evaluation status
       const updateData = {};
-      
-      if (participantEvaluation.status === 'assigned' && completedTypes.length > 0) {
-        updateData.status = 'in_progress';
-      }
 
-      if (completionPercentage === 100 && participantEvaluation.status !== 'completed') {
-        updateData.status = 'completed';
-        updateData.completed_at = new Date();
+      if (participantEvaluation.pe_status !== 'completed') {
+        if (completedTypes.length > 0) updateData.status = 'in_progress';
+        if (allRequiredDone) {
+          updateData.status = 'completed';
+          updateData.completed_at = new Date();
+        }
       }
 
       if (Object.keys(updateData).length > 0) {
