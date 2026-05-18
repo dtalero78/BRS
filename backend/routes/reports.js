@@ -1101,17 +1101,19 @@ function generateOrganizationalPDF(doc, { evaluation, demographics, aggResults, 
   doc.moveDown(0.5);
 
   if (stressTotal > 0) {
-    // Simple 5-bar chart for stress
+    // Simple 5-bar chart for stress — start 20px lower to leave room for the title (drawn at y-12)
+    doc.y += 20;
     drawSimpleRiskBars(doc, m + 50, doc.y, pageW - 100, 170, stressGeneral, stressTotal, {
       title: 'Sintomatología Asociada al Estrés'
     });
+    doc.x = m;
     doc.y += 185;
     doc.moveDown(0.5);
 
     const stHighPct = (((stressGeneral.riesgo_alto || 0) + (stressGeneral.riesgo_muy_alto || 0)) / stressTotal * 100).toFixed(1);
     const stLowPct = (((stressGeneral.sin_riesgo || 0) + (stressGeneral.riesgo_bajo || 0)) / stressTotal * 100).toFixed(1);
     doc.fontSize(9).fillColor('#374151').font('Helvetica');
-    doc.text(`El ${stLowPct}% de la población se encuentra sin riesgo o en riesgo bajo de estrés. El ${stHighPct}% presenta riesgo alto o muy alto y requiere intervención prioritaria.`, { width: pageW, align: 'justify' });
+    doc.text(`El ${stLowPct}% de la población se encuentra sin riesgo o en riesgo bajo de estrés. El ${stHighPct}% presenta riesgo alto o muy alto y requiere intervención prioritaria.`, m, doc.y, { width: pageW, align: 'justify' });
     doc.moveDown(1);
 
     // Stress typology chart
@@ -1131,16 +1133,17 @@ function generateOrganizationalPDF(doc, { evaluation, demographics, aggResults, 
       drawBarChart(doc, m, doc.y + 10, pageW, 160, typologyData, {
         title: 'Contribución por Tipo de Síntoma (%)', showValues: true
       });
+      doc.x = m;
       doc.y += 180;
       doc.moveDown(0.5);
 
       // TOP 3 symptoms text
       const sortedTypes = Object.entries(stressTypology).sort((a, b) => b[1] - a[1]);
       doc.fontSize(9).fillColor('#374151').font('Helvetica');
-      doc.text('Los principales tipos de sintomatología reportados son:', { width: pageW });
+      doc.text('Los principales tipos de sintomatología reportados son:', m, doc.y, { width: pageW });
       doc.moveDown(0.2);
       sortedTypes.slice(0, 3).forEach(([name, pct], i) => {
-        doc.text(`  ${i + 1}. ${name}: ${pct}%`, { width: pageW });
+        doc.text(`  ${i + 1}. ${name}: ${pct}%`, m, doc.y, { width: pageW });
       });
     }
   }
