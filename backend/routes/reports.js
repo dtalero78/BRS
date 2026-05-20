@@ -128,7 +128,7 @@ router.post('/individual', auth, async (req, res) => {
 // ============================================================
 router.post('/organizational', auth, async (req, res) => {
   try {
-    const { evaluationId } = req.body;
+    const { evaluationId, includeIndividualSummaries } = req.body;
 
     if (!evaluationId) {
       return res.status(400).json({ error: 'evaluationId es requerido' });
@@ -166,6 +166,42 @@ router.post('/organizational', auth, async (req, res) => {
       .join('participants as p', 'pe.participant_id', 'p.id')
       .where('pe.evaluation_id', evaluationId)
       .select('results.*', 'p.demographic_data', 'p.email');
+
+    // Fetch per-participant data only if individual summaries are requested
+    let participantSummaries = [];
+    if (includeIndividualSummaries) {
+      const completedPEs = await db('participant_evaluations as pe')
+        .join('participants as p', 'pe.participant_id', 'p.id')
+        .join('evaluations as e', 'pe.evaluation_id', 'e.id')
+        .join('companies as c', 'e.company_id', 'c.id')
+        .where('pe.evaluation_id', evaluationId)
+        .where('pe.status', 'completed')
+        .select(
+          'pe.id as pe_id', 'pe.completed_at', 'pe.status',
+          'p.email', 'p.demographic_data',
+          'e.name as evaluation_name',
+          'c.name as company_name', 'c.nit as company_nit'
+        );
+
+      for (const pe of completedPEs) {
+        const resultRows = await db('results')
+          .where('participant_evaluation_id', pe.pe_id)
+          .select('*');
+        if (resultRows.length === 0) continue;
+        const resultsByType = {};
+        resultRows.forEach(row => {
+          resultsByType[row.questionnaire_type] = typeof row.results === 'string' ? JSON.parse(row.results) : (row.results || []);
+        });
+        const fichaRow = await db('responses')
+          .where('participant_evaluation_id', pe.pe_id)
+          .where('questionnaire_type', 'ficha_datos')
+          .select('responses')
+          .first();
+        const ficha = fichaRow ? resolveFicha(fichaRow.responses) : null;
+        const demo = typeof pe.demographic_data === 'string' ? JSON.parse(pe.demographic_data) : (pe.demographic_data || {});
+        participantSummaries.push({ participant: pe, demo, resultsByType, ficha });
+      }
+    }
 
     const totalParticipants = await db('participant_evaluations')
       .where('evaluation_id', evaluationId)
@@ -218,6 +254,14 @@ router.post('/organizational', auth, async (req, res) => {
     res.setHeader('Content-Disposition', `attachment; filename=Informe_BRS_${evaluation.company_name.replace(/\s+/g, '_')}_${Date.now()}.pdf`);
     doc.pipe(res);
 
+    const evaluatorObj = {
+      email: evaluator?.email || '',
+      fullName: evaluator?.full_name || evaluator?.email || 'Evaluador BRS Digital',
+      title: evaluator?.professional_title || 'Especialista en Psicología Ocupacional y Organizacional',
+      license: evaluator?.license_number || null,
+      signatureImage: evaluator?.signature_image || null,
+    };
+
     generateOrganizationalPDF(doc, {
       evaluation,
       demographics,
@@ -229,14 +273,28 @@ router.post('/organizational', auth, async (req, res) => {
       demandasPorCargo,
       totalParticipants: parseInt(totalParticipants.count),
       completedParticipants: parseInt(completedParticipants.count),
-      evaluator: {
-        email: evaluator?.email || '',
-        fullName: evaluator?.full_name || evaluator?.email || 'Evaluador BRS Digital',
-        title: evaluator?.professional_title || 'Especialista en Psicología Ocupacional y Organizacional',
-        license: evaluator?.license_number || null,
-        signatureImage: evaluator?.signature_image || null,
-      }
+      evaluator: evaluatorObj
     });
+
+    // Append individual summaries if requested
+    if (includeIndividualSummaries && participantSummaries.length > 0) {
+      doc.addPage();
+      const m2 = doc.page.margins.left;
+      const pageW2 = doc.page.width - m2 * 2;
+      doc.fontSize(18).fillColor('#1E40AF').font('Helvetica-Bold')
+        .text('RESÚMENES INDIVIDUALES', m2, doc.y, { width: pageW2, align: 'center' });
+      doc.moveDown(0.5);
+      doc.fontSize(10).fillColor('#6B7280').font('Helvetica')
+        .text(`${participantSummaries.length} participante(s) con resultados calculados`, m2, doc.y, { width: pageW2, align: 'center' });
+
+      for (const { participant, demo, resultsByType, ficha } of participantSummaries) {
+        doc.addPage();
+        generateIndividualPDF(doc, { participant, demo, resultsByType, ficha, evaluator: evaluatorObj, skipFooters: true });
+      }
+    }
+
+    // Single footer pass covering all pages (org + individual summaries if any)
+    addFooters(doc);
 
     doc.end();
 
@@ -328,7 +386,7 @@ function drawRiskBar(doc, x, y, width, score, riskLevel) {
 // ============================================================
 // INDIVIDUAL PDF
 // ============================================================
-function generateIndividualPDF(doc, { participant, demo, resultsByType, ficha, evaluator }) {
+function generateIndividualPDF(doc, { participant, demo, resultsByType, ficha, evaluator, skipFooters = false }) {
   const m = doc.page.margins.left;
   const pageW = doc.page.width - m * 2;
 
@@ -584,8 +642,7 @@ function generateIndividualPDF(doc, { participant, demo, resultsByType, ficha, e
     drawEvaluatorSignature(doc, evaluator, pageW, m);
   }
 
-  // Footer on all pages
-  addFooters(doc);
+  if (!skipFooters) addFooters(doc);
 }
 
 // ============================================================
@@ -1537,11 +1594,6 @@ function generateOrganizationalPDF(doc, { evaluation, demographics, aggResults, 
 
   // Signature
   drawEvaluatorSignature(doc, evaluator, pageW, m);
-
-  // ==========================================================
-  // FOOTERS
-  // ==========================================================
-  addFooters(doc);
 }
 
 function fmtDate(d) {
@@ -1560,19 +1612,11 @@ function addFooters(doc) {
 
   for (let i = 0; i < totalPages; i++) {
     doc.switchToPage(i);
-    doc.y = doc.page.margins.top;
     doc.fontSize(7).fillColor('#9CA3AF');
-    doc.text(
-      'Generado por BRS Digital - Batería de Riesgo Psicosocial | Metodología oficial del Ministerio de la Protección Social',
-      doc.page.margins.left,
-      doc.page.height - 30,
-      { width: doc.page.width - doc.page.margins.left * 2, align: 'center', lineBreak: false }
-    );
-    doc.y = doc.page.margins.top;
     doc.text(
       `Fecha: ${dateStr} | Página ${i + 1} de ${totalPages}`,
       doc.page.margins.left,
-      doc.page.height - 20,
+      doc.page.height - 25,
       { width: doc.page.width - doc.page.margins.left * 2, align: 'center', lineBreak: false }
     );
   }
