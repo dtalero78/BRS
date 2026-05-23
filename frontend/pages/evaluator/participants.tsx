@@ -121,17 +121,17 @@ export default function EvaluatorParticipants() {
       
       // Construir parámetros de query
       const queryParams = new URLSearchParams();
-      
+      queryParams.append('limit', '10000');
+
       if (statusFilter !== 'all') {
         queryParams.append('status', statusFilter);
       }
-      
+
       if (evaluationFilter !== 'all') {
         queryParams.append('evaluationId', evaluationFilter);
       }
 
-      const queryString = queryParams.toString();
-      const url = `/api/participants${queryString ? `?${queryString}` : ''}`;
+      const url = `/api/participants?${queryParams.toString()}`;
       
       const response = await fetch(url, {
         headers: {
