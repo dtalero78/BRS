@@ -44,7 +44,9 @@ interface Participant {
   formType: 'A' | 'B';
   phone?: string;
   evaluationId: string;
+  evaluationName?: string;
   evaluationUrl?: string;
+  email?: string;
   companyName?: string;
   status: 'pending' | 'in_progress' | 'completed';
   completionPercentage: number;
@@ -381,6 +383,89 @@ export default function EvaluatorParticipants() {
     }
   };
 
+  const handleExportCsv = () => {
+    if (!participants || participants.length === 0) {
+      toast.error('No hay participantes para exportar');
+      return;
+    }
+
+    const statusLabel = (s: string) =>
+      s === 'completed' ? 'Completado'
+      : s === 'in_progress' ? 'En progreso'
+      : s === 'assigned' ? 'Asignado'
+      : s === 'pending' ? 'Pendiente'
+      : (s || '');
+
+    const fmtDate = (d?: string) => {
+      if (!d) return '';
+      const dt = new Date(d);
+      if (isNaN(dt.getTime())) return '';
+      return dt.toISOString().slice(0, 19).replace('T', ' ');
+    };
+
+    const headers = [
+      'Empresa', 'Evaluación',
+      'Tipo Documento', 'Número Documento',
+      'Nombres', 'Apellidos',
+      'Email', 'Teléfono',
+      'Forma',
+      'Año Nacimiento', 'Género', 'Estado Civil', 'Nivel Educativo',
+      'Área/Departamento', 'Cargo',
+      'Tipo Contrato', 'Tipo Empleo', 'Meses en Cargo', 'Rango Salarial',
+      'Horas/Día', 'Días/Semana',
+      'Estado', 'Progreso (%)',
+      'Asignado en', 'Completado en',
+      'Link de Acceso',
+    ];
+
+    const rows = filteredParticipants.map(p => [
+      p.companyName || '',
+      p.evaluationName || '',
+      p.documentType || '',
+      p.documentNumber || '',
+      p.firstName || '',
+      p.lastName || '',
+      p.email || '',
+      p.phone || '',
+      p.formType || '',
+      p.birthYear ? String(p.birthYear) : '',
+      p.gender || '',
+      p.maritalStatus || '',
+      p.educationLevel || '',
+      p.department || '',
+      p.position || '',
+      p.contractType || '',
+      p.employmentType || '',
+      p.tenureMonths != null ? String(p.tenureMonths) : '',
+      p.salaryRange || '',
+      p.workHoursPerDay != null ? String(p.workHoursPerDay) : '',
+      p.workDaysPerWeek != null ? String(p.workDaysPerWeek) : '',
+      statusLabel(p.status),
+      p.completionPercentage != null ? String(p.completionPercentage) : '0',
+      fmtDate(p.startedAt),
+      fmtDate(p.completedAt),
+      p.evaluationUrl || '',
+    ]);
+
+    const escape = (v: string) => {
+      const s = String(v ?? '');
+      return /[",\n\r;]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+
+    const csv = [headers, ...rows].map(r => r.map(escape).join(';')).join('\r\n');
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const ts = new Date().toISOString().slice(0, 10);
+    a.href = url;
+    a.download = `participantes_${ts}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toast.success(`Exportados ${rows.length} participantes`);
+  };
+
   // Filtrar solo por búsqueda local y tipo de formulario (los otros se filtran en el backend)
   const filteredParticipants = participants.filter((participant: Participant) => {
     const matchesSearch = searchTerm === '' || 
@@ -461,6 +546,13 @@ export default function EvaluatorParticipants() {
                 WhatsApp ({selectedIds.size})
               </button>
             )}
+            <button
+              onClick={handleExportCsv}
+              className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+            >
+              <ArrowDownTrayIcon className="h-4 w-4 mr-2" />
+              Exportar Excel
+            </button>
             <button
               onClick={() => {
                 setExcelFile(null);
