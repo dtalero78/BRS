@@ -195,8 +195,8 @@ export default function EvaluatorParticipants() {
 
       if (response.ok) {
         toast.success(
-          editingParticipant 
-            ? 'Participante actualizado exitosamente' 
+          editingParticipant
+            ? 'Participante actualizado exitosamente'
             : 'Participante creado exitosamente'
         );
         setShowModal(false);
@@ -205,11 +205,45 @@ export default function EvaluatorParticipants() {
         fetchParticipants();
       } else {
         const errorData = await response.json();
+
+        // Special handling: participant already exists in this evaluation —
+        // offer to edit the existing one instead of erroring out.
+        if (response.status === 409 && errorData.code === 'PARTICIPANT_ALREADY_ASSIGNED' && errorData.existingParticipant) {
+          const ep = errorData.existingParticipant;
+          const fullName = `${ep.firstName} ${ep.lastName}`.trim() || ep.email;
+          const confirmEdit = window.confirm(
+            `${fullName} (${ep.documentType} ${ep.documentNumber}) ya está asignado a esta evaluación.\n\n` +
+            `¿Quieres editar sus datos en su lugar?`
+          );
+          if (confirmEdit) {
+            await openEditForExistingParticipant(ep.id);
+          }
+          return;
+        }
+
         toast.error(errorData.error || 'Error al guardar participante');
       }
     } catch (error) {
       console.error('Error:', error);
       toast.error('Error de conexión');
+    }
+  };
+
+  const openEditForExistingParticipant = async (participantId: number) => {
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(`/api/participants/${participantId}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (!res.ok) {
+        toast.error('No se pudo cargar el participante existente');
+        return;
+      }
+      const existing = await res.json();
+      handleEdit(existing);
+    } catch (err) {
+      console.error('Error loading existing participant:', err);
+      toast.error('Error al cargar el participante existente');
     }
   };
 

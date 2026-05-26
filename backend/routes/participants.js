@@ -111,7 +111,23 @@ router.post('/', auth, authorize('admin', 'evaluator'), async (req, res) => {
       .first();
 
     if (existingAssignment) {
-      return res.status(409).json({ error: 'El participante ya está asignado a esta evaluación' });
+      const existingDemo = typeof participant.demographic_data === 'string'
+        ? JSON.parse(participant.demographic_data)
+        : (participant.demographic_data || {});
+      const fullName = `${existingDemo.firstName || ''} ${existingDemo.lastName || ''}`.trim() || participant.email;
+      return res.status(409).json({
+        error: `${fullName} (${existingDemo.documentType || ''} ${existingDemo.documentNumber || ''}) ya está asignado a esta evaluación`,
+        code: 'PARTICIPANT_ALREADY_ASSIGNED',
+        existingParticipant: {
+          id: participant.id,
+          firstName: existingDemo.firstName || '',
+          lastName: existingDemo.lastName || '',
+          documentType: existingDemo.documentType || '',
+          documentNumber: existingDemo.documentNumber || '',
+          email: participant.email,
+          evaluationId: evaluationId
+        }
+      });
     }
 
     // Generate unique access token

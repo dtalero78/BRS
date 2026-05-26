@@ -3,6 +3,7 @@ const router = express.Router();
 const Joi = require('joi');
 const { auth, getOwnedCompanyIds } = require('../middleware/auth');
 const db = require('../config/database');
+const { isQuestionnaireComplete } = require('../utils/questionnaire-totals');
 
 // Validation schema for saving responses
 const saveResponsesSchema = Joi.object({
@@ -41,6 +42,8 @@ router.post('/', auth, async (req, res) => {
       return res.status(400).json({ error: 'Participante no asignado a evaluación' });
     }
 
+    const thisQuestionnaireDone = isQuestionnaireComplete(questionnaireType, responses);
+
     await db.transaction(async (trx) => {
       // Convert responses to the format expected by calculate-results.js
       const responseMap = {};
@@ -54,12 +57,13 @@ router.post('/', auth, async (req, res) => {
         .where('questionnaire_type', questionnaireType)
         .del();
 
-      // Insert new responses as JSON
+      // Only stamp completed_at when the questionnaire is actually full —
+      // partial saves leave it null so the participant can resume.
       await trx('responses').insert({
         participant_evaluation_id: participantEvaluation.pe_id,
         questionnaire_type: questionnaireType,
         responses: JSON.stringify(responseMap),
-        completed_at: new Date()
+        completed_at: thisQuestionnaireDone ? new Date() : null
       });
 
       // Update participant progress - get demographic data to determine form type
@@ -74,23 +78,26 @@ router.post('/', auth, async (req, res) => {
 
       const formType = demographicData.formType || 'A';
 
-      const completedQuestionnaires = await trx('responses')
+      const allResponses = await trx('responses')
         .where('participant_evaluation_id', participantEvaluation.pe_id)
-        .select('questionnaire_type');
+        .select('questionnaire_type', 'completed_at');
 
-      const completedTypes = completedQuestionnaires.map(q => q.questionnaire_type);
+      const startedTypes = allResponses.map(q => q.questionnaire_type);
+      const finishedTypes = allResponses
+        .filter(q => q.completed_at)
+        .map(q => q.questionnaire_type);
 
       const requiredQuestionnaires = formType === 'A'
         ? ['intralaboral_a', 'extralaboral', 'estres']
         : ['intralaboral_b', 'extralaboral', 'estres'];
 
-      const allRequiredDone = requiredQuestionnaires.every(type => completedTypes.includes(type));
+      const allRequiredDone = requiredQuestionnaires.every(type => finishedTypes.includes(type));
 
       // Update participant_evaluation status
       const updateData = {};
 
       if (participantEvaluation.pe_status !== 'completed') {
-        if (completedTypes.length > 0) updateData.status = 'in_progress';
+        if (startedTypes.length > 0) updateData.status = 'in_progress';
         if (allRequiredDone) {
           updateData.status = 'completed';
           updateData.completed_at = new Date();

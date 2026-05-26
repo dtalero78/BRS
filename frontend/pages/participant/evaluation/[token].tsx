@@ -201,17 +201,24 @@ const ParticipantEvaluationPage = () => {
       const data = await response.json();
       setCurrentQuestionnaire(data);
       setCurrentQuestionIndex(0);
-      
+
       // Pre-fill with existing demographic data for ficha-datos
       let initialResponses = {};
       if (questionnaireId === 'ficha-datos' && data.existingData) {
         initialResponses = mapExistingDataToResponses(data.existingData, data.questionnaire.campos);
       }
-      
+
       // Load existing responses and merge with pre-filled data
-      await loadExistingResponses(questionnaireId, initialResponses, data.questionnaire);
-      
-      // Progress will be calculated in loadExistingResponses with correct totals
+      const mergedResponses = await loadExistingResponses(questionnaireId, initialResponses, data.questionnaire);
+
+      // Resume on the first unanswered question
+      const questions = getQuestionsFromData(data.questionnaire);
+      if (questions.length > 0 && mergedResponses && Object.keys(mergedResponses).length > 0) {
+        const firstUnanswered = questions.findIndex(q => mergedResponses[`q_${q.numero}`] === undefined);
+        if (firstUnanswered > 0) {
+          setCurrentQuestionIndex(firstUnanswered);
+        }
+      }
 
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al cargar cuestionario');
@@ -244,51 +251,97 @@ const ParticipantEvaluationPage = () => {
       if (response.ok) {
         const data = await response.json();
         const existingResponses = data.responses[questionnaireTypeMap[questionnaireId]] || [];
-        
+
         const responseMap: {[key: string]: number} = {};
         existingResponses.forEach((resp: any) => {
           responseMap[`q_${resp.questionNumber}`] = resp.responseValue;
         });
+
+        let finalResponses: {[key: string]: any} = {};
 
         // Merge with backup if exists and has more responses
         if (backupData) {
           const backupResponses = JSON.parse(backupData);
           if (Object.keys(backupResponses).length > Object.keys(responseMap).length) {
             console.log('Recovering responses from localStorage backup');
+            finalResponses = backupResponses;
             setResponses(backupResponses);
             // Try to save the backup to server
             saveResponsesWithRetry(backupResponses);
             localStorage.removeItem(backupKey); // Clean up after recovery
           } else {
-            const mergedResponses = { ...preFilledResponses, ...responseMap };
-            setResponses(mergedResponses);
+            finalResponses = { ...preFilledResponses, ...responseMap };
+            setResponses(finalResponses);
             localStorage.removeItem(backupKey); // Clean up old backup
           }
         } else {
-          // Merge existing saved responses with pre-filled data
-          const mergedResponses = { ...preFilledResponses, ...responseMap };
-          setResponses(mergedResponses);
+          finalResponses = { ...preFilledResponses, ...responseMap };
+          setResponses(finalResponses);
         }
-        
+
         // Update progress based on final merged responses
-        const totalQuestions = questionnaireData?.total_preguntas || questionnaireData?.campos?.length || currentQuestionnaire?.questionnaire.total_preguntas || currentQuestionnaire?.questionnaire.campos?.length || 0;
-        
-        // Get the final responses that were set
-        let finalResponseCount = 0;
-        if (backupData && Object.keys(JSON.parse(backupData)).length > Object.keys(responseMap).length) {
-          finalResponseCount = Object.keys(JSON.parse(backupData)).length;
-        } else {
-          const mergedResponses = { ...preFilledResponses, ...responseMap };
-          finalResponseCount = Object.keys(mergedResponses).length;
-        }
-        
-        const totalQuestionsCount = getTotalQuestions();
+        const totalQuestionsCount = getTotalQuestionsFromData(questionnaireData) || getTotalQuestions();
+        const finalResponseCount = Object.keys(finalResponses).length;
         const progressValue = totalQuestionsCount > 0 ? (finalResponseCount / totalQuestionsCount) * 100 : 0;
         setProgress(progressValue);
+
+        return finalResponses;
       }
     } catch (err) {
       console.error('Error loading existing responses:', err);
     }
+    return preFilledResponses;
+  };
+
+  // Build the question list directly from questionnaire data (without depending on currentQuestionnaire state)
+  const getQuestionsFromData = (questionnaire: any): Question[] => {
+    if (!questionnaire) return [];
+    const { secciones, preguntas, campos, malestares } = questionnaire;
+
+    if (campos && Array.isArray(campos)) {
+      return campos.map((campo: any, index: number) => ({
+        id: campo.numero || index + 1,
+        numero: campo.numero,
+        texto: campo.campo,
+        tipo: campo.tipo,
+        opciones: campo.opciones,
+        subcampos: campo.subcampos
+      }));
+    }
+
+    if (malestares && Array.isArray(malestares)) {
+      return malestares.map((m: any, index: number) => ({
+        id: m.numero || index + 1,
+        numero: m.numero,
+        texto: m.texto,
+        pregunta: m.texto
+      }));
+    }
+
+    if (preguntas && Array.isArray(preguntas)) {
+      return preguntas;
+    }
+
+    if (secciones && typeof secciones === 'object') {
+      const all: Question[] = [];
+      Object.values(secciones).forEach((seccion: any) => {
+        if (seccion?.preguntas && Array.isArray(seccion.preguntas)) {
+          all.push(...seccion.preguntas);
+        }
+      });
+      return all.sort((a, b) => (a.numero || 0) - (b.numero || 0));
+    }
+
+    return [];
+  };
+
+  const getTotalQuestionsFromData = (questionnaire: any): number => {
+    if (!questionnaire) return 0;
+    return questionnaire.total_preguntas
+      || questionnaire.campos?.length
+      || questionnaire.malestares?.length
+      || getQuestionsFromData(questionnaire).length
+      || 0;
   };
 
   const handleResponseChange = (questionNumber: number | string, value: number | string) => {

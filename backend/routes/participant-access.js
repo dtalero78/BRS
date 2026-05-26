@@ -3,6 +3,7 @@ const router = express.Router();
 const db = require('../config/database');
 const calculateResults = require('../utils/calculate-results');
 const { calculateCopingResults } = require('../utils/calculate-coping');
+const { isQuestionnaireComplete } = require('../utils/questionnaire-totals');
 
 async function autoCalculateResults(peId) {
   try {
@@ -376,6 +377,8 @@ router.post('/:token/responses', async (req, res) => {
 
     let isCompleted = false;
 
+    const thisQuestionnaireDone = isQuestionnaireComplete(questionnaireType, responses);
+
     await db.transaction(async (trx) => {
       // Check if response already exists for this questionnaire type
       const existingResponse = await trx('responses')
@@ -383,11 +386,18 @@ router.post('/:token/responses', async (req, res) => {
         .where('questionnaire_type', questionnaireType)
         .first();
 
+      // Only mark completed_at when the questionnaire is actually finished.
+      // Partial autosaves keep completed_at = null so the participant can resume.
+      // If a previous save already marked it complete, preserve that timestamp.
+      const completedAt = thisQuestionnaireDone
+        ? (existingResponse?.completed_at || new Date())
+        : null;
+
       const responseData = {
         participant_evaluation_id: participantEvaluation.pe_id,
         questionnaire_type: questionnaireType,
         responses: JSON.stringify(responses),
-        completed_at: new Date()
+        completed_at: completedAt
       };
 
       if (existingResponse) {
@@ -410,24 +420,28 @@ router.post('/:token/responses', async (req, res) => {
 
       const formType = demographicData.formType || 'A';
 
-      const completedQuestionnaires = await trx('responses')
+      const allResponses = await trx('responses')
         .where('participant_evaluation_id', participantEvaluation.pe_id)
-        .select('questionnaire_type');
+        .select('questionnaire_type', 'completed_at');
 
-      const completedTypes = completedQuestionnaires.map(q => q.questionnaire_type);
+      const startedTypes = allResponses.map(q => q.questionnaire_type);
+      const finishedTypes = allResponses
+        .filter(q => q.completed_at)
+        .map(q => q.questionnaire_type);
 
-      // Presence-based completion: all required questionnaire types must exist
+      // A required questionnaire counts as done only when its responses fill the
+      // expected total (completed_at is set). Partial saves don't count.
       const requiredQuestionnaires = formType === 'A'
         ? ['intralaboral_a', 'extralaboral', 'estres']
         : ['intralaboral_b', 'extralaboral', 'estres'];
 
-      isCompleted = requiredQuestionnaires.every(type => completedTypes.includes(type));
+      isCompleted = requiredQuestionnaires.every(type => finishedTypes.includes(type));
 
       // Update participant evaluation status
       const updateData = {};
 
       if (participantEvaluation.pe_status !== 'completed') {
-        if (completedTypes.length > 0) updateData.status = 'in_progress';
+        if (startedTypes.length > 0) updateData.status = 'in_progress';
         if (isCompleted) {
           updateData.status = 'completed';
           updateData.completed_at = new Date();
