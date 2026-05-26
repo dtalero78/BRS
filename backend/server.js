@@ -277,6 +277,14 @@ try {
   console.error('❌ Error loading photo-import routes:', error.message);
 }
 
+// Server-to-server integration routes (BSL-PLATAFORMA2 / Platzi)
+try {
+  app.use('/api/integration', require('./routes/integration'));
+  console.log('✅ Integration routes loaded');
+} catch (error) {
+  console.error('❌ Error loading integration routes:', error.message);
+}
+
 // Serve static files (uploads, reports)
 app.use('/uploads', express.static('uploads'));
 

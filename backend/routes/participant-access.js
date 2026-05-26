@@ -4,6 +4,7 @@ const db = require('../config/database');
 const calculateResults = require('../utils/calculate-results');
 const { calculateCopingResults } = require('../utils/calculate-coping');
 const { isQuestionnaireComplete } = require('../utils/questionnaire-totals');
+const { notifyEvaluationCompleted } = require('../services/webhook-emitter');
 
 async function autoCalculateResults(peId) {
   try {
@@ -235,11 +236,30 @@ router.get('/:token/questionnaires', async (req, res) => {
       .join('participants', 'participant_evaluations.participant_id', 'participants.id')
       .where('participant_evaluations.access_token', token)
       .where('participant_evaluations.token_expires_at', '>', new Date())
-      .select('participants.*', 'participant_evaluations.id as participant_evaluation_id')
+      .select(
+        'participants.*',
+        'participant_evaluations.id as participant_evaluation_id',
+        'participant_evaluations.integration_metadata'
+      )
       .first();
 
     if (!participantEvaluation) {
       return res.status(404).json({ error: 'Token inválido o expirado' });
+    }
+
+    // Si el participante fue creado por integración externa (ej. BSL-PLATAFORMA2),
+    // exponer la returnUrl para que el frontend pueda redirigirlo de vuelta al
+    // terminar todos los cuestionarios.
+    let integrationReturnUrl = null;
+    if (participantEvaluation.integration_metadata) {
+      try {
+        const meta = typeof participantEvaluation.integration_metadata === 'string'
+          ? JSON.parse(participantEvaluation.integration_metadata)
+          : participantEvaluation.integration_metadata;
+        integrationReturnUrl = meta && meta.returnUrl ? String(meta.returnUrl) : null;
+      } catch (e) {
+        integrationReturnUrl = null;
+      }
     }
 
     // Get completed questionnaires
@@ -348,7 +368,10 @@ router.get('/:token/questionnaires', async (req, res) => {
         formType: formType
       },
       questionnaires: available,
-      opciones_respuesta: questionnairesData.opciones_respuesta
+      opciones_respuesta: questionnairesData.opciones_respuesta,
+      // Si el participante viene de una integración externa, devolver la
+      // URL a la que redirigir cuando todos los cuestionarios estén completos.
+      integration: integrationReturnUrl ? { returnUrl: integrationReturnUrl } : null
     });
 
   } catch (error) {
@@ -458,6 +481,9 @@ router.post('/:token/responses', async (req, res) => {
 
     if (isCompleted) {
       autoCalculateResults(participantEvaluation.pe_id);
+      // Notificar al sistema externo (ej. BSL-PLATAFORMA2) sin bloquear la
+      // respuesta. El emitter es no-op si el PE no tiene callbackUrl.
+      notifyEvaluationCompleted(participantEvaluation.pe_id);
     }
 
     res.json({
