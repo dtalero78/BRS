@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, ReactNode } from 'react';
 import { useRouter } from 'next/router';
-import { ClipboardList, Briefcase, HardHat, Home, Brain, Shield, FileText, LucideIcon } from 'lucide-react';
+import { ClipboardList, Briefcase, HardHat, Home, Brain, Shield, FileText, CheckCircle2, LucideIcon } from 'lucide-react';
 
 // Simple wrapper for participant pages (no auth required)
 function ParticipantLayout({ children }: { children: ReactNode }) {
@@ -839,28 +839,44 @@ const ParticipantEvaluationPage = () => {
                         key={q.id}
                         onClick={() => !isDone && loadQuestionnaire(q.id)}
                         disabled={isDone}
+                        aria-disabled={isDone}
                         className={`group w-full flex items-center text-left border-2 rounded-2xl p-4 sm:p-5 transition-all duration-200 ${
                           isDone
-                            ? 'border-green-200 bg-green-50/50 cursor-default'
+                            ? 'border-gray-200 bg-gray-50 opacity-70 cursor-not-allowed pointer-events-none'
                             : 'border-gray-200 bg-white hover:border-blue-500 hover:shadow-md cursor-pointer'
                         }`}
                       >
                         <div
                           className={`flex-shrink-0 w-12 h-12 rounded-xl flex items-center justify-center ${
-                            isDone ? 'bg-green-100' : 'bg-blue-50 group-hover:bg-blue-100'
+                            isDone ? 'bg-gray-100' : 'bg-blue-50 group-hover:bg-blue-100'
                           } transition-colors`}
                         >
                           <Icon
-                            className={`w-6 h-6 ${isDone ? 'text-green-600' : 'text-blue-600'}`}
+                            className={`w-6 h-6 ${isDone ? 'text-gray-400' : 'text-blue-600'}`}
                             strokeWidth={1.75}
                           />
                         </div>
                         <div className="flex-1 min-w-0 ml-4">
-                          <div className="text-base font-semibold text-gray-900 truncate">
+                          <div
+                            className={`text-base font-semibold truncate ${
+                              isDone ? 'text-gray-500 line-through decoration-1' : 'text-gray-900'
+                            }`}
+                          >
                             {q.name}
                           </div>
-                          <div className="text-sm text-gray-500 mt-0.5">
-                            {q.totalQuestions} preguntas
+                          <div
+                            className={`text-sm mt-0.5 flex items-center gap-1 ${
+                              isDone ? 'text-green-600 font-medium' : 'text-gray-500'
+                            }`}
+                          >
+                            {isDone ? (
+                              <>
+                                <CheckCircle2 className="w-3.5 h-3.5" strokeWidth={2.25} />
+                                Completado
+                              </>
+                            ) : (
+                              `${q.totalQuestions} preguntas`
+                            )}
                           </div>
                         </div>
                         <div className="flex-shrink-0 ml-3">
