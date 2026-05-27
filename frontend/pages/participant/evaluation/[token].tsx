@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, ReactNode } from 'react';
 import { useRouter } from 'next/router';
+import { ClipboardList, Briefcase, HardHat, Home, Brain, Shield, FileText, LucideIcon } from 'lucide-react';
 
 // Simple wrapper for participant pages (no auth required)
 function ParticipantLayout({ children }: { children: ReactNode }) {
@@ -781,96 +782,118 @@ const ParticipantEvaluationPage = () => {
       <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 py-4">
         <div className="max-w-4xl mx-auto px-6">
         {!currentQuestionnaire ? (
-          // Questionnaire selection view
-          <div>
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
-              <h1 className="text-2xl font-bold text-gray-900 mb-2">
-                Evaluación de Riesgo Psicosocial
-              </h1>
-              <p className="text-gray-600 mb-2">
-                Participante: {participant.firstName} {participant.lastName}
-              </p>
-              <p className="text-gray-600 mb-4">
-                Evaluación: {evaluation?.name}
-              </p>
-              <p className="text-sm text-gray-500">
-                Forma asignada: {participant.formType} 
-                {participant.formType === 'A' ? ' (Jefes, profesionales y técnicos)' : ' (Auxiliares y operarios)'}
-              </p>
-            </div>
+          // Questionnaire selection view - simplified Typeform-style list
+          (() => {
+            const completedCount = availableQuestionnaires.filter(q => q.completed).length;
+            const totalCount = availableQuestionnaires.length;
+            const allDone = totalCount > 0 && completedCount === totalCount;
 
-            {/* Instructions */}
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-6 mb-6">
-              <h3 className="text-lg font-semibold text-blue-900 mb-2">
-                Instrucciones para Completar los Cuestionarios
-              </h3>
-              <div className="text-blue-800 space-y-2 text-sm">
-                <p>• Responde todas las preguntas de manera honesta y reflexiva</p>
-                <p>• Puedes guardar tu progreso y continuar más tarde</p>
-                <p>• Cada cuestionario evalúa diferentes aspectos de tu entorno laboral</p>
-                <p>• Los resultados son confidenciales y se utilizan únicamente para fines evaluativos</p>
-              </div>
-            </div>
+            const questionnaireIcons: Record<string, LucideIcon> = {
+              'ficha-datos': ClipboardList,
+              'forma-a': Briefcase,
+              'forma-b': HardHat,
+              'extralaboral': Home,
+              'estres': Brain,
+              'coping': Shield,
+            };
 
-            {/* Progress summary */}
-            {availableQuestionnaires.some(q => q.completed) && (
-              <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-6">
-                <div className="flex items-center gap-2">
-                  <svg className="w-5 h-5 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  <p className="text-green-800 font-medium">
-                    {availableQuestionnaires.filter(q => q.completed).length} de {availableQuestionnaires.length} cuestionarios completados
+            return (
+              <div className="max-w-xl mx-auto">
+                {/* Greeting */}
+                <div className="mb-8 mt-4">
+                  <h1 className="text-2xl font-bold text-gray-900 mb-1">
+                    Hola, {participant.firstName}
+                  </h1>
+                  <p className="text-gray-500">
+                    Selecciona un cuestionario para continuar
                   </p>
                 </div>
-                {availableQuestionnaires.every(q => q.completed) && (
-                  <p className="text-green-700 mt-2 text-sm">
-                    {integrationReturnUrl
-                      ? '¡Has completado todos los cuestionarios! Te estamos redirigiendo a tu portal de pruebas...'
-                      : '¡Has completado todos los cuestionarios! Ya puedes cerrar esta página. Tu evaluador revisará los resultados.'}
-                  </p>
+
+                {/* Progress bar (compact) */}
+                {completedCount > 0 && (
+                  <div className="mb-6">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+                        Tu progreso
+                      </span>
+                      <span className="text-xs font-semibold text-gray-700">
+                        {completedCount} de {totalCount}
+                      </span>
+                    </div>
+                    <div className="w-full bg-gray-200 rounded-full h-1.5 overflow-hidden">
+                      <div
+                        className={`h-1.5 rounded-full transition-all duration-500 ${allDone ? 'bg-green-500' : 'bg-blue-600'}`}
+                        style={{ width: `${(completedCount / totalCount) * 100}%` }}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* Vertical list of questionnaires */}
+                <div className="space-y-3">
+                  {availableQuestionnaires.map((q) => {
+                    const Icon = questionnaireIcons[q.id] || FileText;
+                    const isDone = q.completed;
+                    return (
+                      <button
+                        key={q.id}
+                        onClick={() => !isDone && loadQuestionnaire(q.id)}
+                        disabled={isDone}
+                        className={`group w-full flex items-center text-left border-2 rounded-2xl p-4 sm:p-5 transition-all duration-200 ${
+                          isDone
+                            ? 'border-green-200 bg-green-50/50 cursor-default'
+                            : 'border-gray-200 bg-white hover:border-blue-500 hover:shadow-md cursor-pointer'
+                        }`}
+                      >
+                        <div
+                          className={`flex-shrink-0 w-12 h-12 rounded-xl flex items-center justify-center ${
+                            isDone ? 'bg-green-100' : 'bg-blue-50 group-hover:bg-blue-100'
+                          } transition-colors`}
+                        >
+                          <Icon
+                            className={`w-6 h-6 ${isDone ? 'text-green-600' : 'text-blue-600'}`}
+                            strokeWidth={1.75}
+                          />
+                        </div>
+                        <div className="flex-1 min-w-0 ml-4">
+                          <div className="text-base font-semibold text-gray-900 truncate">
+                            {q.name}
+                          </div>
+                          <div className="text-sm text-gray-500 mt-0.5">
+                            {q.totalQuestions} preguntas
+                          </div>
+                        </div>
+                        <div className="flex-shrink-0 ml-3">
+                          {isDone ? (
+                            <div className="w-7 h-7 rounded-full bg-green-500 flex items-center justify-center">
+                              <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                              </svg>
+                            </div>
+                          ) : (
+                            <svg className="w-5 h-5 text-gray-300 group-hover:text-blue-500 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                            </svg>
+                          )}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Completion message */}
+                {allDone && (
+                  <div className="mt-6 bg-green-50 border border-green-200 rounded-2xl p-4 text-center">
+                    <p className="text-green-800 font-medium text-sm">
+                      {integrationReturnUrl
+                        ? '¡Has completado todos los cuestionarios! Te estamos redirigiendo...'
+                        : '¡Has completado todos los cuestionarios! Ya puedes cerrar esta página.'}
+                    </p>
+                  </div>
                 )}
               </div>
-            )}
-
-            <div className="grid gap-6 md:grid-cols-2">
-              {availableQuestionnaires.map((questionnaire) => (
-                <div key={questionnaire.id} className={`bg-white rounded-lg shadow-sm border p-6 ${questionnaire.completed ? 'border-green-300 bg-green-50/30' : 'border-gray-200'}`}>
-                  <div className="flex items-start justify-between mb-2">
-                    <h3 className="text-lg font-medium text-gray-900">
-                      {questionnaire.name}
-                    </h3>
-                    {questionnaire.completed && (
-                      <span className="inline-flex items-center gap-1 bg-green-100 text-green-700 text-xs font-semibold px-2.5 py-1 rounded-full">
-                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                        </svg>
-                        Completado
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-gray-600 mb-4">
-                    {questionnaire.description}
-                  </p>
-                  <p className="text-sm text-gray-500 mb-4">
-                    Total de preguntas: {questionnaire.totalQuestions}
-                  </p>
-                  {questionnaire.completed ? (
-                    <div className="w-full bg-green-100 text-green-700 py-2 px-4 rounded-lg font-medium text-center cursor-not-allowed">
-                      ✓ Cuestionario completado
-                    </div>
-                  ) : (
-                    <button
-                      onClick={() => loadQuestionnaire(questionnaire.id)}
-                      className="w-full bg-blue-600 text-white py-2 px-4 rounded-lg font-medium hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition duration-200"
-                    >
-                      Comenzar Cuestionario
-                    </button>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
+            );
+          })()
         ) : (
           // Questionnaire taking view
           <div>
