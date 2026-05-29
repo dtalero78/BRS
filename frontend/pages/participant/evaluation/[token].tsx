@@ -70,9 +70,6 @@ const ParticipantEvaluationPage = () => {
   const [participant, setParticipant] = useState<ParticipantData | null>(null);
   const [evaluation, setEvaluation] = useState<EvaluationData | null>(null);
   const [availableQuestionnaires, setAvailableQuestionnaires] = useState<any[]>([]);
-  // Si el participante fue creado por integración externa (ej. BSL-PLATAFORMA2),
-  // redirigirlo a esta URL al completar todos los cuestionarios.
-  const [integrationReturnUrl, setIntegrationReturnUrl] = useState<string | null>(null);
   const [currentQuestionnaire, setCurrentQuestionnaire] = useState<QuestionnaireData | null>(null);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [responses, setResponses] = useState<{[key: string]: number | string}>({});
@@ -108,18 +105,6 @@ const ParticipantEvaluationPage = () => {
     }
   }, [token]);
 
-  // Auto-redirect a la app externa cuando se completa toda la batería.
-  // Se da una pausa de 5s para que el paciente vea el mensaje de éxito.
-  useEffect(() => {
-    if (!integrationReturnUrl) return;
-    if (availableQuestionnaires.length === 0) return;
-    if (!availableQuestionnaires.every(q => q.completed)) return;
-    const t = setTimeout(() => {
-      window.location.href = integrationReturnUrl;
-    }, 5000);
-    return () => clearTimeout(t);
-  }, [availableQuestionnaires, integrationReturnUrl]);
-
   // Cleanup timeout on unmount
   useEffect(() => {
     return () => {
@@ -154,9 +139,6 @@ const ParticipantEvaluationPage = () => {
 
       const questionnairesData = await questionnairesResponse.json();
       setAvailableQuestionnaires(questionnairesData.questionnaires);
-      if (questionnairesData.integration && questionnairesData.integration.returnUrl) {
-        setIntegrationReturnUrl(questionnairesData.integration.returnUrl);
-      }
 
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al cargar datos');
@@ -901,9 +883,7 @@ const ParticipantEvaluationPage = () => {
                 {allDone && (
                   <div className="mt-6 bg-green-50 border border-green-200 rounded-2xl p-4 text-center">
                     <p className="text-green-800 font-medium text-sm">
-                      {integrationReturnUrl
-                        ? '¡Has completado todos los cuestionarios! Te estamos redirigiendo...'
-                        : '¡Has completado todos los cuestionarios! Ya puedes cerrar esta página.'}
+                      ¡Has completado todos los cuestionarios! Ya puedes cerrar esta página.
                     </p>
                   </div>
                 )}
