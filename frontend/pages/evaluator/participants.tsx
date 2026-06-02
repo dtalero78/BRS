@@ -45,6 +45,7 @@ interface Participant {
   phone?: string;
   evaluationId: string;
   evaluationName?: string;
+  evaluationPaid?: boolean;
   evaluationUrl?: string;
   email?: string;
   companyName?: string;
@@ -423,6 +424,15 @@ export default function EvaluatorParticipants() {
       return;
     }
 
+    // Gating por pago: solo se exportan participantes de evaluaciones habilitadas (pagadas).
+    const exportable = filteredParticipants.filter(p => p.evaluationPaid);
+    const excluded = filteredParticipants.length - exportable.length;
+
+    if (exportable.length === 0) {
+      toast.error('La exportación no está habilitada: ninguna de las evaluaciones tiene el pago registrado.');
+      return;
+    }
+
     const statusLabel = (s: string) =>
       s === 'completed' ? 'Completado'
       : s === 'in_progress' ? 'En progreso'
@@ -452,7 +462,7 @@ export default function EvaluatorParticipants() {
       'Link de Acceso',
     ];
 
-    const rows = filteredParticipants.map(p => [
+    const rows = exportable.map(p => [
       p.companyName || '',
       p.evaluationName || '',
       p.documentType || '',
@@ -498,6 +508,9 @@ export default function EvaluatorParticipants() {
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
     toast.success(`Exportados ${rows.length} participantes`);
+    if (excluded > 0) {
+      toast(`${excluded} participante(s) no se exportaron: su evaluación no tiene el pago registrado.`, { icon: '⚠️' });
+    }
   };
 
   // Filtrar solo por búsqueda local y tipo de formulario (los otros se filtran en el backend)

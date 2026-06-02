@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const Joi = require('joi');
-const { auth, authorize, getOwnedCompanyIds } = require('../middleware/auth');
+const { auth, authorize, getOwnedCompanyIds, isSuperAdmin } = require('../middleware/auth');
 const db = require('../config/database');
 const multer = require('multer');
 const XLSX = require('xlsx');
@@ -194,6 +194,7 @@ router.get('/', auth, async (req, res) => {
     const offset = (page - 1) * limit;
 
     const companyIds = await getOwnedCompanyIds(req.user.userId);
+    const superAdmin = isSuperAdmin(req.user);
 
     // Determinar el tipo de JOIN basado en los filtros
     const joinType = (status || evaluationId) ? 'join' : 'leftJoin';
@@ -220,6 +221,7 @@ router.get('/', auth, async (req, res) => {
         'participants.*',
         'evaluations.name as evaluation_name',
         'evaluations.id as evaluation_id',
+        'evaluations.paid as evaluation_paid',
         'pe.status as evaluation_status',
         'pe.assigned_at',
         'pe.completed_at',
@@ -307,6 +309,7 @@ router.get('/', auth, async (req, res) => {
         phone: demographicData.phone || '',
         evaluationId: p.evaluation_id,
         evaluationName: p.evaluation_name,
+        evaluationPaid: superAdmin ? true : !!p.evaluation_paid,
         companyName: p.company_name || '',
         status: p.evaluation_status || 'pending',
         completionPercentage: completionPercentage,
