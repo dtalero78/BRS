@@ -391,7 +391,12 @@ router.post('/:token/responses', async (req, res) => {
       .join('participants', 'participant_evaluations.participant_id', 'participants.id')
       .where('participant_evaluations.access_token', token)
       .where('participant_evaluations.token_expires_at', '>', new Date())
-      .select('participants.*', 'participant_evaluations.id as pe_id', 'participant_evaluations.status as pe_status')
+      .select(
+        'participants.*',
+        'participant_evaluations.id as pe_id',
+        'participant_evaluations.status as pe_status',
+        'participant_evaluations.integration_metadata as pe_integration_metadata'
+      )
       .first();
 
     if (!participantEvaluation) {
@@ -454,9 +459,21 @@ router.post('/:token/responses', async (req, res) => {
 
       // A required questionnaire counts as done only when its responses fill the
       // expected total (completed_at is set). Partial saves don't count.
-      const requiredQuestionnaires = formType === 'A'
+      const baseRequired = formType === 'A'
         ? ['intralaboral_a', 'extralaboral', 'estres']
         : ['intralaboral_b', 'extralaboral', 'estres'];
+
+      // Para pacientes provisionados por integración externa (ej. BSL-PLATAFORMA2 /
+      // Platzi) los 5 cuestionarios son obligatorios — la empresa contratante
+      // exige la batería completa, no solo el set mínimo del Ministerio.
+      let integrationMeta = participantEvaluation.pe_integration_metadata;
+      if (typeof integrationMeta === 'string') {
+        try { integrationMeta = JSON.parse(integrationMeta); } catch (e) { integrationMeta = null; }
+      }
+      const esIntegracion = !!(integrationMeta && integrationMeta.source);
+      const requiredQuestionnaires = esIntegracion
+        ? ['ficha_datos', ...baseRequired, 'coping']
+        : baseRequired;
 
       isCompleted = requiredQuestionnaires.every(type => finishedTypes.includes(type));
 
