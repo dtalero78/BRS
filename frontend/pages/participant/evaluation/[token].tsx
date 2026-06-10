@@ -512,7 +512,26 @@ const ParticipantEvaluationPage = () => {
     setIsSubmitting(true);
     try {
       await saveResponsesWithRetry();
-      
+
+      // Refrescar el estado de cuestionarios desde el backend para que el hub
+      // muestre el cuestionario recién terminado como "Completado" y, si es el
+      // último, dispare el useEffect de redirect a returnUrl (Platzi).
+      // Sin esto, el state de availableQuestionnaires queda con el snapshot
+      // del load inicial y el paciente cree que nada se guardó.
+      try {
+        const refetch = await fetch(`/api/participant-access/${token}/questionnaires`);
+        if (refetch.ok) {
+          const data = await refetch.json();
+          setAvailableQuestionnaires(data.questionnaires);
+          if (data.integration && data.integration.returnUrl) {
+            setIntegrationReturnUrl(data.integration.returnUrl);
+          }
+        }
+      } catch (refetchErr) {
+        // Refetch best-effort: si falla, el paciente verá el state viejo pero
+        // los datos están guardados en el backend (saveResponsesWithRetry ya OK).
+      }
+
       // Return to questionnaire selection immediately after saving
       setTimeout(() => {
         setCurrentQuestionnaire(null);
