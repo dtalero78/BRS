@@ -70,6 +70,11 @@ const ParticipantEvaluationPage = () => {
   const [participant, setParticipant] = useState<ParticipantData | null>(null);
   const [evaluation, setEvaluation] = useState<EvaluationData | null>(null);
   const [availableQuestionnaires, setAvailableQuestionnaires] = useState<any[]>([]);
+  // returnUrl viene solo cuando el participant fue creado por integración externa
+  // (BSL-PLATAFORMA2 / Platzi). Para evaluadores que se auto-registran este state
+  // queda en null y el comportamiento legacy se mantiene (mensaje "Ya puedes
+  // cerrar esta página").
+  const [integrationReturnUrl, setIntegrationReturnUrl] = useState<string | null>(null);
   const [currentQuestionnaire, setCurrentQuestionnaire] = useState<QuestionnaireData | null>(null);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [responses, setResponses] = useState<{[key: string]: number | string}>({});
@@ -105,6 +110,21 @@ const ParticipantEvaluationPage = () => {
     }
   }, [token]);
 
+  // Auto-redirect a la app externa cuando se completa toda la batería.
+  // Solo aplica para participantes provisionados por integración (Platzi/BSL):
+  // si no hay integrationReturnUrl, este useEffect es no-op y el paciente ve
+  // el mensaje legacy "Ya puedes cerrar esta página". 5 segundos de pausa para
+  // que el paciente vea el éxito antes del redirect.
+  useEffect(() => {
+    if (!integrationReturnUrl) return;
+    if (availableQuestionnaires.length === 0) return;
+    if (!availableQuestionnaires.every(q => q.completed)) return;
+    const t = setTimeout(() => {
+      window.location.href = integrationReturnUrl;
+    }, 5000);
+    return () => clearTimeout(t);
+  }, [availableQuestionnaires, integrationReturnUrl]);
+
   // Cleanup timeout on unmount
   useEffect(() => {
     return () => {
@@ -139,6 +159,10 @@ const ParticipantEvaluationPage = () => {
 
       const questionnairesData = await questionnairesResponse.json();
       setAvailableQuestionnaires(questionnairesData.questionnaires);
+      // Solo si viene de integración el backend devuelve integration.returnUrl
+      if (questionnairesData.integration && questionnairesData.integration.returnUrl) {
+        setIntegrationReturnUrl(questionnairesData.integration.returnUrl);
+      }
 
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al cargar datos');
@@ -883,7 +907,9 @@ const ParticipantEvaluationPage = () => {
                 {allDone && (
                   <div className="mt-6 bg-green-50 border border-green-200 rounded-2xl p-4 text-center">
                     <p className="text-green-800 font-medium text-sm">
-                      ¡Has completado todos los cuestionarios! Ya puedes cerrar esta página.
+                      {integrationReturnUrl
+                        ? '¡Has completado todos los cuestionarios! Te estamos redirigiendo a tu portal de pruebas...'
+                        : '¡Has completado todos los cuestionarios! Ya puedes cerrar esta página.'}
                     </p>
                   </div>
                 )}
