@@ -600,6 +600,20 @@
             "Una parte fija y otra variable",
             "Todo variable (a destajo, por producción, por comisión)"
           ]
+        },
+        {
+          "numero": 19,
+          "campo": "Estado civil",
+          "tipo": "seleccion_unica",
+          "opciones": [
+            "Soltero(a)",
+            "Casado(a)",
+            "Unión libre",
+            "Separado(a)",
+            "Divorciado(a)",
+            "Viudo(a)",
+            "Sacerdote/Monja"
+          ]
         }
       ]
     },

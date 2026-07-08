@@ -60,7 +60,7 @@ const FICHA_FIELD_MAP = {
     ciudadResidencia: '6', estrato: '7', tipoVivienda: '8', dependientes: '9',
     ciudadTrabajo: '10', anosEmpresa: '11', cargo: '12', tipoCargo: '13',
     anosCargo: '14', departamento: '15', tipoContrato: '16', horasTrabajo: '17',
-    tipoSalario: '18'
+    tipoSalario: '18', maritalStatus: '19'
   },
   photo: {
     fecha: '1', sexo: '2', birthYear: '3', education: '4', maritalStatus: '5',
@@ -656,7 +656,7 @@ function aggregateExtendedDemographics(fichaResponses) {
   fichaResponses.forEach(row => {
     const ficha = resolveFicha(row.responses);
 
-    // Estado civil — solo presente en flujo foto/manual
+    // Estado civil — flujo foto/manual (Q5) y flujo web/token (Q19)
     if (ficha.maritalStatus && typeof ficha.maritalStatus === 'string') {
       base.estadoCivil[ficha.maritalStatus] = (base.estadoCivil[ficha.maritalStatus] || 0) + 1;
     }
