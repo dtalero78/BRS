@@ -813,6 +813,18 @@ const ParticipantEvaluationPage = () => {
             const totalCount = availableQuestionnaires.length;
             const allDone = totalCount > 0 && completedCount === totalCount;
 
+            // El Brief COPE no hace parte de la batería oficial del Ministerio, así
+            // que el progreso se muestra en dos barras: cuestionarios obligatorios
+            // (todos menos el COPE) y el Brief COPE por separado.
+            const requiredQuestionnaires = availableQuestionnaires.filter(q => q.id !== 'coping');
+            const copingQuestionnaire = availableQuestionnaires.find(q => q.id === 'coping');
+            const requiredDone = requiredQuestionnaires.filter(q => q.completed).length;
+            const requiredTotal = requiredQuestionnaires.length;
+            const requiredPct = requiredTotal > 0 ? Math.round((requiredDone / requiredTotal) * 100) : 0;
+            const requiredAllDone = requiredTotal > 0 && requiredDone === requiredTotal;
+            const copingDone = copingQuestionnaire?.completed ? 1 : 0;
+            const copingPct = copingQuestionnaire ? copingDone * 100 : 0;
+
             const questionnaireIcons: Record<string, LucideIcon> = {
               'ficha-datos': ClipboardList,
               'forma-a': Briefcase,
@@ -834,23 +846,46 @@ const ParticipantEvaluationPage = () => {
                   </p>
                 </div>
 
-                {/* Progress bar (compact) */}
+                {/* Progress bars (compact) — obligatorios + Brief COPE por separado */}
                 {completedCount > 0 && (
-                  <div className="mb-6">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">
-                        Tu progreso
-                      </span>
-                      <span className="text-xs font-semibold text-gray-700">
-                        {completedCount} de {totalCount}
-                      </span>
+                  <div className="mb-6 space-y-4">
+                    {/* Cuestionarios obligatorios (batería oficial, sin el Brief COPE) */}
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+                          Cuestionarios obligatorios
+                        </span>
+                        <span className="text-xs font-semibold text-gray-700">
+                          {requiredDone} de {requiredTotal} · {requiredPct}%
+                        </span>
+                      </div>
+                      <div className="w-full bg-gray-200 rounded-full h-1.5 overflow-hidden">
+                        <div
+                          className={`h-1.5 rounded-full transition-all duration-500 ${requiredAllDone ? 'bg-green-500' : 'bg-blue-600'}`}
+                          style={{ width: `${requiredPct}%` }}
+                        />
+                      </div>
                     </div>
-                    <div className="w-full bg-gray-200 rounded-full h-1.5 overflow-hidden">
-                      <div
-                        className={`h-1.5 rounded-full transition-all duration-500 ${allDone ? 'bg-green-500' : 'bg-blue-600'}`}
-                        style={{ width: `${(completedCount / totalCount) * 100}%` }}
-                      />
-                    </div>
+
+                    {/* Brief COPE (opcional, fuera de la batería oficial) */}
+                    {copingQuestionnaire && (
+                      <div>
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+                            Brief COPE <span className="normal-case text-gray-400">(opcional)</span>
+                          </span>
+                          <span className="text-xs font-semibold text-gray-700">
+                            {copingPct}%
+                          </span>
+                        </div>
+                        <div className="w-full bg-gray-200 rounded-full h-1.5 overflow-hidden">
+                          <div
+                            className={`h-1.5 rounded-full transition-all duration-500 ${copingDone ? 'bg-green-500' : 'bg-indigo-400'}`}
+                            style={{ width: `${copingPct}%` }}
+                          />
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
 
