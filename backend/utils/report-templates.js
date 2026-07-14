@@ -729,6 +729,94 @@ function mergeOrgTexts(defaults, overrides) {
 }
 
 // ============================================================
+// SOCIODEMOGRAPHIC ANALYSIS TEXT
+// ============================================================
+// Per-variable metadata used to build a broader, data-driven explanation under
+// each sociodemographic chart: an intro lead-in and a professional sentence on
+// why the variable matters when interpreting psychosocial risk.
+const DEMOGRAPHIC_ANALYSIS_META = {
+  gender: {
+    intro: 'La composición por género de la población evaluada se distribuye de la siguiente manera:',
+    context: 'La distribución por género es un dato relevante en la evaluación psicosocial, dado que las demandas del trabajo, la influencia del trabajo sobre el entorno extralaboral y las condiciones familiares pueden manifestarse de forma diferente entre hombres y mujeres, lo que orienta el diseño de acciones de intervención más equitativas.'
+  },
+  estadoCivil: {
+    intro: 'Según el estado civil, la población evaluada se distribuye así:',
+    context: 'El estado civil aporta contexto sobre las redes de apoyo y las responsabilidades familiares del trabajador, aspectos que se relacionan con dimensiones extralaborales como las relaciones familiares y la situación económica del grupo familiar.'
+  },
+  education: {
+    intro: 'En cuanto al último nivel de escolaridad alcanzado, la distribución es la siguiente:',
+    context: 'El nivel educativo se asocia con las oportunidades para el uso y desarrollo de habilidades, la claridad del rol y las demandas de carga mental del cargo, por lo que resulta útil para interpretar los resultados intralaborales y focalizar los programas de capacitación.'
+  },
+  estrato: {
+    intro: 'De acuerdo con el estrato socioeconómico de residencia, la población se distribuye así:',
+    context: 'El estrato socioeconómico ofrece una aproximación a las condiciones materiales de vida del trabajador y su familia, y se vincula con dimensiones extralaborales como la situación económica del grupo familiar y las características de la vivienda y de su entorno.'
+  },
+  ageRanges: {
+    intro: 'La población evaluada se distribuye por rangos de edad de la siguiente forma:',
+    context: 'La estructura etaria es relevante porque las expectativas laborales, la percepción del riesgo y las estrategias de afrontamiento suelen variar con la edad; una población predominantemente joven o de mayor edad puede requerir enfoques de intervención diferenciados.'
+  },
+  dependents: {
+    intro: 'Respecto al número de personas que dependen económicamente del trabajador, la distribución es la siguiente:',
+    context: 'El número de personas a cargo se relaciona con la carga y la responsabilidad económica del trabajador, factores que inciden en la situación económica del grupo familiar y en la influencia del entorno extralaboral sobre el trabajo.'
+  },
+  tipoCargo: {
+    intro: 'Según el tipo de cargo desempeñado, la población se distribuye así:',
+    context: 'El tipo de cargo determina el instrumento aplicado (Forma A para jefaturas y personal profesional, Forma B para auxiliares y operarios) y condiciona el nivel de exigencias, autonomía y responsabilidad, por lo que es un criterio central para interpretar el dominio de demandas del trabajo.'
+  },
+  tipoContrato: {
+    intro: 'De acuerdo con el tipo de contrato, la población se distribuye de la siguiente manera:',
+    context: 'La modalidad de contratación se asocia con la percepción de estabilidad laboral y con las recompensas derivadas de la pertenencia a la organización, dimensiones que influyen en la motivación y el compromiso del trabajador.',
+    topN: 6
+  },
+  antiguedadEmpresa: {
+    intro: 'En relación con la antigüedad en la empresa, la distribución es la siguiente:',
+    context: 'La antigüedad aporta información sobre el nivel de adaptación y arraigo del trabajador; una baja antigüedad o alta rotación puede reflejarse en la claridad del rol y en la participación y manejo del cambio.'
+  },
+  horasTrabajo: {
+    intro: 'Respecto a la jornada diaria de trabajo, la población se distribuye así:',
+    context: 'La duración de la jornada se relaciona directamente con las demandas de la jornada de trabajo y con la influencia del trabajo sobre el entorno extralaboral, especialmente cuando se superan las jornadas legalmente establecidas.'
+  },
+  departamento: {
+    intro: 'Por área o departamento de trabajo, la población se concentra principalmente en:',
+    context: 'La distribución por área permite focalizar organizacionalmente las acciones de intervención, priorizando las dependencias con mayor número de trabajadores o con mayor exposición a los factores de riesgo.',
+    topN: 6
+  }
+};
+
+// Builds a multi-sentence explanation for a sociodemographic distribution:
+// full breakdown (category, count, %) + dominant group + coverage note + the
+// contextual relevance sentence. Returns null when there is no data.
+function generateDemographicAnalysis(kind, distribution, populationTotal) {
+  const meta = DEMOGRAPHIC_ANALYSIS_META[kind];
+  if (!meta) return null;
+
+  const entries = Object.entries(distribution || {})
+    .filter(([, v]) => Number(v) > 0)
+    .sort((a, b) => b[1] - a[1]);
+  const answered = entries.reduce((sum, [, v]) => sum + Number(v), 0);
+  if (answered === 0) return null;
+
+  const topN = meta.topN || 99;
+  const shown = entries.slice(0, topN);
+  const parts = shown.map(([label, count]) => `${label} (${count}; ${(count / answered * 100).toFixed(1)}%)`);
+  const remaining = entries.length - shown.length;
+  let breakdown = parts.join(', ');
+  if (remaining > 0) breakdown += `, entre otras ${remaining} categoría${remaining > 1 ? 's' : ''}`;
+
+  const [topLabel, topCount] = entries[0];
+  const topPct = (topCount / answered * 100).toFixed(1);
+  const dominant = entries.length > 1
+    ? `El grupo predominante corresponde a ${topLabel}, que concentra el ${topPct}% de los casos.`
+    : `La totalidad de la población reportada corresponde a ${topLabel}.`;
+
+  const coverageNote = (populationTotal && answered < populationTotal)
+    ? ` Este dato fue reportado por ${answered} de los ${populationTotal} participantes evaluados.`
+    : '';
+
+  return `${meta.intro} ${breakdown}. ${dominant}${coverageNote} ${meta.context}`;
+}
+
+// ============================================================
 // PIE CHART COLORS
 // ============================================================
 const DEMOGRAPHIC_COLORS = [
@@ -763,5 +851,6 @@ module.exports = {
   writeDefinicionesIntralaborales,
   writeDefinicionesExtralaborales,
   generateDimensionAnalysis,
-  generateOverallRiskText
+  generateOverallRiskText,
+  generateDemographicAnalysis
 };

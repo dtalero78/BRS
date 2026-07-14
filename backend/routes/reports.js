@@ -791,6 +791,16 @@ function generateOrganizationalPDF(doc, { evaluation, demographics, aggResults, 
   const pageW = doc.page.width - m * 2;
   const t = texts || templates.buildDefaultOrgTexts({ companyName: evaluation.company_name, totalEvaluated: aggResults.population.total });
 
+  // Renders a justified analysis paragraph under a chart, with a page-break guard.
+  const writeChartAnalysis = (text) => {
+    if (!text) return;
+    ensureSpace(doc, 90);
+    doc.x = m;
+    doc.fontSize(9).fillColor('#374151').font('Helvetica');
+    doc.text(text, m, doc.y, { width: pageW, align: 'justify' });
+    doc.moveDown(1);
+  };
+
   // Helper to combine A+B risk counts for a dimension
   function getCombinedDimCounts(dimKey) {
     const a = aggResults.intralaboralA.dimensions[dimKey] || { sin_riesgo: 0, riesgo_bajo: 0, riesgo_medio: 0, riesgo_alto: 0, riesgo_muy_alto: 0 };
@@ -872,7 +882,10 @@ function generateOrganizationalPDF(doc, { evaluation, demographics, aggResults, 
   doc.moveDown(0.5);
 
   doc.fontSize(10).fillColor('#374151').font('Helvetica');
-  doc.text('A continuación se presenta el perfil sociodemográfico de la población evaluada:', { width: pageW, align: 'justify' });
+  doc.text(
+    `La caracterización sociodemográfica describe las condiciones individuales de la población evaluada. Si bien estas variables no constituyen por sí mismas factores de riesgo, permiten contextualizar e interpretar adecuadamente los resultados de los factores intralaborales, extralaborales y de estrés, y focalizar las acciones de intervención en los grupos que así lo requieran. A continuación se presenta el perfil sociodemográfico de los ${aggResults.population.total} participantes evaluados, acompañado del análisis de cada variable:`,
+    { width: pageW, align: 'justify' }
+  );
   doc.moveDown(1);
 
   // Donut chart: Género
@@ -888,13 +901,7 @@ function generateOrganizationalPDF(doc, { evaluation, demographics, aggResults, 
     doc.y = genderCY + 90;
     doc.moveDown(0.5);
 
-    const majorGender = Object.entries(demographics.gender).sort((a, b) => b[1] - a[1])[0];
-    if (majorGender) {
-      const pct = demographics.total > 0 ? ((majorGender[1] / demographics.total) * 100).toFixed(1) : 0;
-      doc.fontSize(9).fillColor('#374151').font('Helvetica');
-      doc.text(`La mayoría de la población evaluada son ${majorGender[0]} con un ${pct}% del total.`, { width: pageW, align: 'justify' });
-    }
-    doc.moveDown(1);
+    writeChartAnalysis(templates.generateDemographicAnalysis('gender', demographics.gender, demographics.total));
   }
 
   // Bar chart: Estado Civil
@@ -908,6 +915,7 @@ function generateOrganizationalPDF(doc, { evaluation, demographics, aggResults, 
     });
     doc.y += 180;
     doc.moveDown(0.5);
+    writeChartAnalysis(templates.generateDemographicAnalysis('estadoCivil', demographics.estadoCivil, demographics.total));
   }
 
   // Bar chart: Nivel de Estudio (education)
@@ -922,14 +930,7 @@ function generateOrganizationalPDF(doc, { evaluation, demographics, aggResults, 
     });
     doc.y += 180;
     doc.moveDown(0.5);
-
-    const majorEdu = Object.entries(demographics.education).sort((a, b) => b[1] - a[1])[0];
-    if (majorEdu) {
-      const pct = demographics.total > 0 ? ((majorEdu[1] / demographics.total) * 100).toFixed(1) : 0;
-      doc.fontSize(9).fillColor('#374151').font('Helvetica');
-      doc.text(`El nivel de estudio predominante es ${majorEdu[0]} con un ${pct}% de la población.`, { width: pageW, align: 'justify' });
-    }
-    doc.moveDown(1);
+    writeChartAnalysis(templates.generateDemographicAnalysis('education', demographics.education, demographics.total));
   }
 
   // Bar chart: Estrato
@@ -944,6 +945,7 @@ function generateOrganizationalPDF(doc, { evaluation, demographics, aggResults, 
     });
     doc.y += 180;
     doc.moveDown(0.5);
+    writeChartAnalysis(templates.generateDemographicAnalysis('estrato', demographics.estrato, demographics.total));
   }
 
   // Bar chart: Rangos de edad
@@ -958,6 +960,7 @@ function generateOrganizationalPDF(doc, { evaluation, demographics, aggResults, 
     });
     doc.y += 180;
     doc.moveDown(0.5);
+    writeChartAnalysis(templates.generateDemographicAnalysis('ageRanges', demographics.ageRanges, demographics.total));
   }
 
   // Bar chart: Personas que dependen económicamente
@@ -976,6 +979,7 @@ function generateOrganizationalPDF(doc, { evaluation, demographics, aggResults, 
     });
     doc.y += 180;
     doc.moveDown(0.5);
+    writeChartAnalysis(templates.generateDemographicAnalysis('dependents', demographics.dependents, demographics.total));
   }
 
   // Bar chart: Tipo de cargo
@@ -990,6 +994,7 @@ function generateOrganizationalPDF(doc, { evaluation, demographics, aggResults, 
     });
     doc.y += 180;
     doc.moveDown(0.5);
+    writeChartAnalysis(templates.generateDemographicAnalysis('tipoCargo', demographics.tipoCargo, demographics.total));
   }
 
   // Horizontal bar chart: Tipo de contrato (many categories with long names)
@@ -1006,6 +1011,7 @@ function generateOrganizationalPDF(doc, { evaluation, demographics, aggResults, 
       title: 'Distribución por Tipo de Contrato', showValues: true, labelWidth: 130
     });
     doc.moveDown(1);
+    writeChartAnalysis(templates.generateDemographicAnalysis('tipoContrato', demographics.tipoContrato, demographics.total));
   }
 
   // Bar chart: Antigüedad en la empresa
@@ -1020,6 +1026,7 @@ function generateOrganizationalPDF(doc, { evaluation, demographics, aggResults, 
     });
     doc.y += 180;
     doc.moveDown(0.5);
+    writeChartAnalysis(templates.generateDemographicAnalysis('antiguedadEmpresa', demographics.antiguedadEmpresa, demographics.total));
   }
 
   // Bar chart: Horas diarias de trabajo
@@ -1034,6 +1041,7 @@ function generateOrganizationalPDF(doc, { evaluation, demographics, aggResults, 
     });
     doc.y += 180;
     doc.moveDown(0.5);
+    writeChartAnalysis(templates.generateDemographicAnalysis('horasTrabajo', demographics.horasTrabajo, demographics.total));
   }
 
   // Top departamentos / áreas
@@ -1051,6 +1059,7 @@ function generateOrganizationalPDF(doc, { evaluation, demographics, aggResults, 
     });
     doc.y += 180;
     doc.moveDown(0.5);
+    writeChartAnalysis(templates.generateDemographicAnalysis('departamento', demographics.departamento, demographics.total));
   }
 
   // ==========================================================
