@@ -128,7 +128,7 @@ router.post('/individual', auth, async (req, res) => {
 // ============================================================
 router.post('/organizational', auth, async (req, res) => {
   try {
-    const { evaluationId, includeIndividualSummaries } = req.body;
+    const { evaluationId, includeIndividualSummaries, texts: inlineTexts } = req.body;
 
     if (!evaluationId) {
       return res.status(400).json({ error: 'evaluationId es requerido' });
@@ -140,6 +140,7 @@ router.post('/organizational', auth, async (req, res) => {
       .where('e.id', evaluationId)
       .select(
         'e.id', 'e.name', 'e.description', 'e.start_date', 'e.end_date', 'e.status', 'e.paid',
+        'e.report_text_overrides',
         'c.name as company_name', 'c.nit as company_nit'
       );
 
@@ -238,6 +239,17 @@ router.post('/organizational', auth, async (req, res) => {
     const demographics = aggregateExtendedDemographics(fichaResponses);
     const aggResults = aggregateResultsByForm(allResults);
     const atRiskDimensions = getAtRiskDimensions(aggResults);
+
+    // Resolve editable report texts: defaults <- saved overrides <- inline (unsaved editor) overrides
+    const defaultTexts = templates.buildDefaultOrgTexts({
+      companyName: evaluation.company_name,
+      totalEvaluated: aggResults.population.total
+    });
+    const savedOverrides = parseJsonMaybe(evaluation.report_text_overrides);
+    let reportTexts = templates.mergeOrgTexts(defaultTexts, savedOverrides);
+    if (inlineTexts) {
+      reportTexts = templates.mergeOrgTexts(reportTexts, inlineTexts);
+    }
     const stressTypology = aggregateStressTypology(stressResponses);
     const riskMatrix = buildRiskPrioritizationMatrix(aggResults);
     const areaResults = aggregateResultsByArea(allResults, fichaResponses);
@@ -273,7 +285,8 @@ router.post('/organizational', auth, async (req, res) => {
       demandasPorCargo,
       totalParticipants: parseInt(totalParticipants.count),
       completedParticipants: parseInt(completedParticipants.count),
-      evaluator: evaluatorObj
+      evaluator: evaluatorObj,
+      texts: reportTexts
     });
 
     // Append individual summaries if requested
@@ -309,8 +322,105 @@ router.post('/organizational', auth, async (req, res) => {
 });
 
 // ============================================================
+// EDITABLE ORGANIZATIONAL REPORT TEXTS
+// ============================================================
+
+// GET the editable prose texts for an evaluation's organizational report:
+// computed defaults merged with any saved overrides, plus the field schema so
+// the frontend can render the editor.
+router.get('/organizational/texts', auth, async (req, res) => {
+  try {
+    const { evaluationId } = req.query;
+    if (!evaluationId) {
+      return res.status(400).json({ error: 'evaluationId es requerido' });
+    }
+
+    const evalQuery = db('evaluations as e')
+      .join('companies as c', 'e.company_id', 'c.id')
+      .where('e.id', evaluationId)
+      .select('e.id', 'e.report_text_overrides', 'c.name as company_name');
+
+    if (!isSuperAdmin(req.user)) {
+      evalQuery.whereIn('e.company_id', await getOwnedCompanyIds(req.user.userId));
+    }
+
+    const evaluation = await evalQuery.first();
+    if (!evaluation) {
+      return res.status(404).json({ error: 'Evaluación no encontrada' });
+    }
+
+    // total evaluated = unique participant_evaluations that have results (matches population.total)
+    const totalRow = await db('results')
+      .join('participant_evaluations as pe', 'results.participant_evaluation_id', 'pe.id')
+      .where('pe.evaluation_id', evaluationId)
+      .countDistinct('results.participant_evaluation_id as count')
+      .first();
+    const totalEvaluated = parseInt(totalRow?.count || 0, 10);
+
+    const defaults = templates.buildDefaultOrgTexts({
+      companyName: evaluation.company_name,
+      totalEvaluated
+    });
+    const savedOverrides = parseJsonMaybe(evaluation.report_text_overrides);
+    const texts = templates.mergeOrgTexts(defaults, savedOverrides);
+
+    res.json({
+      fields: templates.ORG_TEXT_FIELDS,
+      texts,
+      defaults,
+      isCustomized: !!savedOverrides && Object.keys(savedOverrides).length > 0
+    });
+  } catch (error) {
+    console.error('Error fetching organizational report texts:', error);
+    res.status(500).json({ error: 'Error interno del servidor' });
+  }
+});
+
+// PUT persists (or resets, with { reset: true }) the editable texts for an
+// evaluation's organizational report.
+router.put('/organizational/texts', auth, async (req, res) => {
+  try {
+    const { evaluationId, texts, reset } = req.body;
+    if (!evaluationId) {
+      return res.status(400).json({ error: 'evaluationId es requerido' });
+    }
+
+    const evalQuery = db('evaluations as e')
+      .where('e.id', evaluationId)
+      .select('e.id', 'e.company_id');
+
+    if (!isSuperAdmin(req.user)) {
+      evalQuery.whereIn('e.company_id', await getOwnedCompanyIds(req.user.userId));
+    }
+
+    const evaluation = await evalQuery.first();
+    if (!evaluation) {
+      return res.status(404).json({ error: 'Evaluación no encontrada' });
+    }
+
+    const sanitized = reset ? null : templates.sanitizeOrgTexts(texts);
+    await db('evaluations')
+      .where('id', evaluationId)
+      .update({ report_text_overrides: sanitized ? JSON.stringify(sanitized) : null });
+
+    res.json({ success: true, isCustomized: !!sanitized });
+  } catch (error) {
+    console.error('Error saving organizational report texts:', error);
+    res.status(500).json({ error: 'Error interno del servidor' });
+  }
+});
+
+// ============================================================
 // PDF GENERATION HELPERS
 // ============================================================
+
+function parseJsonMaybe(value) {
+  if (value == null) return null;
+  if (typeof value === 'string') {
+    try { return JSON.parse(value); } catch { return null; }
+  }
+  return value;
+}
 
 const QUESTIONNAIRE_TITLES = {
   'intralaboral_a': 'Cuestionario Intralaboral - Forma A',
@@ -676,9 +786,10 @@ function drawEvaluatorSignature(doc, evaluator, pageW, m) {
   }
 }
 
-function generateOrganizationalPDF(doc, { evaluation, demographics, aggResults, atRiskDimensions, stressTypology, riskMatrix, areaResults, demandasPorCargo, totalParticipants, completedParticipants, evaluator }) {
+function generateOrganizationalPDF(doc, { evaluation, demographics, aggResults, atRiskDimensions, stressTypology, riskMatrix, areaResults, demandasPorCargo, totalParticipants, completedParticipants, evaluator, texts }) {
   const m = doc.page.margins.left;
   const pageW = doc.page.width - m * 2;
+  const t = texts || templates.buildDefaultOrgTexts({ companyName: evaluation.company_name, totalEvaluated: aggResults.population.total });
 
   // Helper to combine A+B risk counts for a dimension
   function getCombinedDimCounts(dimKey) {
@@ -715,16 +826,33 @@ function generateOrganizationalPDF(doc, { evaluation, demographics, aggResults, 
   doc.text(`BOGOTÁ D.C., ${months[now.getMonth()]} ${now.getFullYear()}`, { align: 'center' });
 
   // ==========================================================
+  // INTRODUCCIÓN (editable)
+  // ==========================================================
+  const introParas = Array.isArray(t.introduccion) ? t.introduccion.filter(Boolean) : [];
+  if (introParas.length > 0) {
+    doc.addPage();
+    drawSectionBanner(doc, m, doc.y, pageW, 'INTRODUCCIÓN');
+    doc.y += 40;
+    doc.x = m;
+    doc.moveDown(0.5);
+    doc.fontSize(10).fillColor('#374151').font('Helvetica');
+    introParas.forEach(p => {
+      doc.text(p, m, doc.y, { width: pageW, align: 'justify' });
+      doc.moveDown(0.5);
+    });
+  }
+
+  // ==========================================================
   // PAGE 2: OBJETIVOS + METODOLOGÍA (two columns)
   // ==========================================================
   doc.addPage();
-  templates.writeObjetivosMetodologia(doc, pageW, evaluation.company_name);
+  templates.writeObjetivosMetodologia(doc, pageW, t);
 
   // ==========================================================
   // PAGE 3: PROCEDIMIENTOS
   // ==========================================================
   doc.addPage();
-  templates.writeProcedimientos(doc, pageW);
+  templates.writeProcedimientos(doc, pageW, t);
 
   // ==========================================================
   // PAGES 4-5: DEFINICIONES
@@ -1531,13 +1659,7 @@ function generateOrganizationalPDF(doc, { evaluation, demographics, aggResults, 
   doc.text('Con base en los resultados obtenidos se recomienda:', { width: pageW, align: 'justify' });
   doc.moveDown(0.5);
 
-  const priorities = [
-    `Implementar un programa de vigilancia epidemiológica en riesgo psicosocial para los funcionarios de ${evaluation.company_name}, de acuerdo con la Resolución 2764 de 2022.`,
-    'Abordar de manera prioritaria las dimensiones que presentan niveles de riesgo alto y muy alto, mediante intervenciones tanto a nivel organizacional como individual.',
-    'Diseñar programas de promoción y prevención orientados a fortalecer los factores protectores identificados y disminuir los factores de riesgo.',
-    'Realizar evaluaciones de seguimiento cada 12 meses para monitorear la evolución de los indicadores de riesgo.',
-    'Implementar estrategias de intervención diferenciadas por áreas, teniendo en cuenta las particularidades de cada grupo poblacional.'
-  ];
+  const priorities = Array.isArray(t.recomendaciones) ? t.recomendaciones.filter(Boolean) : [];
   priorities.forEach((p, i) => {
     ensureSpace(doc, 30);
     doc.fontSize(10).fillColor('#374151').font('Helvetica');
@@ -1550,7 +1672,7 @@ function generateOrganizationalPDF(doc, { evaluation, demographics, aggResults, 
   doc.text('Intervención prioritaria:', { width: pageW });
   doc.moveDown(0.3);
   doc.fontSize(9).fillColor('#374151').font('Helvetica');
-  doc.text('Se entiende como intervención prioritaria aquella que se dirige a las dimensiones que presentan niveles de riesgo alto y muy alto en un porcentaje significativo de la población evaluada. Estas dimensiones requieren atención inmediata y acciones de intervención a corto plazo.', { width: pageW, align: 'justify' });
+  doc.text(t.intervencionPrioritaria || '', { width: pageW, align: 'justify' });
 
   // List priority dimensions
   const topRisk = atRiskDimensions.filter(d => d.highRiskPct > 20).slice(0, 10);
@@ -1572,15 +1694,9 @@ function generateOrganizationalPDF(doc, { evaluation, demographics, aggResults, 
   doc.moveDown(0.5);
 
   doc.fontSize(10).fillColor('#374151').font('Helvetica');
-  const totalEvaluated = aggResults.population.total;
 
-  doc.text(`Se realizó la evaluación de riesgo psicosocial a ${totalEvaluated} trabajadores de ${evaluation.company_name}, mediante la aplicación de la Batería de Instrumentos para la Evaluación de Factores de Riesgo Psicosocial del Ministerio de la Protección Social, en cumplimiento de la Resolución 2764 de 2022 (Art. 3).`, { width: pageW, align: 'justify' });
-  doc.moveDown(0.5);
-
-  doc.text('Los resultados obtenidos permiten identificar las condiciones de riesgo psicosocial que requieren intervención, así como los factores protectores que deben ser fortalecidos. Se recomienda estructurar un plan de acción enmarcado en el Sistema de Gestión de Seguridad y Salud en el Trabajo.', { width: pageW, align: 'justify' });
-  doc.moveDown(0.5);
-
-  if (topRisk.length > 0) {
+  const renderTopRiskList = () => {
+    if (topRisk.length === 0) return;
     doc.text('Las dimensiones que requieren mayor atención son:', { width: pageW });
     doc.moveDown(0.2);
     topRisk.slice(0, 5).forEach(d => {
@@ -1588,9 +1704,21 @@ function generateOrganizationalPDF(doc, { evaluation, demographics, aggResults, 
       doc.text(`  • ${name} (${d.highRiskPct.toFixed(0)}% en riesgo alto/muy alto)`, { width: pageW });
     });
     doc.moveDown(0.5);
-  }
+  };
 
-  doc.text(`Es fundamental que ${evaluation.company_name} implemente las acciones de intervención sugeridas de manera oportuna, priorizando las dimensiones con mayor nivel de riesgo y garantizando el seguimiento continuo de la salud psicosocial de sus trabajadores.`, { width: pageW, align: 'justify' });
+  const conclParas = Array.isArray(t.conclusiones) ? t.conclusiones.filter(Boolean) : [];
+  if (conclParas.length === 0) {
+    renderTopRiskList();
+  } else {
+    // Weave the auto-generated at-risk-dimension list in just before the
+    // closing (last) paragraph, matching the reference report layout.
+    const lastIdx = conclParas.length - 1;
+    conclParas.forEach((p, i) => {
+      if (i === lastIdx) renderTopRiskList();
+      doc.text(p, { width: pageW, align: 'justify' });
+      doc.moveDown(0.5);
+    });
+  }
 
   // Signature
   drawEvaluatorSignature(doc, evaluator, pageW, m);

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Download, FileText, Users, Clock, CheckCircle } from 'lucide-react';
+import { Download, FileText, Users, Clock, CheckCircle, Eye } from 'lucide-react';
 import { API_URL } from '../config/api';
+import OrganizationalReportModal from './OrganizationalReportModal';
 
 interface Evaluation {
   id: string;
@@ -40,6 +41,7 @@ const ReportGenerator: React.FC<ReportGeneratorProps> = ({
   const [includeCharts, setIncludeCharts] = useState(true);
   const [includeIndividualSummaries, setIncludeIndividualSummaries] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [showOrgModal, setShowOrgModal] = useState(false);
   const [completedParticipants, setCompletedParticipants] = useState<Participant[]>([]);
 
   // Filter participants with results for selected evaluation
@@ -57,6 +59,13 @@ const ReportGenerator: React.FC<ReportGeneratorProps> = ({
       return;
     }
 
+    // Organizational report: open the review/edit modal instead of downloading directly.
+    // The evaluator reviews the PDF and can modify the report texts before printing.
+    if (reportType === 'organizational') {
+      setShowOrgModal(true);
+      return;
+    }
+
     if (reportType === 'individual' && !selectedParticipant) {
       alert('Por favor selecciona un participante para el reporte individual');
       return;
@@ -66,24 +75,14 @@ const ReportGenerator: React.FC<ReportGeneratorProps> = ({
 
     try {
       const token = localStorage.getItem('token');
-      let endpoint = '';
-      let body = {};
-
-      if (reportType === 'individual') {
-        endpoint = `${API_URL}/api/reports/individual`;
-        body = {
-          participantEvaluationId: selectedParticipant,
-          includeCharts,
-          language: 'es'
-        };
-      } else {
-        endpoint = `${API_URL}/api/reports/organizational`;
-        body = {
-          evaluationId: selectedEvaluation,
-          includeCharts,
-          includeIndividualSummaries
-        };
-      }
+      // Only individual reports download directly here; organizational reports
+      // are handled by the review/edit modal (see the early return above).
+      const endpoint = `${API_URL}/api/reports/individual`;
+      const body = {
+        participantEvaluationId: selectedParticipant,
+        includeCharts,
+        language: 'es'
+      };
 
       const response = await fetch(endpoint, {
         method: 'POST',
@@ -110,20 +109,13 @@ const ReportGenerator: React.FC<ReportGeneratorProps> = ({
         const a = document.createElement('a');
         a.style.display = 'none';
         a.href = url;
-        
-        // Generate filename based on report type
-        const evaluation = evaluations.find(e => e.id === selectedEvaluation);
+
+        // Generate filename for the individual report
         const participant = completedParticipants.find(p => p.participant_evaluation_id === selectedParticipant);
-        
-        let filename = '';
-        if (reportType === 'individual' && participant) {
-          filename = `Reporte_Individual_BRS_${participant.firstName}_${participant.lastName}_${new Date().toISOString().split('T')[0]}.pdf`;
-        } else if (reportType === 'organizational' && evaluation) {
-          filename = `Reporte_Organizacional_BRS_${evaluation.name}_${new Date().toISOString().split('T')[0]}.pdf`;
-        } else {
-          filename = `Reporte_BRS_${new Date().toISOString().split('T')[0]}.pdf`;
-        }
-        
+        const filename = participant
+          ? `Reporte_Individual_BRS_${participant.firstName}_${participant.lastName}_${new Date().toISOString().split('T')[0]}.pdf`
+          : `Reporte_BRS_${new Date().toISOString().split('T')[0]}.pdf`;
+
         a.download = filename;
         document.body.appendChild(a);
         a.click();
@@ -310,6 +302,11 @@ const ReportGenerator: React.FC<ReportGeneratorProps> = ({
               <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
               Generando Reporte...
             </>
+          ) : reportType === 'organizational' ? (
+            <>
+              <Eye className="h-4 w-4" />
+              Revisar y generar informe
+            </>
           ) : (
             <>
               <Download className="h-4 w-4" />
@@ -317,7 +314,23 @@ const ReportGenerator: React.FC<ReportGeneratorProps> = ({
             </>
           )}
         </button>
+
+        {reportType === 'organizational' && (
+          <p className="text-xs text-gray-500 text-center -mt-2">
+            Se abrirá una vista previa donde podrás revisar el informe y editar los textos antes de imprimirlo.
+          </p>
+        )}
       </div>
+
+      {showOrgModal && selectedEvaluation && (
+        <OrganizationalReportModal
+          evaluationId={selectedEvaluation}
+          evaluationName={evaluations.find((e) => e.id === selectedEvaluation)?.name || ''}
+          includeCharts={includeCharts}
+          includeIndividualSummaries={includeIndividualSummaries}
+          onClose={() => setShowOrgModal(false)}
+        />
+      )}
     </div>
   );
 };

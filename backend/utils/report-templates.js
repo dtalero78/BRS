@@ -223,7 +223,11 @@ const EXTRALABORAL_DEFINITIONS = {
 // NEW CONCISE TEXT SECTIONS (matching reference informe)
 // ============================================================
 
-function writeObjetivosMetodologia(doc, pageW, companyName) {
+function writeObjetivosMetodologia(doc, pageW, texts = {}) {
+  const objetivoGeneral = texts.objetivoGeneral || '';
+  const objetivosEspecificos = Array.isArray(texts.objetivosEspecificos) ? texts.objetivosEspecificos : [];
+  const metodologiaInstrumento = texts.metodologiaInstrumento || '';
+
   const colW = (pageW - 20) / 2;
   const startY = doc.y;
   const bannerH = 25;
@@ -240,19 +244,14 @@ function writeObjetivosMetodologia(doc, pageW, companyName) {
   doc.text('GENERAL', doc.page.margins.left, ly, { width: colW });
   ly += 14;
   doc.fontSize(8).font('Helvetica').fillColor('#374151');
-  doc.text(`• Identificar la percepción de riesgo psicosocial de los colaboradores de la ${companyName}.`, doc.page.margins.left, ly, { width: colW, align: 'justify' });
+  doc.text(`• ${objetivoGeneral}`, doc.page.margins.left, ly, { width: colW, align: 'justify' });
   ly = doc.y + 10;
 
   doc.fontSize(9).font('Helvetica-Bold').fillColor('#1F2937');
   doc.text('ESPECÍFICOS', doc.page.margins.left, ly, { width: colW });
   ly += 14;
   doc.fontSize(8).font('Helvetica').fillColor('#374151');
-  const especificos = [
-    `Evaluar los posibles factores de riesgo intralaborales y extralaborales, presentes en los colaboradores de la ${companyName}.`,
-    `Reconocer las probables sintomatologías asociadas al estrés en la ${companyName}.`,
-    `Recomendar a la empresa pautas de acción claras para la mitigación de la percepción de los riesgos identificados.`
-  ];
-  especificos.forEach(t => {
+  objetivosEspecificos.forEach(t => {
     doc.text(`• ${t}`, doc.page.margins.left, ly, { width: colW, align: 'justify' });
     ly = doc.y + 4;
   });
@@ -270,7 +269,7 @@ function writeObjetivosMetodologia(doc, pageW, companyName) {
   doc.text('Instrumento:', rightX, ry, { width: colW });
   ry += 14;
   doc.fontSize(8).font('Helvetica').fillColor('#374151');
-  doc.text('Para la medición de la percepción de riesgos psicosociales y de acuerdo con la Resolución 2764/2022, se utilizó la fase I de la batería de instrumentos diseñados por el Ministerio de la Protección Social, denominados Batería de Instrumentos para la Evaluación de Factores de Riesgo Psicosocial, (2010).', rightX, ry, { width: colW, align: 'justify' });
+  doc.text(metodologiaInstrumento, rightX, ry, { width: colW, align: 'justify' });
   ry = doc.y + 8;
 
   const instruments = [
@@ -288,18 +287,21 @@ function writeObjetivosMetodologia(doc, pageW, companyName) {
   doc.y = Math.max(ly, ry) + 10;
 }
 
-function writeProcedimientos(doc, pageW) {
+function writeProcedimientos(doc, pageW, texts = {}) {
+  const paras = Array.isArray(texts.procedimiento) ? texts.procedimiento : [];
+  const criterios = texts.criteriosInclusionExclusion || '';
+
   doc.fontSize(9).font('Helvetica').fillColor('#374151');
-  doc.text('Para llevar a cabo la presente medición, se realizó una sensibilización a todos los colaboradores donde se especificó ampliamente el proceso a seguir, los instrumentos a emplear, la importancia de los resultados obtenidos y la confidencialidad de la información. Seguido a ello, se aplicó el consentimiento informado, donde los colaboradores autorizaron su participación voluntaria en el estudio y se clarificó desde el marco legal las condiciones éticas de la medición.', { width: pageW, align: 'justify' });
-  doc.moveDown(0.5);
-  doc.text('Luego de haberse realizado el proceso descrito, se aplicó la Batería para la Evaluación de Riesgo Psicosocial de la Universidad Javeriana - Ministerio de la Protección Social (2010), a través de la plataforma BRS Digital. Una vez consolidada la información se procede a la realización del informe general de la percepción de riesgo psicosocial.', { width: pageW, align: 'justify' });
-  doc.moveDown(0.5);
+  paras.forEach(p => {
+    doc.text(p, { width: pageW, align: 'justify' });
+    doc.moveDown(0.5);
+  });
 
   doc.fontSize(9).font('Helvetica-Bold').fillColor('#1F2937');
   doc.text('Criterios de inclusión y exclusión', { width: pageW });
   doc.moveDown(0.2);
   doc.fontSize(8).font('Helvetica').fillColor('#374151');
-  doc.text('Para la medición de riesgo psicosocial se tuvieron en cuenta criterios de inclusión tales como: Que el trabajador se encontrara en la nómina de la empresa, que estuviera ejerciendo sus labores y que su vinculación laboral no fuera menor a 3 meses. Como criterios de exclusión, no se tuvieron en cuenta los trabajadores que se encontraran en licencia de maternidad, licencia por luto e incapacitados el día de la medición.', { width: pageW, align: 'justify' });
+  doc.text(criterios, { width: pageW, align: 'justify' });
   doc.moveDown(0.5);
 }
 
@@ -631,6 +633,102 @@ function generateOverallRiskText(riskCounts, totalParticipants, label) {
 }
 
 // ============================================================
+// EDITABLE ORGANIZATIONAL REPORT TEXTS
+// ============================================================
+// The curated set of prose sections an evaluator can review and edit before
+// printing the organizational report. Charts, tables and computed percentages
+// are NOT editable — only the narrative text.
+//
+// `kind`:
+//   'paragraph'  -> a single string, rendered as one justified paragraph
+//   'paragraphs' -> string[], each entry rendered as its own justified paragraph
+//   'list'       -> string[], each entry rendered as a bullet / numbered item
+// Array fields ('paragraphs' and 'list') are edited as "one line = one entry".
+const ORG_TEXT_FIELDS = [
+  { key: 'introduccion', group: 'Introducción', label: 'Introducción', kind: 'paragraphs', help: 'Un párrafo por línea.' },
+  { key: 'objetivoGeneral', group: 'Objetivos y Metodología', label: 'Objetivo general', kind: 'paragraph' },
+  { key: 'objetivosEspecificos', group: 'Objetivos y Metodología', label: 'Objetivos específicos', kind: 'list', help: 'Una viñeta por línea.' },
+  { key: 'metodologiaInstrumento', group: 'Objetivos y Metodología', label: 'Metodología · Instrumento', kind: 'paragraph' },
+  { key: 'procedimiento', group: 'Procedimientos', label: 'Procedimiento', kind: 'paragraphs', help: 'Un párrafo por línea.' },
+  { key: 'criteriosInclusionExclusion', group: 'Procedimientos', label: 'Criterios de inclusión y exclusión', kind: 'paragraph' },
+  { key: 'recomendaciones', group: 'Recomendaciones', label: 'Recomendaciones', kind: 'list', help: 'Una recomendación por línea (se numeran automáticamente).' },
+  { key: 'intervencionPrioritaria', group: 'Recomendaciones', label: 'Intervención prioritaria', kind: 'paragraph' },
+  { key: 'conclusiones', group: 'Conclusiones', label: 'Conclusiones', kind: 'paragraphs', help: 'Un párrafo por línea. La lista de dimensiones en mayor riesgo se agrega automáticamente antes del último párrafo.' },
+];
+
+const ORG_TEXT_FIELD_MAP = ORG_TEXT_FIELDS.reduce((acc, f) => { acc[f.key] = f; return acc; }, {});
+
+// Builds the default texts with company name and population count already
+// resolved, so the evaluator edits WYSIWYG strings (not tokens).
+function buildDefaultOrgTexts({ companyName = 'la organización', totalEvaluated = 0 } = {}) {
+  const empresa = companyName || 'la organización';
+  return {
+    introduccion: [
+      'Los factores de riesgo psicosocial en el trabajo han sido definidos por la OMS como las interacciones entre el trabajo, su medio ambiente, la satisfacción en el trabajo y las condiciones de la organización. Por otra parte, se han definido como las capacidades del trabajador, sus necesidades, su cultura y su situación personal fuera del trabajo; todo lo cual, a través de percepciones y experiencias particulares, los cuales pueden influir en la salud, el rendimiento y la satisfacción en el trabajo.',
+      'Las normas colombianas han establecido reglas claras para que las empresas protejan a sus trabajadores contra los diferentes factores de riesgo psicosocial identificando, evaluando, previniendo, interviniendo y monitoreando de manera permanente la exposición a factores de riesgo psicosocial en el trabajo y determinando el origen de las patologías presuntamente causadas por el estrés, razón por la cual las organizaciones deben evaluar a sus trabajadores en materia de riesgo psicosocial laboral.',
+      'Para dar cumplimiento al programa de intervención en riesgos psicosociales y en cumplimiento de la normatividad vigente, se aplica la Batería de Instrumentos para la Evaluación de Factores de Riesgo Psicosocial del Ministerio de la Protección Social, con el fin de determinar posibles situaciones críticas e intervenir oportunamente los factores de riesgo, los cuales se presentan en tres modalidades de análisis: factores intralaborales, factores extralaborales y el nivel de estrés.'
+    ],
+    objetivoGeneral: `Identificar la percepción de riesgo psicosocial de los colaboradores de la ${empresa}.`,
+    objetivosEspecificos: [
+      `Evaluar los posibles factores de riesgo intralaborales y extralaborales, presentes en los colaboradores de la ${empresa}.`,
+      `Reconocer las probables sintomatologías asociadas al estrés en la ${empresa}.`,
+      `Recomendar a la empresa pautas de acción claras para la mitigación de la percepción de los riesgos identificados.`
+    ],
+    metodologiaInstrumento: 'Para la medición de la percepción de riesgos psicosociales y de acuerdo con la Resolución 2764/2022, se utilizó la fase I de la batería de instrumentos diseñados por el Ministerio de la Protección Social, denominados Batería de Instrumentos para la Evaluación de Factores de Riesgo Psicosocial, (2010).',
+    procedimiento: [
+      'Para llevar a cabo la presente medición, se realizó una sensibilización a todos los colaboradores donde se especificó ampliamente el proceso a seguir, los instrumentos a emplear, la importancia de los resultados obtenidos y la confidencialidad de la información. Seguido a ello, se aplicó el consentimiento informado, donde los colaboradores autorizaron su participación voluntaria en el estudio y se clarificó desde el marco legal las condiciones éticas de la medición.',
+      'Luego de haberse realizado el proceso descrito, se aplicó la Batería para la Evaluación de Riesgo Psicosocial de la Universidad Javeriana - Ministerio de la Protección Social (2010), a través de la plataforma BRS Digital. Una vez consolidada la información se procede a la realización del informe general de la percepción de riesgo psicosocial.'
+    ],
+    criteriosInclusionExclusion: 'Para la medición de riesgo psicosocial se tuvieron en cuenta criterios de inclusión tales como: Que el trabajador se encontrara en la nómina de la empresa, que estuviera ejerciendo sus labores y que su vinculación laboral no fuera menor a 3 meses. Como criterios de exclusión, no se tuvieron en cuenta los trabajadores que se encontraran en licencia de maternidad, licencia por luto e incapacitados el día de la medición.',
+    recomendaciones: [
+      `Implementar un programa de vigilancia epidemiológica en riesgo psicosocial para los funcionarios de ${empresa}, de acuerdo con la Resolución 2764 de 2022.`,
+      'Abordar de manera prioritaria las dimensiones que presentan niveles de riesgo alto y muy alto, mediante intervenciones tanto a nivel organizacional como individual.',
+      'Diseñar programas de promoción y prevención orientados a fortalecer los factores protectores identificados y disminuir los factores de riesgo.',
+      'Realizar evaluaciones de seguimiento cada 12 meses para monitorear la evolución de los indicadores de riesgo.',
+      'Implementar estrategias de intervención diferenciadas por áreas, teniendo en cuenta las particularidades de cada grupo poblacional.'
+    ],
+    intervencionPrioritaria: 'Se entiende como intervención prioritaria aquella que se dirige a las dimensiones que presentan niveles de riesgo alto y muy alto en un porcentaje significativo de la población evaluada. Estas dimensiones requieren atención inmediata y acciones de intervención a corto plazo.',
+    conclusiones: [
+      `Se realizó la evaluación de riesgo psicosocial a ${totalEvaluated} trabajadores de ${empresa}, mediante la aplicación de la Batería de Instrumentos para la Evaluación de Factores de Riesgo Psicosocial del Ministerio de la Protección Social, en cumplimiento de la Resolución 2764 de 2022 (Art. 3).`,
+      'Los resultados obtenidos permiten identificar las condiciones de riesgo psicosocial que requieren intervención, así como los factores protectores que deben ser fortalecidos. Se recomienda estructurar un plan de acción enmarcado en el Sistema de Gestión de Seguridad y Salud en el Trabajo.',
+      `Es fundamental que ${empresa} implemente las acciones de intervención sugeridas de manera oportuna, priorizando las dimensiones con mayor nivel de riesgo y garantizando el seguimiento continuo de la salud psicosocial de sus trabajadores.`
+    ]
+  };
+}
+
+// Coerces an arbitrary value to the shape expected by a field kind, dropping
+// junk. Used both when persisting (PUT) and when accepting inline overrides.
+function sanitizeOrgTexts(input) {
+  const out = {};
+  if (!input || typeof input !== 'object') return out;
+  for (const field of ORG_TEXT_FIELDS) {
+    if (!(field.key in input)) continue;
+    const value = input[field.key];
+    if (field.kind === 'paragraph') {
+      if (value == null) continue;
+      out[field.key] = String(value);
+    } else {
+      // paragraphs | list -> array of non-empty trimmed strings
+      const arr = Array.isArray(value)
+        ? value
+        : (value == null ? [] : String(value).split('\n'));
+      out[field.key] = arr.map(v => String(v).trim()).filter(Boolean);
+    }
+  }
+  return out;
+}
+
+// Merges saved/inline overrides over the resolved defaults, field by field.
+function mergeOrgTexts(defaults, overrides) {
+  const merged = { ...defaults };
+  const clean = sanitizeOrgTexts(overrides);
+  for (const key of Object.keys(clean)) {
+    merged[key] = clean[key];
+  }
+  return merged;
+}
+
+// ============================================================
 // PIE CHART COLORS
 // ============================================================
 const DEMOGRAPHIC_COLORS = [
@@ -650,6 +748,11 @@ module.exports = {
   INTRALABORAL_DEFINITIONS,
   EXTRALABORAL_DEFINITIONS,
   DEMOGRAPHIC_COLORS,
+  ORG_TEXT_FIELDS,
+  ORG_TEXT_FIELD_MAP,
+  buildDefaultOrgTexts,
+  sanitizeOrgTexts,
+  mergeOrgTexts,
   writeIntroduccion,
   writeMarcoReferencial,
   writeMarcoTeorico,
