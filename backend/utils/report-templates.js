@@ -729,6 +729,156 @@ function mergeOrgTexts(defaults, overrides) {
 }
 
 // ============================================================
+// QUALITATIVE NARRATIVE ENGINE (per dimension / domain / form)
+// ============================================================
+// Produces the professional prose interpretation expected in a Colombian
+// psychosocial technical report (Res. 2646/2764): a paragraph per dimension
+// keyed off the group's risk level, a conclusion per domain, and a general
+// analysis per form. Grounded in the actual distribution so it stays honest.
+
+// Per-dimension fragments: `concern` = what the dimension is about (slots after
+// "relacionado con / respecto a"); `risk` = consequence when the risk is high.
+const DIMENSION_NARRATIVE = {
+  // Liderazgo y relaciones sociales
+  caracteristicas_liderazgo: { concern: 'la forma en que los jefes orientan y asignan el trabajo, toman decisiones, acompañan y se comunican con su equipo', risk: 'incertidumbre, disminución de la motivación y baja confianza hacia las directrices, afectando el clima laboral' },
+  relaciones_sociales_trabajo: { concern: 'la calidad de las interacciones, la comunicación y la cooperación entre compañeros', risk: 'tensiones en la comunicación, conflictos no resueltos y menor apoyo social dentro del equipo' },
+  'retroalimentacion_desempeño': { concern: 'la claridad y la frecuencia de la información que reciben los trabajadores sobre su rendimiento', risk: 'desorientación respecto a las expectativas del rol, desmotivación y dificultades para mejorar el desempeño' },
+  relacion_colaboradores: { concern: 'la gestión, la comunicación y la interacción de la jefatura con sus colaboradores', risk: 'dificultades de coordinación y comunicación entre jefes y colaboradores que afectan los resultados del equipo' },
+  // Control sobre el trabajo
+  claridad_rol: { concern: 'la definición y comunicación de las funciones, responsabilidades y expectativas del cargo', risk: 'confusión en la ejecución de las tareas, inseguridad en la toma de decisiones y dificultad para priorizar actividades' },
+  capacitacion: { concern: 'las actividades de formación y entrenamiento que la organización brinda para el desempeño del cargo', risk: 'sensación de falta de preparación, menor confianza en las competencias y percepción de desactualización' },
+  participacion_manejo_cambio: { concern: 'la participación de los trabajadores en las decisiones y la forma en que se gestionan los cambios organizacionales', risk: 'sensación de imposición, resistencia al cambio y menor compromiso con las transformaciones institucionales' },
+  oportunidades_desarrollo: { concern: 'las posibilidades de aplicar, fortalecer y desarrollar habilidades y conocimientos en el trabajo', risk: 'desmotivación, estancamiento laboral y disminución del sentido de logro personal' },
+  control_autonomia: { concern: 'el margen de decisión sobre el orden, el ritmo y la forma de realizar las tareas', risk: 'reducción de la sensación de dominio sobre el propio trabajo, mayor tensión laboral y menor motivación' },
+  // Demandas del trabajo
+  demandas_ambientales: { concern: 'las condiciones del entorno físico y el esfuerzo corporal que exige la labor', risk: 'fatiga física, incomodidad y desgaste que pueden afectar la eficacia en el desempeño' },
+  demandas_emocionales: { concern: 'las situaciones que exigen regulación y control emocional constante', risk: 'cansancio emocional y disminución progresiva de los recursos psicológicos disponibles' },
+  demandas_cuantitativas: { concern: 'la cantidad de trabajo a realizar en relación con el tiempo y los recursos disponibles', risk: 'sobrecarga laboral, presión por el cumplimiento y mayor probabilidad de errores por saturación' },
+  demandas_carga_mental: { concern: 'las exigencias de concentración, atención y procesamiento de información que implica la tarea', risk: 'fatiga mental, saturación cognitiva y dificultad para tomar decisiones de manera eficiente' },
+  exigencias_responsabilidad: { concern: 'el grado de compromiso y las responsabilidades críticas asociadas al cargo', risk: 'aumento de la carga psicológica y tensión sostenida, especialmente ante la falta de recursos o apoyos' },
+  demandas_jornada: { concern: 'la duración, la intensidad y la distribución de la jornada laboral', risk: 'cansancio acumulado, menor tiempo de recuperación y afectación del rendimiento entre jornadas' },
+  consistencia_rol: { concern: 'la compatibilidad entre las distintas exigencias y expectativas del cargo', risk: 'ambigüedad, incertidumbre y dificultad para organizar prioridades' },
+  influencia_trabajo_entorno: { concern: 'la manera en que las exigencias del trabajo repercuten en la vida personal, familiar y social', risk: 'dificultad para desconectarse del trabajo y desequilibrio entre la vida laboral y personal' },
+  // Recompensas
+  reconocimiento_compensacion: { concern: 'el reconocimiento, la valoración y la compensación que recibe el trabajador por su labor', risk: 'la percepción de que el esfuerzo no es valorado, con impacto en la motivación y la satisfacción laboral' },
+  recompensas_pertenencia: { concern: 'el sentido de pertenencia, el orgullo y la estabilidad derivados de vincularse a la organización', risk: 'disminución del compromiso y del sentido de identidad y propósito con la organización' },
+  // Extralaboral
+  tiempo_fuera_trabajo: { concern: 'el tiempo disponible para el descanso, la familia y las actividades de recreación fuera del trabajo', risk: 'menor recuperación y desequilibrio entre la vida personal y laboral' },
+  relaciones_familiares: { concern: 'la calidad de las interacciones con el núcleo familiar', risk: 'tensiones familiares que pueden afectar el bienestar del trabajador' },
+  comunicacion_relaciones_interpersonales: { concern: 'la comunicación y las relaciones con allegados y amigos', risk: 'redes de apoyo social debilitadas' },
+  situacion_economica: { concern: 'la disponibilidad de medios económicos para cubrir los gastos del grupo familiar', risk: 'preocupación económica que puede incidir en el bienestar y la concentración' },
+  caracteristicas_vivienda: { concern: 'las condiciones de la vivienda y de su entorno', risk: 'condiciones del hogar que pueden afectar el descanso y el bienestar' },
+  influencia_entorno_trabajo: { concern: 'la manera en que las exigencias del entorno familiar y personal influyen en el trabajo', risk: 'interferencia del entorno personal en la actividad y el bienestar laboral' },
+  desplazamiento_vivienda_trabajo: { concern: 'las condiciones, la comodidad y la duración del traslado entre la vivienda y el trabajo', risk: 'desgaste y reducción del tiempo disponible por desplazamientos exigentes' }
+};
+
+// What each domain concerns, used in the domain-level conclusion.
+const DOMAIN_NARRATIVE_CONCERN = {
+  liderazgo_relaciones_sociales: 'las dinámicas de dirección, la interacción social, la retroalimentación y el reconocimiento',
+  control_trabajo: 'la claridad del rol, la capacitación, la participación, la autonomía y las oportunidades de desarrollo',
+  demandas_trabajo: 'las exigencias físicas, cognitivas, emocionales y cuantitativas del cargo',
+  recompensas: 'el reconocimiento, la compensación y el sentido de pertenencia a la organización'
+};
+
+// Classifies a group risk-count distribution into a single representative tier
+// + label, mirroring how a psychologist reads a dimension's group result.
+function classifyGroupRisk(counts) {
+  const c = counts || {};
+  const total = (c.sin_riesgo || 0) + (c.riesgo_bajo || 0) + (c.riesgo_medio || 0) + (c.riesgo_alto || 0) + (c.riesgo_muy_alto || 0);
+  if (total === 0) return { tier: 'favorable', label: 'bajo', total: 0, highPct: '0.0', lowPct: '0.0' };
+  const high = (c.riesgo_alto || 0) + (c.riesgo_muy_alto || 0);
+  const low = (c.sin_riesgo || 0) + (c.riesgo_bajo || 0);
+  const highPct = high / total * 100;
+  const lowPct = low / total * 100;
+  const order = ['sin_riesgo', 'riesgo_bajo', 'riesgo_medio', 'riesgo_alto', 'riesgo_muy_alto'];
+  let predom = 'sin_riesgo', max = -1;
+  order.forEach(l => { if ((c[l] || 0) > max) { max = c[l] || 0; predom = l; } });
+  let tier, label;
+  if (highPct >= 40) { tier = 'riesgo'; label = (c.riesgo_muy_alto || 0) > (c.riesgo_alto || 0) ? 'muy alto' : 'alto'; }
+  else if (highPct >= 20 || predom === 'riesgo_medio' || predom === 'riesgo_alto' || predom === 'riesgo_muy_alto') { tier = 'medio'; label = 'medio'; }
+  else { tier = 'favorable'; label = 'bajo'; }
+  return { tier, label, total, highPct: highPct.toFixed(1), lowPct: lowPct.toFixed(1) };
+}
+
+function generateDimensionNarrative(dimKey, counts) {
+  const frag = DIMENSION_NARRATIVE[dimKey];
+  const name = DIMENSION_DISPLAY_NAMES[dimKey] || dimKey;
+  const r = classifyGroupRisk(counts);
+  if (r.total === 0) return null;
+  const concern = frag ? frag.concern : `los aspectos evaluados en la dimensión ${name.toLowerCase()}`;
+  const riskConseq = frag ? frag.risk : 'condiciones que pueden afectar el bienestar del trabajador';
+
+  if (r.tier === 'riesgo') {
+    return `En la dimensión ${name} los trabajadores perciben un nivel de riesgo ${r.label}, relacionado con ${concern}. Esta situación puede generar ${riskConseq}, e incrementar la probabilidad de respuestas de estrés. En este grupo, el ${r.highPct}% se ubica en riesgo alto o muy alto.`;
+  }
+  if (r.tier === 'medio') {
+    return `En la dimensión ${name} se identifica un nivel de riesgo medio en relación con ${concern}. Aunque no representa una afectación severa, evidencia condiciones que requieren observación y acciones preventivas para evitar ${riskConseq}. El ${r.highPct}% del grupo se ubica en riesgo alto o muy alto y el ${r.lowPct}% en niveles sin riesgo o de riesgo bajo.`;
+  }
+  return `En la dimensión ${name} los trabajadores perciben condiciones favorables respecto a ${concern}, lo que constituye un factor protector para el bienestar y el desempeño laboral. El ${r.lowPct}% del grupo se ubica en niveles sin riesgo o de riesgo bajo.`;
+}
+
+function generateDomainConclusion(domainKey, counts) {
+  const name = DOMAIN_DISPLAY_NAMES[domainKey] || domainKey;
+  const concern = DOMAIN_NARRATIVE_CONCERN[domainKey] || 'las condiciones evaluadas en este dominio';
+  const r = classifyGroupRisk(counts);
+  if (r.total === 0) return null;
+  if (r.tier === 'riesgo') {
+    return `En conclusión, el dominio ${name} presenta un nivel de riesgo ${r.label}, lo que evidencia que ${concern} presentan condiciones que pueden afectar el bienestar de los trabajadores y requieren medidas de intervención prioritarias.`;
+  }
+  if (r.tier === 'medio') {
+    return `En conclusión, el dominio ${name} presenta un nivel de riesgo medio; aunque no se identifican afectaciones severas, ${concern} requieren atención y acciones preventivas para evitar su progresión hacia niveles de riesgo más altos.`;
+  }
+  return `En conclusión, el dominio ${name} presenta un nivel de riesgo bajo, lo que indica condiciones favorables en ${concern}. Se recomienda mantener las buenas prácticas que sostienen estos resultados.`;
+}
+
+function generateFormGeneralAnalysis(factor, overallCounts, formLabel) {
+  const r = classifyGroupRisk(overallCounts);
+  if (r.total === 0) return null;
+  const factorName = factor === 'extralaboral' ? 'extralaboral' : 'intralaboral';
+  const suffix = formLabel ? ` (${formLabel})` : '';
+  if (factor === 'extralaboral') {
+    if (r.tier === 'favorable') {
+      return `El resultado global del factor de riesgo psicosocial ${factorName}${suffix} se ubica en un nivel sin riesgo. En general, las condiciones externas al trabajo —el tiempo personal, la dinámica familiar, la comunicación, la situación económica, la vivienda y los desplazamientos— no representan una carga significativa y favorecen el equilibrio entre la vida personal y laboral.`;
+    }
+    if (r.tier === 'medio') {
+      return `El resultado global del factor de riesgo psicosocial ${factorName}${suffix} se ubica en un nivel de riesgo medio. Algunas condiciones del entorno extralaboral empiezan a generar carga sobre los trabajadores y ameritan seguimiento para evitar que afecten el equilibrio entre la vida personal y laboral.`;
+    }
+    return `El resultado global del factor de riesgo psicosocial ${factorName}${suffix} se ubica en un nivel de riesgo ${r.label}. Las condiciones del entorno extralaboral representan una carga relevante que puede repercutir en el bienestar y el desempeño, por lo que se requieren acciones de acompañamiento.`;
+  }
+  // intralaboral
+  if (r.tier === 'riesgo') {
+    return `El resultado global del factor de riesgo psicosocial intralaboral${suffix} se ubica en un nivel de riesgo ${r.label}. Las exigencias del cargo y las condiciones internas del trabajo requieren intervención prioritaria para proteger el bienestar y el desempeño de los trabajadores.`;
+  }
+  if (r.tier === 'medio') {
+    return `El resultado global del factor de riesgo psicosocial intralaboral${suffix} se ubica en un nivel de riesgo medio. Aunque no se identifican situaciones críticas, existen condiciones que requieren fortalecimiento para evitar que las tensiones cotidianas evolucionen hacia niveles de riesgo mayores.`;
+  }
+  return `El resultado global del factor de riesgo psicosocial intralaboral${suffix} se ubica en un nivel de riesgo bajo, lo que refleja un entorno laboral favorable. Se recomienda mantener las condiciones que sostienen este resultado.`;
+}
+
+// Two paragraphs (result + general analysis) matching the stress section style.
+function generateStressAnalysis(counts, formLabel) {
+  const r = classifyGroupRisk(counts);
+  if (r.total === 0) return [];
+  const suffix = formLabel ? ` (${formLabel})` : '';
+  if (r.tier === 'riesgo') {
+    return [
+      `El resultado obtenido${suffix} evidencia un nivel de riesgo ${r.label} en la sintomatología asociada al estrés, lo que indica la presencia de manifestaciones frecuentes o intensas posiblemente asociadas a las demandas del trabajo, la gestión del tiempo o la percepción de recursos insuficientes. El ${r.highPct}% del grupo se ubica en riesgo alto o muy alto. Esta intensidad puede afectar la concentración, la calidad del sueño, la regulación emocional y el desempeño.`,
+      `Este nivel de riesgo indica la necesidad de implementar acciones prioritarias para reducir la sobrecarga emocional y prevenir el estrés crónico, fortaleciendo estrategias de regulación emocional, manejo del tiempo, pausas activas y, cuando corresponda, ajustes organizacionales.`
+    ];
+  }
+  if (r.tier === 'medio') {
+    return [
+      `El resultado${suffix} ubica al grupo en un nivel de riesgo medio de estrés. Aunque no alcanza un nivel crítico, evidencia una carga emocional y mental persistente que puede manifestarse en cansancio frecuente, disminución de la concentración o sensación de sobrecarga. El ${r.highPct}% se ubica en riesgo alto o muy alto y el ${r.lowPct}% sin riesgo o en riesgo bajo.`,
+      `Este nivel requiere una intervención preventiva —autocuidado, pausas activas y cargas laborales equilibradas— que permita evitar la progresión hacia niveles más altos de desgaste emocional.`
+    ];
+  }
+  return [
+    `El resultado${suffix} ubica al grupo en un nivel de riesgo bajo de estrés: el ${r.lowPct}% se encuentra sin riesgo o en riesgo bajo, lo que indica que las manifestaciones de estrés se mantienen en niveles manejables.`,
+    `Se recomienda mantener las estrategias de autocuidado y los factores protectores que sostienen este resultado, con seguimiento periódico dentro del sistema de vigilancia epidemiológica.`
+  ];
+}
+
+// ============================================================
 // SOCIODEMOGRAPHIC ANALYSIS TEXT
 // ============================================================
 // Per-variable metadata used to build a broader, data-driven explanation under
@@ -852,5 +1002,10 @@ module.exports = {
   writeDefinicionesExtralaborales,
   generateDimensionAnalysis,
   generateOverallRiskText,
-  generateDemographicAnalysis
+  generateDemographicAnalysis,
+  classifyGroupRisk,
+  generateDimensionNarrative,
+  generateDomainConclusion,
+  generateFormGeneralAnalysis,
+  generateStressAnalysis
 };

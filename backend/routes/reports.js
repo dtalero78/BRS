@@ -801,6 +801,136 @@ function generateOrganizationalPDF(doc, { evaluation, demographics, aggResults, 
     doc.moveDown(1);
   };
 
+  // Justified narrative paragraph (for the qualitative interpretation prose).
+  const writeNarrative = (text, opts = {}) => {
+    if (!text) return;
+    ensureSpace(doc, opts.space || 70);
+    doc.x = m;
+    doc.fontSize(opts.size || 9.5).fillColor(opts.color || '#374151').font(opts.font || 'Helvetica');
+    doc.text(text, m, doc.y, { width: pageW, align: 'justify' });
+    doc.moveDown(opts.gap != null ? opts.gap : 0.55);
+  };
+  const writeSubheading = (text) => {
+    ensureSpace(doc, 46);
+    doc.x = m;
+    doc.fontSize(11).fillColor('#1E40AF').font('Helvetica-Bold');
+    doc.text(text, m, doc.y, { width: pageW });
+    doc.moveDown(0.4);
+  };
+
+  // Renders one intralaboral form (A/B): per-form risk table + qualitative
+  // interpretation per dimension, domain conclusions and form general analysis.
+  // Returns true if it rendered anything.
+  const renderIntralaboralForm = (form) => {
+    const formAgg = form === 'A' ? aggResults.intralaboralA : aggResults.intralaboralB;
+    const n = formAgg.participantCount || 0;
+    if (n === 0) return false;
+
+    ensureSpace(doc, 120);
+    if (doc.y > 620) doc.addPage();
+    writeSubheading(`Cuestionario Intralaboral – Forma ${form} (n = ${n})`);
+    writeNarrative(
+      form === 'A'
+        ? 'Aplicado a trabajadores con cargos de jefatura, profesionales o técnicos.'
+        : 'Aplicado a trabajadores con cargos auxiliares u operarios.',
+      { size: 8.5, color: '#6B7280', gap: 0.5 }
+    );
+
+    // Per-form color-coded risk table
+    const tableData = [];
+    templates.DOMAIN_ORDER.forEach(domainKey => {
+      tableData.push({ isDomain: true, label: templates.DOMAIN_DISPLAY_NAMES[domainKey] });
+      const dims = templates.DOMAIN_DIMENSIONS[domainKey][form] || [];
+      dims.forEach(dimKey => {
+        const counts = formAgg.dimensions[dimKey];
+        if (!counts || sumCounts(counts) === 0) return;
+        tableData.push({
+          label: templates.DIMENSION_DISPLAY_NAMES[dimKey] || dimKey,
+          sin_riesgo: counts.sin_riesgo || 0, riesgo_bajo: counts.riesgo_bajo || 0,
+          riesgo_medio: counts.riesgo_medio || 0, riesgo_alto: counts.riesgo_alto || 0,
+          riesgo_muy_alto: counts.riesgo_muy_alto || 0
+        });
+      });
+    });
+    ensureSpace(doc, 140);
+    drawColorCodedRiskTable(doc, m, doc.y, pageW, tableData);
+    doc.moveDown(1);
+
+    // Qualitative interpretation: dimension paragraphs + domain conclusions
+    templates.DOMAIN_ORDER.forEach(domainKey => {
+      const dims = templates.DOMAIN_DIMENSIONS[domainKey][form] || [];
+      dims.forEach(dimKey => {
+        const counts = formAgg.dimensions[dimKey];
+        if (!counts || sumCounts(counts) === 0) return;
+        writeNarrative(templates.generateDimensionNarrative(dimKey, counts));
+      });
+      const dCounts = formAgg.domains[domainKey];
+      if (dCounts && sumCounts(dCounts) > 0) {
+        writeNarrative(templates.generateDomainConclusion(domainKey, dCounts), { color: '#1F2937' });
+      }
+    });
+
+    // Form-level general analysis
+    if (formAgg.overall && sumCounts(formAgg.overall) > 0) {
+      writeNarrative(templates.generateFormGeneralAnalysis('intralaboral', formAgg.overall, `Forma ${form}`), { color: '#1F2937' });
+    }
+    doc.moveDown(0.5);
+    return true;
+  };
+
+  // Renders one extralaboral form (A/B): per-form table + dimension narrative + general analysis.
+  const renderExtralaboralForm = (form) => {
+    const formAgg = form === 'A' ? aggResults.extralaboral.formaA : aggResults.extralaboral.formaB;
+    const dimKeys = templates.EXTRALABORAL_DIMENSIONS.filter(dk => formAgg.dimensions[dk] && sumCounts(formAgg.dimensions[dk]) > 0);
+    if (dimKeys.length === 0) return false;
+
+    ensureSpace(doc, 120);
+    if (doc.y > 620) doc.addPage();
+    writeSubheading(`Cuestionario Extralaboral – Forma ${form}`);
+
+    const tableData = dimKeys.map(dimKey => {
+      const counts = formAgg.dimensions[dimKey];
+      return {
+        label: templates.DIMENSION_DISPLAY_NAMES[dimKey] || dimKey,
+        sin_riesgo: counts.sin_riesgo || 0, riesgo_bajo: counts.riesgo_bajo || 0,
+        riesgo_medio: counts.riesgo_medio || 0, riesgo_alto: counts.riesgo_alto || 0,
+        riesgo_muy_alto: counts.riesgo_muy_alto || 0
+      };
+    });
+    ensureSpace(doc, 100);
+    drawColorCodedRiskTable(doc, m, doc.y, pageW, tableData);
+    doc.moveDown(1);
+
+    dimKeys.forEach(dimKey => writeNarrative(templates.generateDimensionNarrative(dimKey, formAgg.dimensions[dimKey])));
+
+    if (formAgg.overall && sumCounts(formAgg.overall) > 0) {
+      writeNarrative(templates.generateFormGeneralAnalysis('extralaboral', formAgg.overall, `Forma ${form}`), { color: '#1F2937' });
+    }
+    doc.moveDown(0.5);
+    return true;
+  };
+
+  // Renders one stress form (A/B): per-form risk bars + narrative (result + general analysis).
+  const renderStressForm = (form) => {
+    const counts = form === 'A' ? aggResults.estres.formaA : aggResults.estres.formaB;
+    const total = sumCounts(counts);
+    if (total === 0) return false;
+
+    ensureSpace(doc, 230);
+    if (doc.y > 540) doc.addPage();
+    writeSubheading(`Cuestionario de Estrés – Forma ${form} (n = ${total})`);
+    doc.y += 12;
+    drawSimpleRiskBars(doc, m + 50, doc.y, pageW - 100, 150, counts, total, {
+      title: `Sintomatología de Estrés – Forma ${form}`
+    });
+    doc.x = m;
+    doc.y += 165;
+    doc.moveDown(0.3);
+    templates.generateStressAnalysis(counts, `Forma ${form}`).forEach(p => writeNarrative(p, { color: '#1F2937' }));
+    doc.moveDown(0.5);
+    return true;
+  };
+
   // Helper to combine A+B risk counts for a dimension
   function getCombinedDimCounts(dimKey) {
     const a = aggResults.intralaboralA.dimensions[dimKey] || { sin_riesgo: 0, riesgo_bajo: 0, riesgo_medio: 0, riesgo_alto: 0, riesgo_muy_alto: 0 };
@@ -1125,162 +1255,87 @@ function generateOrganizationalPDF(doc, { evaluation, demographics, aggResults, 
   doc.text(`De los ${completedParticipants} participantes evaluados: el ${intraHighPct}% presenta riesgo alto o muy alto en condiciones intralaborales, el ${extraHighPct}% en condiciones extralaborales, y el ${stressHighPct}% en sintomatología asociada al estrés.`, m, doc.y, { width: pageW, align: 'justify' });
 
   // ==========================================================
-  // CONDICIONES INTRALABORALES - Color-Coded Table
+  // CONDICIONES INTRALABORALES - Per-form tables + narrative
   // ==========================================================
   doc.addPage();
   drawSectionBanner(doc, m, doc.y, pageW, 'CONDICIONES INTRALABORALES');
   doc.y += 40;
+  doc.x = m;
   doc.moveDown(0.5);
 
   doc.fontSize(10).fillColor('#374151').font('Helvetica');
-  doc.text('Los factores intralaborales son entendidos como aquellas características del trabajo y de su organización que influyen en la salud y bienestar del individuo. A continuación se presenta la distribución porcentual de riesgo por dominio y dimensión.', { width: pageW, align: 'justify' });
-  doc.moveDown(0.5);
+  doc.text('Los factores intralaborales son entendidos como aquellas características del trabajo y de su organización que influyen en la salud y bienestar del individuo. Los resultados se presentan de forma separada para la Forma A (jefaturas, profesionales y técnicos) y la Forma B (auxiliares y operarios), con su interpretación por dominio y dimensión.', m, doc.y, { width: pageW, align: 'justify' });
+  doc.moveDown(0.8);
 
-  // Build data for color-coded table
-  const intraTableData = [];
-  templates.DOMAIN_ORDER.forEach(domainKey => {
-    const domainName = templates.DOMAIN_DISPLAY_NAMES[domainKey];
-    // Domain total row
-    const domainCounts = {};
-    for (const level of RISK_ORDER) {
-      domainCounts[level] = ((aggResults.intralaboralA.domains[domainKey] || {})[level] || 0) + ((aggResults.intralaboralB.domains[domainKey] || {})[level] || 0);
-    }
-    intraTableData.push({ isDomain: true, label: domainName });
+  const renderedIntraA = renderIntralaboralForm('A');
+  const renderedIntraB = renderIntralaboralForm('B');
 
-    // Get all dimensions for this domain (combine A and B lists, deduplicate)
-    const allDims = [...new Set([
-      ...(templates.DOMAIN_DIMENSIONS[domainKey].A || []),
-      ...(templates.DOMAIN_DIMENSIONS[domainKey].B || [])
-    ])];
-
-    allDims.forEach(dimKey => {
-      const counts = getCombinedDimCounts(dimKey);
-      const total = sumCounts(counts);
-      if (total === 0) return;
-      const dimName = templates.DIMENSION_DISPLAY_NAMES[dimKey] || dimKey;
-      intraTableData.push({
-        label: dimName,
-        sin_riesgo: counts.sin_riesgo || 0,
-        riesgo_bajo: counts.riesgo_bajo || 0,
-        riesgo_medio: counts.riesgo_medio || 0,
-        riesgo_alto: counts.riesgo_alto || 0,
-        riesgo_muy_alto: counts.riesgo_muy_alto || 0
+  // Fallback: if per-form detection produced nothing, show the combined table.
+  if (!renderedIntraA && !renderedIntraB) {
+    const intraTableData = [];
+    templates.DOMAIN_ORDER.forEach(domainKey => {
+      intraTableData.push({ isDomain: true, label: templates.DOMAIN_DISPLAY_NAMES[domainKey] });
+      const allDims = [...new Set([
+        ...(templates.DOMAIN_DIMENSIONS[domainKey].A || []),
+        ...(templates.DOMAIN_DIMENSIONS[domainKey].B || [])
+      ])];
+      allDims.forEach(dimKey => {
+        const counts = getCombinedDimCounts(dimKey);
+        if (sumCounts(counts) === 0) return;
+        intraTableData.push({
+          label: templates.DIMENSION_DISPLAY_NAMES[dimKey] || dimKey,
+          sin_riesgo: counts.sin_riesgo || 0, riesgo_bajo: counts.riesgo_bajo || 0,
+          riesgo_medio: counts.riesgo_medio || 0, riesgo_alto: counts.riesgo_alto || 0,
+          riesgo_muy_alto: counts.riesgo_muy_alto || 0
+        });
       });
     });
-  });
-
-  drawColorCodedRiskTable(doc, m, doc.y, pageW, intraTableData);
-
-  // ==========================================================
-  // DIMENSION ANALYSIS TEXT
-  // ==========================================================
-  doc.moveDown(1);
-  ensureSpace(doc, 100);
-  if (doc.y > 650) doc.addPage();
-
-  doc.fontSize(10).fillColor('#1F2937').font('Helvetica-Bold');
-  doc.text('Análisis por Dimensión', { width: pageW });
-  doc.moveDown(0.5);
-  doc.fontSize(8).fillColor('#374151').font('Helvetica');
-
-  templates.DOMAIN_ORDER.forEach(domainKey => {
-    const allDims = [...new Set([
-      ...(templates.DOMAIN_DIMENSIONS[domainKey].A || []),
-      ...(templates.DOMAIN_DIMENSIONS[domainKey].B || [])
-    ])];
-    allDims.forEach(dimKey => {
-      const counts = getCombinedDimCounts(dimKey);
-      const total = sumCounts(counts);
-      if (total === 0) return;
-      ensureSpace(doc, 25);
-      const dimName = templates.DIMENSION_DISPLAY_NAMES[dimKey] || dimKey;
-      const highPct = (((counts.riesgo_alto || 0) + (counts.riesgo_muy_alto || 0)) / total * 100).toFixed(1);
-      const lowPct = (((counts.sin_riesgo || 0) + (counts.riesgo_bajo || 0)) / total * 100).toFixed(1);
-      doc.font('Helvetica-Bold').text(`• ${dimName}: `, { continued: true, width: pageW });
-      doc.font('Helvetica').text(`${lowPct}% sin riesgo/bajo, ${highPct}% alto/muy alto.`, { width: pageW });
-      doc.moveDown(0.2);
-    });
-  });
+    if (intraTableData.length > templates.DOMAIN_ORDER.length) {
+      drawColorCodedRiskTable(doc, m, doc.y, pageW, intraTableData);
+    }
+  }
 
   doc.moveDown(0.5);
+  ensureSpace(doc, 30);
+  doc.x = m;
   doc.fontSize(8).fillColor('#6B7280').font('Helvetica');
-  doc.text('Nota: Los resultados se interpretan de acuerdo a los baremos oficiales de la Resolución 2764 de 2022.', { width: pageW, align: 'justify' });
+  doc.text('Nota: Los resultados se interpretan de acuerdo con los baremos oficiales de la Resolución 2764 de 2022.', m, doc.y, { width: pageW, align: 'justify' });
 
   // ==========================================================
-  // CONDICIONES EXTRALABORALES - Color-Coded Table
+  // CONDICIONES EXTRALABORALES - Per-form tables + narrative
   // ==========================================================
   doc.addPage();
   drawSectionBanner(doc, m, doc.y, pageW, 'CONDICIONES EXTRALABORALES');
   doc.y += 40;
+  doc.x = m;
   doc.moveDown(0.5);
 
   doc.fontSize(10).fillColor('#374151').font('Helvetica');
-  doc.text('Comprenden los aspectos del entorno familiar, social y económico del trabajador. A su vez, abarcan las condiciones del lugar de vivienda, que pueden influir en la salud y bienestar del individuo.', { width: pageW, align: 'justify' });
-  doc.moveDown(0.5);
+  doc.text('Comprenden los aspectos del entorno familiar, social y económico del trabajador, así como las condiciones del lugar de vivienda, que pueden influir en su salud y bienestar. Los resultados se presentan separados por forma.', m, doc.y, { width: pageW, align: 'justify' });
+  doc.moveDown(0.8);
 
-  // Extralaboral total box
-  const extraOverall = aggResults.extralaboral.general.overall || {};
-  const extraOverallTotal = sumCounts(extraOverall);
-  if (extraOverallTotal > 0) {
-    // Find dominant risk level
-    let maxLevel = 'sin_riesgo';
-    let maxCount = 0;
-    for (const level of RISK_ORDER) {
-      if ((extraOverall[level] || 0) > maxCount) {
-        maxCount = extraOverall[level];
-        maxLevel = level;
-      }
-    }
-    doc.save();
-    doc.rect(m, doc.y, pageW, 30).fillColor('#E0F2F1').fill();
-    doc.rect(m, doc.y, pageW, 30).strokeColor('#0D9488').lineWidth(1).stroke();
-    doc.fontSize(9).fillColor('#004D40').font('Helvetica-Bold');
-    doc.text(`Total cuestionario EXTRALABORAL: ${RISK_LABELS[maxLevel]} (${((maxCount / extraOverallTotal) * 100).toFixed(1)}% de la población)`, m + 10, doc.y + 9, { width: pageW - 20 });
-    doc.restore();
-    doc.y += 40;
-    doc.moveDown(0.5);
-  }
+  const renderedExtraA = renderExtralaboralForm('A');
+  const renderedExtraB = renderExtralaboralForm('B');
 
-  // Build extralaboral color-coded table
-  const extraTableData = [];
-  const extraDimKeys = templates.EXTRALABORAL_DIMENSIONS.filter(dk => aggResults.extralaboral.general.dimensions[dk]);
-
-  extraDimKeys.forEach(dimKey => {
-    const counts = aggResults.extralaboral.general.dimensions[dimKey];
-    const total = sumCounts(counts);
-    if (total === 0) return;
-    const dimName = templates.DIMENSION_DISPLAY_NAMES[dimKey] || dimKey;
-    extraTableData.push({
-      label: dimName,
-      sin_riesgo: counts.sin_riesgo || 0,
-      riesgo_bajo: counts.riesgo_bajo || 0,
-      riesgo_medio: counts.riesgo_medio || 0,
-      riesgo_alto: counts.riesgo_alto || 0,
-      riesgo_muy_alto: counts.riesgo_muy_alto || 0
+  // Fallback: combined extralaboral table + narrative if no per-form data
+  if (!renderedExtraA && !renderedExtraB) {
+    const extraDimKeys = templates.EXTRALABORAL_DIMENSIONS.filter(dk =>
+      aggResults.extralaboral.general.dimensions[dk] && sumCounts(aggResults.extralaboral.general.dimensions[dk]) > 0);
+    const extraTableData = extraDimKeys.map(dimKey => {
+      const counts = aggResults.extralaboral.general.dimensions[dimKey];
+      return {
+        label: templates.DIMENSION_DISPLAY_NAMES[dimKey] || dimKey,
+        sin_riesgo: counts.sin_riesgo || 0, riesgo_bajo: counts.riesgo_bajo || 0,
+        riesgo_medio: counts.riesgo_medio || 0, riesgo_alto: counts.riesgo_alto || 0,
+        riesgo_muy_alto: counts.riesgo_muy_alto || 0
+      };
     });
-  });
-
-  if (extraTableData.length > 0) {
-    drawColorCodedRiskTable(doc, m, doc.y, pageW, extraTableData);
+    if (extraTableData.length > 0) {
+      drawColorCodedRiskTable(doc, m, doc.y, pageW, extraTableData);
+      doc.moveDown(1);
+      extraDimKeys.forEach(dimKey => writeNarrative(templates.generateDimensionNarrative(dimKey, aggResults.extralaboral.general.dimensions[dimKey])));
+    }
   }
-
-  // Extralaboral analysis text
-  doc.moveDown(1);
-  ensureSpace(doc, 60);
-  doc.fontSize(8).fillColor('#374151').font('Helvetica');
-  extraDimKeys.forEach(dk => {
-    const rc = aggResults.extralaboral.general.dimensions[dk];
-    if (!rc) return;
-    const total = sumCounts(rc);
-    if (total === 0) return;
-    ensureSpace(doc, 20);
-    const dimName = templates.DIMENSION_DISPLAY_NAMES[dk] || dk;
-    const highPct = (((rc.riesgo_alto || 0) + (rc.riesgo_muy_alto || 0)) / total * 100).toFixed(1);
-    const lowPct = (((rc.sin_riesgo || 0) + (rc.riesgo_bajo || 0)) / total * 100).toFixed(1);
-    doc.font('Helvetica-Bold').text(`• ${dimName}: `, { continued: true, width: pageW });
-    doc.font('Helvetica').text(`${lowPct}% sin riesgo/bajo, ${highPct}% alto/muy alto.`, { width: pageW });
-    doc.moveDown(0.2);
-  });
 
   // ==========================================================
   // ESTRÉS
@@ -1291,11 +1346,14 @@ function generateOrganizationalPDF(doc, { evaluation, demographics, aggResults, 
   doc.moveDown(0.5);
 
   doc.fontSize(10).fillColor('#374151').font('Helvetica');
-  doc.text('El estrés es una respuesta del organismo ante situaciones que generan tensión. Puede producir enfermedad a través de respuestas fisiológicas prolongadas y conductas de riesgo.', { width: pageW, align: 'justify' });
-  doc.moveDown(0.5);
+  doc.text('El estrés es una respuesta del organismo ante situaciones que generan tensión. Puede producir enfermedad a través de respuestas fisiológicas prolongadas y conductas de riesgo. Los resultados se presentan separados por forma.', m, doc.y, { width: pageW, align: 'justify' });
+  doc.moveDown(0.8);
 
-  if (stressTotal > 0) {
-    // Simple 5-bar chart for stress — start 20px lower to leave room for the title (drawn at y-12)
+  const renderedStressA = renderStressForm('A');
+  const renderedStressB = renderStressForm('B');
+
+  // Fallback: combined stress bars + narrative if no per-form data
+  if (!renderedStressA && !renderedStressB && stressTotal > 0) {
     doc.y += 20;
     drawSimpleRiskBars(doc, m + 50, doc.y, pageW - 100, 170, stressGeneral, stressTotal, {
       title: 'Sintomatología Asociada al Estrés'
@@ -1303,43 +1361,38 @@ function generateOrganizationalPDF(doc, { evaluation, demographics, aggResults, 
     doc.x = m;
     doc.y += 185;
     doc.moveDown(0.5);
+    templates.generateStressAnalysis(stressGeneral, null).forEach(p => writeNarrative(p, { color: '#1F2937' }));
+  }
 
-    const stHighPct = (((stressGeneral.riesgo_alto || 0) + (stressGeneral.riesgo_muy_alto || 0)) / stressTotal * 100).toFixed(1);
-    const stLowPct = (((stressGeneral.sin_riesgo || 0) + (stressGeneral.riesgo_bajo || 0)) / stressTotal * 100).toFixed(1);
+  // Stress typology chart (combined across both forms)
+  if (stressTypology && Object.keys(stressTypology).length > 0 && stressTotal > 0) {
+    ensureSpace(doc, 200);
+    if (doc.y > 500) doc.addPage();
+
+    doc.x = m;
+    doc.fontSize(10).fillColor('#1F2937').font('Helvetica-Bold');
+    doc.text('Tipología de Síntomas de Estrés (general)', m, doc.y, { width: pageW });
+    doc.moveDown(0.5);
+
+    const typologyColors = ['#EF4444', '#F97316', '#3B82F6', '#8B5CF6'];
+    const typologyData = Object.entries(stressTypology).map(([label, value], i) => ({
+      label, value, color: typologyColors[i % typologyColors.length]
+    }));
+
+    drawBarChart(doc, m, doc.y + 10, pageW, 160, typologyData, {
+      title: 'Contribución por Tipo de Síntoma (%)', showValues: true
+    });
+    doc.x = m;
+    doc.y += 180;
+    doc.moveDown(0.5);
+
+    const sortedTypes = Object.entries(stressTypology).sort((a, b) => b[1] - a[1]);
     doc.fontSize(9).fillColor('#374151').font('Helvetica');
-    doc.text(`El ${stLowPct}% de la población se encuentra sin riesgo o en riesgo bajo de estrés. El ${stHighPct}% presenta riesgo alto o muy alto y requiere intervención prioritaria.`, m, doc.y, { width: pageW, align: 'justify' });
-    doc.moveDown(1);
-
-    // Stress typology chart
-    if (stressTypology && Object.keys(stressTypology).length > 0) {
-      ensureSpace(doc, 200);
-      if (doc.y > 500) doc.addPage();
-
-      doc.fontSize(10).fillColor('#1F2937').font('Helvetica-Bold');
-      doc.text('Tipología de Síntomas de Estrés', { width: pageW });
-      doc.moveDown(0.5);
-
-      const typologyColors = ['#EF4444', '#F97316', '#3B82F6', '#8B5CF6'];
-      const typologyData = Object.entries(stressTypology).map(([label, value], i) => ({
-        label, value, color: typologyColors[i % typologyColors.length]
-      }));
-
-      drawBarChart(doc, m, doc.y + 10, pageW, 160, typologyData, {
-        title: 'Contribución por Tipo de Síntoma (%)', showValues: true
-      });
-      doc.x = m;
-      doc.y += 180;
-      doc.moveDown(0.5);
-
-      // TOP 3 symptoms text
-      const sortedTypes = Object.entries(stressTypology).sort((a, b) => b[1] - a[1]);
-      doc.fontSize(9).fillColor('#374151').font('Helvetica');
-      doc.text('Los principales tipos de sintomatología reportados son:', m, doc.y, { width: pageW });
-      doc.moveDown(0.2);
-      sortedTypes.slice(0, 3).forEach(([name, pct], i) => {
-        doc.text(`  ${i + 1}. ${name}: ${pct}%`, m, doc.y, { width: pageW });
-      });
-    }
+    doc.text('Los principales tipos de sintomatología reportados son:', m, doc.y, { width: pageW });
+    doc.moveDown(0.2);
+    sortedTypes.slice(0, 3).forEach(([name, pct], i) => {
+      doc.text(`  ${i + 1}. ${name}: ${pct}%`, m, doc.y, { width: pageW });
+    });
   }
 
   // ==========================================================

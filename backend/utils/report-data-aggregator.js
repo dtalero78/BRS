@@ -283,6 +283,8 @@ function aggregateResultsByForm(allResults) {
       if (qType === 'extralaboral' && (dimKey === 'puntaje_total_extralaboral' || dimKey === 'extralaboral_total')) {
         if (!result.extralaboral.general.overall) result.extralaboral.general.overall = newRiskCounts();
         incrementRisk(result.extralaboral.general.overall, riskLevel);
+        if (form === 'A') incrementRisk(result.extralaboral.formaA.overall, riskLevel);
+        else if (form === 'B') incrementRisk(result.extralaboral.formaB.overall, riskLevel);
       }
 
       // Stress
