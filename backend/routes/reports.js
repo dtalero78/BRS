@@ -966,6 +966,38 @@ function generateOrganizationalPDF(doc, { evaluation, demographics, aggResults, 
   doc.text(`BOGOTÁ D.C., ${months[now.getMonth()]} ${now.getFullYear()}`, { align: 'center' });
 
   // ==========================================================
+  // DESCRIPCIÓN DE LA EMPRESA
+  // ==========================================================
+  doc.addPage();
+  drawSectionBanner(doc, m, doc.y, pageW, 'DESCRIPCIÓN DE LA EMPRESA');
+  doc.y += 40;
+  doc.x = m;
+  doc.moveDown(0.5);
+
+  doc.fontSize(10);
+  const descLines = [
+    ['Razón social', evaluation.company_name],
+    ['NIT', evaluation.company_nit],
+    ['Dirección', t.direccion],
+  ];
+  descLines.forEach(([label, value]) => {
+    if (!value) return;
+    doc.font('Helvetica-Bold').fillColor('#1F2937').text(`${label}: `, m, doc.y, { continued: true });
+    doc.font('Helvetica').fillColor('#374151').text(String(value));
+  });
+  doc.moveDown(0.6);
+
+  [['Actividad económica', t.actividadEconomica], ['Misión', t.mision], ['Visión', t.vision]].forEach(([label, value]) => {
+    if (!value) return;
+    ensureSpace(doc, 50);
+    doc.x = m;
+    doc.fontSize(11).fillColor('#1E40AF').font('Helvetica-Bold').text(label, m, doc.y, { width: pageW });
+    doc.moveDown(0.2);
+    doc.fontSize(10).fillColor('#374151').font('Helvetica').text(String(value), m, doc.y, { width: pageW, align: 'justify' });
+    doc.moveDown(0.6);
+  });
+
+  // ==========================================================
   // INTRODUCCIÓN (editable)
   // ==========================================================
   const introParas = Array.isArray(t.introduccion) ? t.introduccion.filter(Boolean) : [];
@@ -983,6 +1015,23 @@ function generateOrganizationalPDF(doc, { evaluation, demographics, aggResults, 
   }
 
   // ==========================================================
+  // JUSTIFICACIÓN (editable)
+  // ==========================================================
+  const justParas = Array.isArray(t.justificacion) ? t.justificacion.filter(Boolean) : [];
+  if (justParas.length > 0) {
+    doc.addPage();
+    drawSectionBanner(doc, m, doc.y, pageW, 'JUSTIFICACIÓN');
+    doc.y += 40;
+    doc.x = m;
+    doc.moveDown(0.5);
+    doc.fontSize(10).fillColor('#374151').font('Helvetica');
+    justParas.forEach(p => {
+      doc.text(p, m, doc.y, { width: pageW, align: 'justify' });
+      doc.moveDown(0.5);
+    });
+  }
+
+  // ==========================================================
   // PAGE 2: OBJETIVOS + METODOLOGÍA (two columns)
   // ==========================================================
   doc.addPage();
@@ -993,6 +1042,26 @@ function generateOrganizationalPDF(doc, { evaluation, demographics, aggResults, 
   // ==========================================================
   doc.addPage();
   templates.writeProcedimientos(doc, pageW, t);
+
+  // ==========================================================
+  // MARCO LEGAL
+  // ==========================================================
+  doc.addPage();
+  drawSectionBanner(doc, m, doc.y, pageW, 'MARCO LEGAL');
+  doc.y += 40;
+  doc.x = m;
+  doc.moveDown(0.5);
+  templates.writeMarcoLegal(doc, pageW, drawTable);
+
+  // ==========================================================
+  // MARCO TEÓRICO Y CONCEPTUAL
+  // ==========================================================
+  doc.addPage();
+  drawSectionBanner(doc, m, doc.y, pageW, 'MARCO TEÓRICO Y CONCEPTUAL');
+  doc.y += 40;
+  doc.x = m;
+  doc.moveDown(0.5);
+  templates.writeMarcoTeorico(doc, pageW);
 
   // ==========================================================
   // PAGES 4-5: DEFINICIONES
@@ -1708,6 +1777,58 @@ function generateOrganizationalPDF(doc, { evaluation, demographics, aggResults, 
       doc.y += 245;
     }
   }
+
+  // ==========================================================
+  // PLAN DE ACCIÓN DE INTERVENCIÓN PSICOSOCIAL
+  // ==========================================================
+  doc.addPage();
+  drawSectionBanner(doc, m, doc.y, pageW, 'PLAN DE ACCIÓN DE INTERVENCIÓN PSICOSOCIAL');
+  doc.y += 40;
+  doc.x = m;
+  doc.moveDown(0.5);
+  writeNarrative('A partir de los resultados obtenidos se propone el siguiente plan de acción, organizado por dominio y por factor, con el objetivo y las acciones sugeridas para la intervención y el monitoreo del riesgo psicosocial. El nivel de riesgo indicado corresponde al resultado medido en la población evaluada.');
+
+  const planLevelFor = (key) => {
+    let counts;
+    if (key === 'extralaboral') counts = aggResults.extralaboral.general.overall || {};
+    else if (key === 'estres') counts = aggResults.estres.general || {};
+    else {
+      counts = {};
+      for (const level of RISK_ORDER) {
+        counts[level] = ((aggResults.intralaboralA.domains[key] || {})[level] || 0) + ((aggResults.intralaboralB.domains[key] || {})[level] || 0);
+      }
+    }
+    const r = templates.classifyGroupRisk(counts);
+    return r.total > 0 ? r.label : null;
+  };
+
+  templates.INTERVENTION_PLAN_ORDER.forEach(key => {
+    const plan = templates.INTERVENTION_PLAN[key];
+    if (!plan) return;
+    const title = templates.INTERVENTION_PLAN_TITLES[key] || key;
+    const level = planLevelFor(key);
+
+    ensureSpace(doc, 120);
+    if (doc.y > 630) doc.addPage();
+    doc.x = m;
+    doc.fontSize(11).fillColor('#1E40AF').font('Helvetica-Bold');
+    doc.text(level ? `${title}  (nivel de riesgo ${level})` : title, m, doc.y, { width: pageW });
+    doc.moveDown(0.3);
+
+    doc.fontSize(9.5).font('Helvetica-Bold').fillColor('#1F2937').text('Objetivo:', m, doc.y, { width: pageW });
+    doc.font('Helvetica').fillColor('#374151').text(plan.objetivo, m, doc.y, { width: pageW, align: 'justify' });
+    doc.moveDown(0.3);
+
+    doc.fontSize(9.5).font('Helvetica-Bold').fillColor('#1F2937').text('Acciones:', m, doc.y, { width: pageW });
+    doc.moveDown(0.15);
+    doc.fontSize(9).font('Helvetica').fillColor('#374151');
+    plan.acciones.forEach((a, i) => {
+      ensureSpace(doc, 22);
+      doc.text(`${i + 1}. ${a}`, m, doc.y, { width: pageW, align: 'justify' });
+      doc.moveDown(0.12);
+    });
+    doc.moveDown(0.6);
+  });
 
   // ==========================================================
   // RECOMENDACIONES

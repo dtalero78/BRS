@@ -165,6 +165,111 @@ const INTERVENTION_RECOMMENDATIONS = {
 };
 
 // ============================================================
+// INTERVENTION PLAN (structured action plan by domain / factor)
+// ============================================================
+const INTERVENTION_PLAN = {
+  demandas_trabajo: {
+    objetivo: 'Garantizar una adecuada organización, distribución y claridad de las demandas laborales, reduciendo la sobrecarga y previniendo la fatiga física y mental.',
+    acciones: [
+      'Redistribución y priorización de las cargas laborales según los perfiles, los tiempos reales y las capacidades del equipo.',
+      'Planificación operativa clara: cronogramas realistas, con tiempos límite definidos y retroalimentación periódica entre líderes y equipos.',
+      'Pausas activas estructuradas para disminuir la fatiga física y cognitiva.',
+      'Taller de manejo del estrés laboral (técnicas de respiración, distensión muscular y micro-descansos).',
+      'Capacitación en gestión del tiempo y productividad saludable.'
+    ]
+  },
+  liderazgo_relaciones_sociales: {
+    objetivo: 'Fortalecer las habilidades de liderazgo, comunicación y cohesión grupal para mejorar el clima laboral y disminuir las tensiones interpersonales.',
+    acciones: [
+      'Taller de liderazgo y comunicación asertiva para jefes y coordinadores (retroalimentación efectiva, escucha activa y gestión emocional).',
+      'Entrenamiento en resolución de conflictos y construcción de acuerdos.',
+      'Reuniones de equipo con estructura clara para revisar avances, dificultades y compromisos.',
+      'Canal de comunicación interna para expresar inconformidades, sugerencias o alertas.',
+      'Jornadas de integración y fortalecimiento del compañerismo y el trabajo colaborativo.'
+    ]
+  },
+  control_trabajo: {
+    objetivo: 'Incrementar la autonomía, la claridad del rol y la participación del personal en las decisiones relacionadas con su propio trabajo.',
+    acciones: [
+      'Clarificación de funciones y responsabilidades: actualizar los perfiles de cargo por escrito y socializarlos.',
+      'Espacios periódicos de participación donde los trabajadores propongan mejoras de los procesos.',
+      'Capacitación en empoderamiento laboral y toma de decisiones.',
+      'Planes de capacitación acordes a las necesidades del cargo (inducción, reinducción y formación específica).',
+      'Revisión de los protocolos de trabajo para eliminar tareas duplicadas o innecesarias.'
+    ]
+  },
+  recompensas: {
+    objetivo: 'Promover prácticas de reconocimiento justo, retroalimentación oportuna y sentido de estabilidad y valor dentro de la organización.',
+    acciones: [
+      'Sistema de reconocimiento periódico que resalte logros, buenas prácticas y aportes significativos.',
+      'Retroalimentación estructurada del desempeño con enfoque constructivo.',
+      'Capacitación en motivación laboral y bienestar emocional.',
+      'Socialización clara de las rutas de crecimiento, desarrollo interno y formación.',
+      'Encuestas de clima laboral para valorar la percepción de justicia organizacional y ajustar acciones.'
+    ]
+  },
+  extralaboral: {
+    objetivo: 'Aunque los factores extralaborales no dependen totalmente de la organización, promover ajustes que mejoren el equilibrio entre la vida laboral y personal.',
+    acciones: [
+      'Actividades de bienestar social que involucren a los núcleos familiares de los trabajadores.',
+      'Promoción del aprovechamiento del tiempo libre (deporte, arte, cultura).',
+      'Canales de comunicación para conocer las necesidades y preferencias de los trabajadores.',
+      'Fomento de la participación de los trabajadores y sus familias en las actividades de la organización.'
+    ]
+  },
+  estres: {
+    objetivo: 'Prevenir y controlar las manifestaciones de estrés, fortaleciendo las estrategias de afrontamiento y autocuidado.',
+    acciones: [
+      'Ruta de atención psicológica prioritaria para los trabajadores con signos de estrés elevado.',
+      'Sesiones grupales de psicoeducación (respiración, relajación, regulación emocional y afrontamiento adaptativo).',
+      'Capacitación en autocuidado y balance vida–trabajo.',
+      'Seguimiento dentro del Sistema de Vigilancia Epidemiológica (SVE) en riesgo psicosocial.',
+      'Fomento de hábitos saludables (sueño, alimentación, actividad física) y revisión de las cargas cuando se detecten síntomas persistentes.'
+    ]
+  }
+};
+
+// Order in which the plan blocks are rendered.
+const INTERVENTION_PLAN_ORDER = ['demandas_trabajo', 'liderazgo_relaciones_sociales', 'control_trabajo', 'recompensas', 'extralaboral', 'estres'];
+const INTERVENTION_PLAN_TITLES = {
+  demandas_trabajo: 'Demandas del Trabajo',
+  liderazgo_relaciones_sociales: 'Liderazgo y Relaciones Sociales en el Trabajo',
+  control_trabajo: 'Control sobre el Trabajo',
+  recompensas: 'Recompensas',
+  extralaboral: 'Condiciones Extralaborales',
+  estres: 'Sintomatología Asociada al Estrés'
+};
+
+// ============================================================
+// MARCO LEGAL (reference table of applicable regulations)
+// ============================================================
+const MARCO_LEGAL_ROWS = [
+  ['Ley 1010 de 2006', 'Medidas para prevenir, corregir y sancionar el acoso laboral y otros hostigamientos en el marco de las relaciones de trabajo.'],
+  ['Ley 100 de 1993', 'Sistema de Seguridad Social Integral (Art. 83 y 84).'],
+  ['Ley 1562 de 2012', 'Modifica el Sistema de Riesgos Laborales y dicta disposiciones en materia de salud ocupacional.'],
+  ['Ley 1616 de 2013', 'Ley de Salud Mental y otras disposiciones.'],
+  ['Resolución 2646 de 2008', 'Disposiciones y responsabilidades para la identificación, evaluación, prevención, intervención y monitoreo permanente de la exposición a factores de riesgo psicosocial y la determinación del origen de las patologías causadas por el estrés ocupacional.'],
+  ['Resolución 652 y 1356 de 2012', 'Conformación y funcionamiento del Comité de Convivencia Laboral en entidades públicas y privadas.'],
+  ['Resolución 2404 de 2019', 'Adopta la Batería de Instrumentos para la Evaluación de Factores de Riesgo Psicosocial y la Guía Técnica General.'],
+  ['Resolución 2764 de 2022', 'Actualiza la Batería de Instrumentos y establece los aspectos técnicos necesarios para su aplicación.'],
+  ['Decreto 1072 de 2015', 'Decreto Único Reglamentario del Sector Trabajo — implementación del Sistema de Gestión de Seguridad y Salud en el Trabajo (SG-SST).'],
+  ['Decreto 1832 de 1994', 'Adopta la Tabla de Enfermedades Profesionales (incluye patologías causadas por estrés en el trabajo).'],
+  ['Decreto 614 de 1984', 'Bases para la organización y administración de la salud ocupacional en el país.']
+];
+
+function writeMarcoLegal(doc, pageW, drawTableFn) {
+  const m = doc.page.margins.left;
+  doc.fontSize(10).fillColor('#374151').font('Helvetica');
+  doc.text('En Colombia, la legislación en seguridad y salud en el trabajo ha señalado la importancia de evaluar e intervenir los factores psicosociales dentro de las políticas de prevención de riesgos laborales. A continuación se relacionan las principales normas aplicables:', { width: pageW, align: 'justify' });
+  doc.moveDown(0.5);
+  drawTableFn(doc, m, doc.y, pageW,
+    [{ label: 'NORMA', width: 0.28 }, { label: 'OBJETO', width: 0.72 }],
+    MARCO_LEGAL_ROWS,
+    { headerBgColor: '#BFDBFE', rowHeight: 14, fontSize: 7 }
+  );
+}
+
+// ============================================================
 // INTRALABORAL DEFINITIONS (for definition tables)
 // ============================================================
 const INTRALABORAL_DEFINITIONS = {
@@ -645,7 +750,12 @@ function generateOverallRiskText(riskCounts, totalParticipants, label) {
 //   'list'       -> string[], each entry rendered as a bullet / numbered item
 // Array fields ('paragraphs' and 'list') are edited as "one line = one entry".
 const ORG_TEXT_FIELDS = [
+  { key: 'direccion', group: 'Descripción de la empresa', label: 'Dirección', kind: 'paragraph', help: 'Opcional. Se muestra en la ficha de la empresa.' },
+  { key: 'actividadEconomica', group: 'Descripción de la empresa', label: 'Actividad económica', kind: 'paragraph', help: 'Opcional.' },
+  { key: 'mision', group: 'Descripción de la empresa', label: 'Misión', kind: 'paragraph', help: 'Opcional.' },
+  { key: 'vision', group: 'Descripción de la empresa', label: 'Visión', kind: 'paragraph', help: 'Opcional.' },
   { key: 'introduccion', group: 'Introducción', label: 'Introducción', kind: 'paragraphs', help: 'Un párrafo por línea.' },
+  { key: 'justificacion', group: 'Justificación', label: 'Justificación', kind: 'paragraphs', help: 'Un párrafo por línea.' },
   { key: 'objetivoGeneral', group: 'Objetivos y Metodología', label: 'Objetivo general', kind: 'paragraph' },
   { key: 'objetivosEspecificos', group: 'Objetivos y Metodología', label: 'Objetivos específicos', kind: 'list', help: 'Una viñeta por línea.' },
   { key: 'metodologiaInstrumento', group: 'Objetivos y Metodología', label: 'Metodología · Instrumento', kind: 'paragraph' },
@@ -663,6 +773,15 @@ const ORG_TEXT_FIELD_MAP = ORG_TEXT_FIELDS.reduce((acc, f) => { acc[f.key] = f; 
 function buildDefaultOrgTexts({ companyName = 'la organización', totalEvaluated = 0 } = {}) {
   const empresa = companyName || 'la organización';
   return {
+    // Descripción de la empresa — vacíos por defecto (los diligencia el evaluador)
+    direccion: '',
+    actividadEconomica: '',
+    mision: '',
+    vision: '',
+    justificacion: [
+      `Los riesgos psicosociales son una realidad presente en la mayoría de los entornos laborales. Los trabajadores pueden estar expuestos a factores como el estrés, la presión por el cumplimiento de metas y responsabilidades, la atención a usuarios y la gestión constante de procesos, los cuales pueden tener consecuencias sobre su salud física y mental —estrés crónico, ansiedad, agotamiento emocional— así como sobre la productividad y la calidad del servicio.`,
+      `Por lo anterior, es fundamental que ${empresa} identifique y controle los factores de riesgo psicosocial en el lugar de trabajo. Al hacerlo, la organización no solo cumple con la normatividad vigente (Resolución 2646 de 2008 y Resolución 2764 de 2022), sino que también mejora la salud y el bienestar de sus colaboradores, fortalece el clima organizacional y protege su desempeño institucional.`
+    ],
     introduccion: [
       'Los factores de riesgo psicosocial en el trabajo han sido definidos por la OMS como las interacciones entre el trabajo, su medio ambiente, la satisfacción en el trabajo y las condiciones de la organización. Por otra parte, se han definido como las capacidades del trabajador, sus necesidades, su cultura y su situación personal fuera del trabajo; todo lo cual, a través de percepciones y experiencias particulares, los cuales pueden influir en la salud, el rendimiento y la satisfacción en el trabajo.',
       'Las normas colombianas han establecido reglas claras para que las empresas protejan a sus trabajadores contra los diferentes factores de riesgo psicosocial identificando, evaluando, previniendo, interviniendo y monitoreando de manera permanente la exposición a factores de riesgo psicosocial en el trabajo y determinando el origen de las patologías presuntamente causadas por el estrés, razón por la cual las organizaciones deben evaluar a sus trabajadores en materia de riesgo psicosocial laboral.',
@@ -983,6 +1102,11 @@ module.exports = {
   DOMAIN_DIMENSIONS,
   EXTRALABORAL_DIMENSIONS,
   INTERVENTION_RECOMMENDATIONS,
+  INTERVENTION_PLAN,
+  INTERVENTION_PLAN_ORDER,
+  INTERVENTION_PLAN_TITLES,
+  MARCO_LEGAL_ROWS,
+  writeMarcoLegal,
   INTRALABORAL_DEFINITIONS,
   EXTRALABORAL_DEFINITIONS,
   DEMOGRAPHIC_COLORS,
