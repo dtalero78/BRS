@@ -128,6 +128,62 @@ function occupationalGroupFor(questionnaireType, formType) {
   return formType === 'B' ? 'auxiliares' : 'jefes';
 }
 
+function parseIntegrationMeta(raw) {
+  if (!raw) return null;
+  if (typeof raw === 'string') {
+    try { return JSON.parse(raw); } catch (e) { return null; }
+  }
+  return raw;
+}
+
+/**
+ * Recalcula el estado del participant_evaluation a partir de sus respuestas.
+ * Espeja la lógica de participant-access.js (flujo de token): un cuestionario
+ * cuenta como terminado solo si tiene completed_at. Sin esto, las importaciones
+ * por foto guardaban respuestas + resultados pero dejaban el PE en 'assigned'/
+ * 'in_progress' para siempre → "Completo sin estado" en el panel del evaluador.
+ */
+async function finalizePeStatus(trx, peId, formType, integrationMetaRaw) {
+  const allResponses = await trx('responses')
+    .where('participant_evaluation_id', peId)
+    .select('questionnaire_type', 'completed_at');
+
+  const startedTypes = allResponses.map(q => q.questionnaire_type);
+  const finishedTypes = allResponses
+    .filter(q => q.completed_at)
+    .map(q => q.questionnaire_type);
+
+  const baseRequired = formType === 'B'
+    ? ['intralaboral_b', 'extralaboral', 'estres']
+    : ['intralaboral_a', 'extralaboral', 'estres'];
+
+  const integrationMeta = parseIntegrationMeta(integrationMetaRaw);
+  const esIntegracion = !!(integrationMeta && integrationMeta.source);
+  const requiredQuestionnaires = esIntegracion
+    ? ['ficha_datos', ...baseRequired, 'coping']
+    : baseRequired;
+
+  const isCompleted = requiredQuestionnaires.every(type => finishedTypes.includes(type));
+
+  const current = await trx('participant_evaluations')
+    .where('id', peId)
+    .select('status')
+    .first();
+  if (current && current.status === 'completed') return;
+
+  const updateData = {};
+  if (startedTypes.length > 0) updateData.status = 'in_progress';
+  if (isCompleted) {
+    updateData.status = 'completed';
+    updateData.completed_at = new Date();
+  }
+
+  if (Object.keys(updateData).length > 0) {
+    updateData.updated_at = new Date();
+    await trx('participant_evaluations').where('id', peId).update(updateData);
+  }
+}
+
 router.post(
   '/:evaluationId/preview',
   auth,
@@ -355,6 +411,8 @@ router.post(
             .where('id', participant.id)
             .update({ demographic_data: JSON.stringify(mergedDemo) });
 
+          await finalizePeStatus(trx, pe.id, mergedDemo.formType || 'A', pe.integration_metadata);
+
           return {
             participantId: participant.id,
             participantEvaluationId: pe.id,
@@ -411,6 +469,8 @@ router.post(
           results: JSON.stringify(typeResults),
           calculated_at: new Date(),
         });
+
+        await finalizePeStatus(trx, pe.id, demo.formType || (questionnaireType === 'intralaboral_b' ? 'B' : 'A'), pe.integration_metadata);
 
         return {
           participantId: participant.id,
@@ -628,6 +688,8 @@ router.post(
             resultsCalculated: typeResults.length,
           });
         }
+
+        await finalizePeStatus(trx, pe.id, effectiveFormType, pe.integration_metadata);
 
         return {
           participantId: participant.id,
