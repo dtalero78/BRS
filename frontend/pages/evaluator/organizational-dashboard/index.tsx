@@ -55,6 +55,7 @@ interface OrganizationalMetrics {
     averageScore: number;
     riskLevel: string;
     affectedParticipants: number;
+    riskCounts: RiskCounts;
   }>;
   departmentStats?: Array<{
     department: string;
@@ -101,6 +102,49 @@ const RISK_LABELS: { [key: string]: string } = {
   'alto': 'Alto',
   'muy_alto': 'Muy Alto'
 };
+
+interface RiskCounts {
+  sin_riesgo?: number;
+  riesgo_bajo?: number;
+  riesgo_medio?: number;
+  riesgo_alto?: number;
+  riesgo_muy_alto?: number;
+}
+
+// Clasifica el nivel de riesgo de una dimensión a partir de la distribución
+// REAL de participantes por baremos, no del promedio del transformedScore.
+// Consistente con getAtRiskDimensions del reporte PDF y con la columna
+// "Participantes afectados": una dimensión sin nadie en alto/muy_alto nunca
+// puede salir como Muy Alto/Crítica.
+function riskLevelFromDistribution(counts?: RiskCounts): string {
+  if (!counts) return 'sin_riesgo';
+  const muyAlto = counts.riesgo_muy_alto || 0;
+  const alto = counts.riesgo_alto || 0;
+  const medio = counts.riesgo_medio || 0;
+  const bajo = counts.riesgo_bajo || 0;
+  const sin = counts.sin_riesgo || 0;
+  const total = muyAlto + alto + medio + bajo + sin;
+  if (total === 0) return 'sin_riesgo';
+
+  const pctHigh = ((alto + muyAlto) / total) * 100;         // % en riesgo alto/muy alto
+  const pctAtRisk = ((medio + alto + muyAlto) / total) * 100; // incluye medio
+
+  if (pctHigh >= 40) return 'riesgo_muy_alto';
+  if (pctHigh >= 25) return 'riesgo_alto';
+  if (pctHigh >= 10 || pctAtRisk >= 40) return 'riesgo_medio';
+  if (pctAtRisk >= 15) return 'riesgo_bajo';
+  return 'sin_riesgo';
+}
+
+function mergeRiskCounts(a?: RiskCounts, b?: RiskCounts): RiskCounts {
+  return {
+    sin_riesgo: (a?.sin_riesgo || 0) + (b?.sin_riesgo || 0),
+    riesgo_bajo: (a?.riesgo_bajo || 0) + (b?.riesgo_bajo || 0),
+    riesgo_medio: (a?.riesgo_medio || 0) + (b?.riesgo_medio || 0),
+    riesgo_alto: (a?.riesgo_alto || 0) + (b?.riesgo_alto || 0),
+    riesgo_muy_alto: (a?.riesgo_muy_alto || 0) + (b?.riesgo_muy_alto || 0),
+  };
+}
 
 export default function OrganizationalDashboard() {
   const router = useRouter();
@@ -159,27 +203,24 @@ export default function OrganizationalDashboard() {
 
             // Calculate average risk level from statistics
             const stats = resultsResponse.data.statistics || [];
-            let totalRiskScore = 0;
             let dimensionCount = 0;
             let criticalParticipants = 0;
+            let aggCounts: RiskCounts = {};
 
             stats.forEach((stat: any) => {
-              const riskScore = stat.averageScore || 0;
-              totalRiskScore += riskScore;
               dimensionCount++;
-              
-              // Count critical participants (high/very high risk)
+
+              // Count critical participants (high/very high risk) and aggregate the
+              // real per-baremo distribution to derive the evaluation risk level.
               if (stat.riskLevels) {
                 criticalParticipants += (stat.riskLevels.riesgo_alto || 0) + (stat.riskLevels.riesgo_muy_alto || 0);
+                aggCounts = mergeRiskCounts(aggCounts, stat.riskLevels);
               }
             });
 
-            const averageScore = dimensionCount > 0 ? totalRiskScore / dimensionCount : 0;
-            let averageRiskLevel = 'sin_riesgo';
-            if (averageScore > 40) averageRiskLevel = 'riesgo_muy_alto';
-            else if (averageScore > 30) averageRiskLevel = 'riesgo_alto';
-            else if (averageScore > 20) averageRiskLevel = 'riesgo_medio';
-            else if (averageScore > 10) averageRiskLevel = 'riesgo_bajo';
+            // Nivel de riesgo de la evaluación: a partir de la distribución real de
+            // participantes por baremos (no del promedio del transformedScore).
+            const averageRiskLevel = riskLevelFromDistribution(aggCounts);
 
             return {
               id: evaluation.id,
@@ -306,23 +347,24 @@ export default function OrganizationalDashboard() {
           return;
         }
 
-        // Collect individual dimension data
+        // Collect individual dimension data. El PUNTAJE PROMEDIO sigue siendo el
+        // promedio del transformedScore (métrica informativa), pero el NIVEL DE
+        // RIESGO se deriva de la distribución real de participantes por baremos,
+        // consistente con la columna "Participantes afectados".
         const avgScore = stat.averageScore || 0;
-        let riskLevel = 'sin_riesgo';
-        if (avgScore > 40) riskLevel = 'riesgo_muy_alto';
-        else if (avgScore > 30) riskLevel = 'riesgo_alto';
-        else if (avgScore > 20) riskLevel = 'riesgo_medio';
-        else if (avgScore > 10) riskLevel = 'riesgo_bajo';
+        const riskCounts: RiskCounts = stat.riskLevels || {};
+        const riskLevel = riskLevelFromDistribution(riskCounts);
 
         const displayName = DIMENSION_NAMES[dim] || dim.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 
-        const affected = (stat.riskLevels?.riesgo_alto || 0) + (stat.riskLevels?.riesgo_muy_alto || 0);
+        const affected = (riskCounts.riesgo_alto || 0) + (riskCounts.riesgo_muy_alto || 0);
 
         dimensionScores.push({
           dimension: displayName,
           averageScore: avgScore,
           riskLevel,
-          affectedParticipants: affected
+          affectedParticipants: affected,
+          riskCounts
         });
 
         totalParticipants = Math.max(totalParticipants, stat.totalParticipants || 0);
@@ -353,12 +395,10 @@ export default function OrganizationalDashboard() {
           const prev = mergedDimensions[existing];
           prev.averageScore = (prev.averageScore + d.averageScore) / 2;
           prev.affectedParticipants = prev.affectedParticipants + d.affectedParticipants;
-          // Recalculate risk level from merged average
-          if (prev.averageScore > 40) prev.riskLevel = 'riesgo_muy_alto';
-          else if (prev.averageScore > 30) prev.riskLevel = 'riesgo_alto';
-          else if (prev.averageScore > 20) prev.riskLevel = 'riesgo_medio';
-          else if (prev.averageScore > 10) prev.riskLevel = 'riesgo_bajo';
-          else prev.riskLevel = 'sin_riesgo';
+          // Fusionar la distribución por baremos y reclasificar desde los conteos
+          // combinados (no desde el promedio).
+          prev.riskCounts = mergeRiskCounts(prev.riskCounts, d.riskCounts);
+          prev.riskLevel = riskLevelFromDistribution(prev.riskCounts);
         } else {
           seen.set(d.dimension, mergedDimensions.length);
           mergedDimensions.push({ ...d });
