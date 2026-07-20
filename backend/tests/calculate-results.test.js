@@ -150,3 +150,20 @@ describe('Motor de cálculo: regla de ítems mínimos (C2, Manual Paso 2)', () =
     expect(e.find(r => r.isTotal).valid).toBe(true);
   });
 });
+
+describe('Motor: doble marcación (questionNumber duplicado)', () => {
+  test('mismo questionNumber con valores DISTINTOS → ítem como no respondido (dimensión no_calculable)', async () => {
+    // claridad_rol = ítems 53-59 (no lenient). Ítem 53 duplicado con otro valor → dato perdido.
+    const responses = fullResponses(123, 2);
+    responses.push({ question_number: 53, response_value: 4 });
+    const res = await calculateResults('intralaboral_a', responses, { occupationalGroup: 'jefes' });
+    expect(res.find(r => r.dimension === 'claridad_rol').riskLevel).toBe('no_calculable');
+  });
+
+  test('mismo questionNumber con el MISMO valor → se conserva (no invalida)', async () => {
+    const responses = fullResponses(123, 2);
+    responses.push({ question_number: 53, response_value: 2 });
+    const res = await calculateResults('intralaboral_a', responses, { occupationalGroup: 'jefes' });
+    expect(res.find(r => r.dimension === 'claridad_rol').valid).toBe(true);
+  });
+});

@@ -32,39 +32,31 @@ router.post('/calculate/:participantId', auth, async (req, res) => {
       return res.status(400).json({ error: 'No hay respuestas para calcular' });
     }
 
-    console.log('DEBUG - All responses for participant', participantId, ':');
-    responses.forEach(r => console.log(`  ${r.questionnaire_type}: ${Object.keys(r.responses || {}).length} questions`));
-
     // Group responses by questionnaire type (exclude ficha_datos - demographic data only)
     const responsesByType = responses
-      .filter(response => {
-        const isValid = response.questionnaire_type !== 'ficha_datos';
-        console.log(`DEBUG - Filtering ${response.questionnaire_type}: ${isValid ? 'INCLUDED' : 'EXCLUDED'}`);
-        return isValid;
-      })
-
+      .filter(response => response.questionnaire_type !== 'ficha_datos')
       .reduce((acc, response) => {
         acc[response.questionnaire_type] = response;
         return acc;
       }, {});
-
-    console.log('DEBUG - Filtered responses by type:', Object.keys(responsesByType));
 
     // Check if we have BRS questionnaires to process (after excluding ficha_datos)
     if (Object.keys(responsesByType).length === 0) {
       return res.status(400).json({ error: 'No hay cuestionarios BRS completados para calcular' });
     }
 
-    // Determine occupational group from intralaboral form type
-    const occupationalGroup = responsesByType['intralaboral_b'] ? 'auxiliares' : 'jefes';
-    console.log(`DEBUG - Occupational group determined: ${occupationalGroup}`);
+    // Grupo ocupacional según el formType del participante (A=jefes/profesionales,
+    // B=auxiliares/operarios); fallback a la presencia de intralaboral_b.
+    let demoData = participant.demographic_data;
+    if (typeof demoData === 'string') { try { demoData = JSON.parse(demoData); } catch (e) { demoData = {}; } }
+    const formType = (demoData && demoData.formType) || null;
+    const occupationalGroup = (formType === 'B' || (formType == null && responsesByType['intralaboral_b'])) ? 'auxiliares' : 'jefes';
 
     // Calculate results for each questionnaire type
     const results = [];
 
     for (const [questionnaireType, responseRecord] of Object.entries(responsesByType)) {
       try {
-        console.log(`DEBUG - Processing ${questionnaireType}`);
 
         // Parse the JSON responses and convert to the format expected by calculate-results.js
         let responseData;
@@ -82,14 +74,12 @@ router.post('/calculate/:participantId', auth, async (req, res) => {
 
         if (Array.isArray(responseData)) {
           // Format: [{questionNumber: 1, responseValue: 1, ...}, ...]
-          console.log(`DEBUG - ${questionnaireType} has array format with ${responseData.length} responses`);
           formattedResponses = responseData.map(item => ({
             question_number: parseInt(item.questionNumber || item.question_number),
             response_value: parseInt(item.responseValue || item.response_value) || 0
           }));
         } else if (typeof responseData === 'object') {
           // Format: {1: 0, 2: 1, ...} or {"1": "0", "2": "1", ...}
-          console.log(`DEBUG - ${questionnaireType} has object format with ${Object.keys(responseData).length} keys`);
           formattedResponses = Object.entries(responseData).map(([questionNumber, responseValue]) => ({
             question_number: parseInt(questionNumber),
             response_value: parseInt(responseValue) || 0
@@ -99,17 +89,14 @@ router.post('/calculate/:participantId', auth, async (req, res) => {
           formattedResponses = [];
         }
 
-        console.log(`DEBUG - ${questionnaireType} has ${formattedResponses.length} individual responses`);
 
         // Use coping-specific engine or BRS engine
         let calculatedResults;
         if (questionnaireType === 'coping') {
           calculatedResults = calculateCopingResults(formattedResponses);
-          console.log(`DEBUG - coping calculated ${calculatedResults.length} subscale results`);
         } else {
           // Pass occupational group for extralaboral and stress baremos selection
           calculatedResults = await calculateResults(questionnaireType, formattedResponses, { occupationalGroup });
-          console.log(`DEBUG - ${questionnaireType} calculated ${calculatedResults.length} dimension results`);
         }
 
         results.push(...calculatedResults);
@@ -121,7 +108,6 @@ router.post('/calculate/:participantId', auth, async (req, res) => {
       }
     }
 
-    console.log(`DEBUG - Total results before saving: ${results.length}`);
 
     // Save results to database
     await db.transaction(async (trx) => {
@@ -151,12 +137,10 @@ router.post('/calculate/:participantId', auth, async (req, res) => {
         calculated_at: new Date()
       }));
 
-      console.log(`DEBUG - About to insert ${resultData.length} result records`);
 
       if (resultData.length > 0) {
         await trx('results').insert(resultData);
       } else {
-        console.log('DEBUG - No results to insert, skipping insert');
       }
     });
 
@@ -228,15 +212,6 @@ router.get('/participant/:participantId', auth, async (req, res) => {
         
         // Add each dimension result
         parsedResults.forEach(dimensionResult => {
-          // Debug: Log what we're reading from database
-          console.log(`DEBUG - Reading result for ${result.questionnaire_type}:`, {
-            dimension: dimensionResult.dimension,
-            rawScore: typeof dimensionResult.rawScore,
-            rawScoreValue: dimensionResult.rawScore,
-            transformedScore: typeof dimensionResult.transformedScore,
-            transformedScoreValue: dimensionResult.transformedScore
-          });
-          
           groupedResults[result.questionnaire_type].push({
             dimension: dimensionResult.dimension,
             rawScore: dimensionResult.rawScore,

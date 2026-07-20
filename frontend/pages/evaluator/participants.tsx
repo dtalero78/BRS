@@ -109,11 +109,11 @@ export default function EvaluatorParticipants() {
   });
 
   useEffect(() => {
-    fetchParticipants();
     fetchEvaluations();
   }, []);
 
-  // Efecto para refetch cuando cambian los filtros
+  // Efecto para cargar participantes al montar y refetch cuando cambian los filtros.
+  // fetchParticipants() se llama solo aquí para evitar el doble fetch en el montaje.
   useEffect(() => {
     fetchParticipants();
   }, [statusFilter, evaluationFilter]);
@@ -124,7 +124,7 @@ export default function EvaluatorParticipants() {
       
       // Construir parámetros de query
       const queryParams = new URLSearchParams();
-      queryParams.append('limit', '10000');
+      queryParams.append('limit', '200');
 
       if (statusFilter !== 'all') {
         queryParams.append('status', statusFilter);

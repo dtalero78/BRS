@@ -19,6 +19,14 @@ const loginSchema = Joi.object({
   password: Joi.string().required()
 });
 
+// Perfil: los campos de texto se guardan en columnas varchar(255).
+// Validamos longitud para rechazar valores que excedan el límite.
+const profileSchema = Joi.object({
+  full_name: Joi.string().max(255).allow('', null).optional(),
+  professional_title: Joi.string().max(255).allow('', null).optional(),
+  license_number: Joi.string().max(255).allow('', null).optional()
+}).unknown(true);
+
 // Register evaluator (self-service, no company required)
 router.post('/register', async (req, res) => {
   try {
@@ -27,9 +35,11 @@ router.post('/register', async (req, res) => {
       return res.status(201).json({ message: 'Cuenta creada exitosamente.' });
     }
 
-    // Anti-spam: form must take at least 3 seconds to fill
+    // Anti-spam: form must take at least 3 seconds to fill.
+    // Devolvemos un error claro (no un 201 falso) para no perder en silencio
+    // un registro legítimo enviado muy rápido.
     if (req.body._ts !== undefined && req.body._ts < 3000) {
-      return res.status(201).json({ message: 'Cuenta creada exitosamente.' });
+      return res.status(429).json({ error: 'Demasiados intentos. Espera un momento e inténtalo de nuevo.' });
     }
 
     // Anti-spam: detect suspicious email patterns (random dots/chars)
@@ -184,6 +194,9 @@ router.get('/profile', auth, async (req, res) => {
 router.put('/profile', auth, async (req, res) => {
   try {
     const { full_name, professional_title, license_number } = req.body;
+
+    const { error } = profileSchema.validate({ full_name, professional_title, license_number });
+    if (error) return res.status(400).json({ error: error.details[0].message });
 
     await db('users')
       .where('id', req.user.userId)

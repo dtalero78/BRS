@@ -260,7 +260,7 @@ router.post(
       });
     } catch (error) {
       console.error('Photo preview error:', error);
-      return res.status(500).json({ error: 'Error al analizar las imágenes: ' + error.message });
+      return res.status(500).json({ error: 'Error interno del servidor' });
     }
   }
 );
@@ -484,7 +484,7 @@ router.post(
       return res.json({ message: 'Respuestas guardadas correctamente.', ...result });
     } catch (error) {
       console.error('Photo commit error:', error);
-      return res.status(500).json({ error: 'Error al guardar respuestas: ' + error.message });
+      return res.status(500).json({ error: 'Error interno del servidor' });
     }
   }
 );
@@ -702,7 +702,7 @@ router.post(
       return res.json({ message: 'Cuestionarios guardados correctamente.', ...outcome });
     } catch (error) {
       console.error('Photo commit-multi error:', error);
-      return res.status(500).json({ error: 'Error al guardar cuestionarios: ' + error.message });
+      return res.status(500).json({ error: 'Error interno del servidor' });
     }
   }
 );

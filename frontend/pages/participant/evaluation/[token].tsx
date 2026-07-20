@@ -111,20 +111,9 @@ const ParticipantEvaluationPage = () => {
     }
   }, [token]);
 
-  // Auto-redirect a la app externa cuando se completa toda la batería.
-  // Solo aplica para participantes provisionados por integración (Platzi/BSL):
-  // si no hay integrationReturnUrl, este useEffect es no-op y el paciente ve
-  // el mensaje legacy "Ya puedes cerrar esta página". 5 segundos de pausa para
-  // que el paciente vea el éxito antes del redirect.
-  useEffect(() => {
-    if (!integrationReturnUrl) return;
-    if (availableQuestionnaires.length === 0) return;
-    if (!availableQuestionnaires.every(q => q.completed)) return;
-    const t = setTimeout(() => {
-      window.location.href = integrationReturnUrl;
-    }, 5000);
-    return () => clearTimeout(t);
-  }, [availableQuestionnaires, integrationReturnUrl]);
+  // El redirect automático a la app externa (returnUrl) fue eliminado a propósito:
+  // al completar la batería el participante se queda en la pantalla de éxito de BRS.
+  // El webhook de finalización sigue notificando a la app externa desde el backend.
 
   // Cleanup timeout on unmount
   useEffect(() => {

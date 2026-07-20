@@ -6,7 +6,25 @@ const db = require('../config/database');
 const multer = require('multer');
 const XLSX = require('xlsx');
 
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 },
+  // Solo aceptar archivos Excel (.xlsx/.xls) por extensión o mimetype.
+  // Mitiga subida de tipos arbitrarios hacia el parser XLSX.
+  fileFilter: (req, file, cb) => {
+    const name = (file.originalname || '').toLowerCase();
+    const validExt = name.endsWith('.xlsx') || name.endsWith('.xls');
+    const excelMimes = [
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'application/vnd.ms-excel'
+    ];
+    if (validExt || excelMimes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Tipo de archivo no permitido. Solo se aceptan archivos Excel (.xlsx, .xls)'));
+    }
+  }
+});
 
 // Helper to get the base URL for participant evaluation links
 function getBaseUrl(req) {
@@ -14,6 +32,21 @@ function getBaseUrl(req) {
   const protocol = req.get('x-forwarded-proto') || req.protocol;
   const host = req.get('x-forwarded-host') || req.get('host');
   return `${protocol}://${host}`;
+}
+
+// Valida que un parámetro de ruta sea un entero positivo (evita 500 opacos de Postgres)
+function isValidId(value) {
+  return /^\d+$/.test(String(value));
+}
+
+// Normaliza page/limit: enteros positivos, con limit acotado a un máximo razonable
+function parsePagination(query, defaultLimit = 50, maxLimit = 200) {
+  let page = parseInt(query.page, 10);
+  let limit = parseInt(query.limit, 10);
+  if (!Number.isInteger(page) || page < 1) page = 1;
+  if (!Number.isInteger(limit) || limit < 1) limit = defaultLimit;
+  if (limit > maxLimit) limit = maxLimit;
+  return { page, limit, offset: (page - 1) * limit };
 }
 
 // Validation schema for creating participant
@@ -190,8 +223,8 @@ router.post('/', auth, authorize('admin', 'evaluator'), async (req, res) => {
 // Get all participants for company
 router.get('/', auth, async (req, res) => {
   try {
-    const { page = 1, limit = 50, status, evaluationId } = req.query;
-    const offset = (page - 1) * limit;
+    const { status, evaluationId } = req.query;
+    const { page, limit, offset } = parsePagination(req.query, 50, 200);
 
     const companyIds = await getOwnedCompanyIds(req.user.userId);
     const superAdmin = isSuperAdmin(req.user);
@@ -342,8 +375,11 @@ router.get('/', auth, async (req, res) => {
 router.get('/evaluation/:evaluationId', auth, async (req, res) => {
   try {
     const { evaluationId } = req.params;
-    const { page = 1, limit = 1000, status } = req.query;
-    const offset = (page - 1) * limit;
+    if (!isValidId(evaluationId)) {
+      return res.status(400).json({ error: 'ID de evaluación inválido' });
+    }
+    const { status } = req.query;
+    const { limit, offset } = parsePagination(req.query, 1000, 1000);
 
     // Check if evaluation belongs to evaluator's companies
     const companyIds = await getOwnedCompanyIds(req.user.userId);
@@ -662,6 +698,9 @@ router.post('/import-excel', auth, authorize('admin', 'evaluator'), upload.singl
 router.get('/:id', auth, async (req, res) => {
   try {
     const { id } = req.params;
+    if (!isValidId(id)) {
+      return res.status(400).json({ error: 'ID inválido' });
+    }
 
     const ownedIds = await getOwnedCompanyIds(req.user.userId);
     const participant = await db('participants')
@@ -725,6 +764,9 @@ router.get('/:id', auth, async (req, res) => {
 router.put('/:id', auth, authorize('admin', 'evaluator'), async (req, res) => {
   try {
     const { id } = req.params;
+    if (!isValidId(id)) {
+      return res.status(400).json({ error: 'ID inválido' });
+    }
 
     // Check if participant exists and belongs to evaluator's companies
     const ownedIds = await getOwnedCompanyIds(req.user.userId);
@@ -804,6 +846,9 @@ router.put('/:id', auth, authorize('admin', 'evaluator'), async (req, res) => {
 router.delete('/:id', auth, authorize('admin', 'evaluator'), async (req, res) => {
   try {
     const { id } = req.params;
+    if (!isValidId(id)) {
+      return res.status(400).json({ error: 'ID inválido' });
+    }
 
     // Admins can delete any participant; evaluators only their own companies'.
     const query = db('participants')
@@ -856,17 +901,22 @@ router.delete('/:id', auth, authorize('admin', 'evaluator'), async (req, res) =>
       await trx('participants').where('id', id).del();
     });
 
-    // Log deletion
-    await db('audit_logs').insert({
-      user_id: req.user.userId,
-      action: 'delete_participant',
-      table_name: 'participants',
-      record_id: id,
-      old_values: {
-        name: `${demographicData.firstName || 'N/A'} ${demographicData.lastName || 'N/A'}`,
-        evaluationId: participant.evaluation_id
-      }
-    });
+    // Log deletion (best-effort: la operación principal ya se commiteó,
+    // un fallo del audit_log no debe propagar un 500 al usuario)
+    try {
+      await db('audit_logs').insert({
+        user_id: req.user.userId,
+        action: 'delete_participant',
+        table_name: 'participants',
+        record_id: id,
+        old_values: {
+          name: `${demographicData.firstName || 'N/A'} ${demographicData.lastName || 'N/A'}`,
+          evaluationId: participant.evaluation_id
+        }
+      });
+    } catch (auditError) {
+      console.error('Audit log (delete_participant) failed:', auditError);
+    }
 
     res.json({ message: 'Participante eliminado exitosamente' });
 
@@ -880,6 +930,9 @@ router.delete('/:id', auth, authorize('admin', 'evaluator'), async (req, res) =>
 router.post('/:id/generate-token', auth, authorize('admin', 'evaluator'), async (req, res) => {
   try {
     const { id } = req.params;
+    if (!isValidId(id)) {
+      return res.status(400).json({ error: 'ID inválido' });
+    }
 
     // Check if participant exists and belongs to evaluator's companies
     const ownedIds = await getOwnedCompanyIds(req.user.userId);
@@ -888,7 +941,7 @@ router.post('/:id/generate-token', auth, authorize('admin', 'evaluator'), async 
       .join('evaluations', 'pe.evaluation_id', 'evaluations.id')
       .where('participants.id', id)
       .whereIn('evaluations.company_id', ownedIds)
-      .select('participants.*', 'pe.id as pe_id', 'pe.access_token')
+      .select('participants.*', 'pe.id as pe_id', 'pe.access_token', 'pe.token_expires_at')
       .first();
 
     if (!participant) {
@@ -896,13 +949,15 @@ router.post('/:id/generate-token', auth, authorize('admin', 'evaluator'), async 
     }
 
     let accessToken = participant.access_token;
-    let tokenExpiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days
+    // Al reusar un token existente, devolver su expiración real (no una recalculada)
+    let tokenExpiresAt = participant.token_expires_at;
 
     // Generate new token if none exists
     if (!accessToken) {
       const crypto = require('crypto');
       accessToken = crypto.randomBytes(32).toString('hex');
-      
+      tokenExpiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days
+
       // Update participant_evaluations with token
       await db('participant_evaluations')
         .where('id', participant.pe_id)

@@ -147,7 +147,7 @@ router.post('/load-baremos', auth, authorize('admin'), async (req, res) => {
 
   } catch (error) {
     console.error('Load baremos error:', error);
-    res.status(500).json({ error: 'Error cargando baremos: ' + error.message });
+    res.status(500).json({ error: 'Error interno del servidor' });
   }
 });
 
@@ -319,7 +319,7 @@ router.post('/test-calculation', auth, async (req, res) => {
 
   } catch (error) {
     console.error('Test calculation error:', error);
-    res.status(500).json({ error: 'Error en cálculo de prueba: ' + error.message });
+    res.status(500).json({ error: 'Error interno del servidor' });
   }
 });
 
@@ -368,10 +368,9 @@ router.get('/health', async (req, res) => {
   } catch (error) {
     console.error('Health check error:', error);
     res.status(500).json({
-      status: 'ERROR',
-      database: 'Disconnected',
-      timestamp: new Date().toISOString(),
-      error: error.message
+      status: 'error',
+      message: 'Database unavailable',
+      timestamp: new Date().toISOString()
     });
   }
 });

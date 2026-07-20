@@ -16,6 +16,7 @@ const router = express.Router();
 const crypto = require('crypto');
 const db = require('../config/database');
 const apiKeyAuth = require('../middleware/api-key');
+const { isSafeWebhookUrl } = require('../services/webhook-emitter');
 
 const TOKEN_TTL_DAYS = 90;
 
@@ -50,6 +51,13 @@ router.post('/participant', apiKeyAuth, async (req, res) => {
     }
     if (formType !== 'A' && formType !== 'B') {
       return res.status(400).json({ error: 'formType must be "A" or "B"' });
+    }
+    // SSRF: callbackUrl (destino del webhook) y returnUrl deben ser URLs públicas.
+    if (callbackUrl && !isSafeWebhookUrl(callbackUrl)) {
+      return res.status(400).json({ error: 'callbackUrl no permitido: debe ser una URL pública http/https' });
+    }
+    if (returnUrl && !isSafeWebhookUrl(returnUrl)) {
+      return res.status(400).json({ error: 'returnUrl no permitido: debe ser una URL pública http/https' });
     }
 
     const resolvedEvaluatorEmail = (evaluatorEmail || process.env.BRS_INTEGRATION_DEFAULT_EVALUATOR || '').toLowerCase().trim();

@@ -154,7 +154,7 @@ router.put('/:id', auth, authorize('admin'), async (req, res) => {
 
     // Check if user exists
     const existingUser = await db.raw(
-      'SELECT id FROM users WHERE id = ?',
+      'SELECT id, role, active FROM users WHERE id = ?',
       [id]
     );
 
@@ -164,6 +164,28 @@ router.put('/:id', auth, authorize('admin'), async (req, res) => {
       });
     }
 
+    // Prevenir que el cambio deje al sistema sin ningún administrador activo
+    // (misma guarda que en DELETE): rechazar si se degrada el rol o se
+    // desactiva al último admin activo.
+    const currentUser = existingUser.rows[0];
+    if (currentUser.role === 'admin' && currentUser.active === true) {
+      const demotingAdmin = role && role !== 'admin';
+      const deactivatingAdmin = active === false;
+
+      if (demotingAdmin || deactivatingAdmin) {
+        const adminCount = await db.raw(
+          'SELECT COUNT(*) as count FROM users WHERE role = ? AND active = true',
+          ['admin']
+        );
+
+        if (parseInt(adminCount.rows[0].count) <= 1) {
+          return res.status(400).json({
+            error: 'No se puede degradar ni desactivar el último administrador del sistema'
+          });
+        }
+      }
+    }
+
     // Validate role if provided
     if (role && !['admin', 'evaluator', 'participant'].includes(role)) {
       return res.status(400).json({
@@ -171,12 +193,9 @@ router.put('/:id', auth, authorize('admin'), async (req, res) => {
       });
     }
 
-    // Validate that evaluators must have a company
-    if (role === 'evaluator' && !company_id) {
-      return res.status(400).json({
-        error: 'Los evaluadores deben tener una empresa asignada'
-      });
-    }
+    // Nota: los evaluadores auto-registrados pueden tener company_id null
+    // (modelo SaaS multi-empresa), por lo que el admin puede editarlos sin
+    // exigir empresa. No se aplica la guarda de "empresa obligatoria" aquí.
 
     // Check if email is taken by another user
     if (email) {
@@ -286,7 +305,7 @@ router.delete('/:id', auth, authorize('admin'), async (req, res) => {
 
     // Check for related records that might prevent deletion
     const evaluationCheck = await db.raw(
-      'SELECT COUNT(*) as count FROM evaluations WHERE evaluator_id = ?',
+      'SELECT COUNT(*) as count FROM evaluations WHERE created_by = ?',
       [id]
     );
 

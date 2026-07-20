@@ -477,10 +477,6 @@ function buildRiskPrioritizationMatrix(aggregatedResults) {
     ...Object.keys(r.intralaboralB.dimensions)
   ]);
 
-  // Stress total counts
-  const stressTotal = sumCounts(r.estres.general);
-  const stressHighCount = (r.estres.general.riesgo_medio || 0) + (r.estres.general.riesgo_alto || 0) + (r.estres.general.riesgo_muy_alto || 0);
-
   for (const dimKey of allDims) {
     const counts = getCombinedCounts(dimKey);
     const total = sumCounts(counts);
@@ -491,17 +487,13 @@ function buildRiskPrioritizationMatrix(aggregatedResults) {
     const muyAlto = counts.riesgo_muy_alto || 0;
     const magnitud = (medio + alto + muyAlto) / total * 100;
 
-    // Simplified association index (0.3-0.7 based on magnitud overlap with stress)
-    const indiceAsociacion = magnitud > 50 ? 0.5 : magnitud > 30 ? 0.4 : 0.3;
-
-    // Stress count: approximate as proportion of high-stress participants
-    const stressEstimate = Math.round(stressHighCount * (magnitud / 100));
-
+    // Solo se publican métricas derivadas de los datos reales: la magnitud
+    // (% en riesgo medio/alto/muy alto) y el conteo en riesgo alto/muy alto.
+    // Se retiraron el "índice de asociación" (constante inventada) y el "estrés"
+    // por dimensión (estimación cruzada arbitraria).
     matrix.push({
       dimension: dimKey,
       magnitud,
-      indiceAsociacion,
-      estres: stressEstimate,
       intra: alto + muyAlto
     });
   }

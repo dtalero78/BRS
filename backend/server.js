@@ -53,10 +53,21 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // Logging middleware
+// Redacta el access_token de las URLs de participante para no filtrarlo a los logs.
+// Cubre /participant/evaluation/<token> y /api/participant-access/<token>/...
+function redactAccessToken(url) {
+  if (!url) return url;
+  return url
+    .replace(/(\/participant\/evaluation\/)[^/?#]+/g, '$1<redacted>')
+    .replace(/(\/participant-access\/)[^/?#]+/g, '$1<redacted>');
+}
+morgan.token('url-redacted', (req) => redactAccessToken(req.originalUrl || req.url));
+
 if (process.env.NODE_ENV === 'development') {
   app.use(morgan('dev'));
 } else {
-  app.use(morgan('combined'));
+  // Formato 'combined' pero con la URL redactada.
+  app.use(morgan(':remote-addr - :remote-user [:date[clf]] ":method :url-redacted HTTP/:http-version" :status :res[content-length] ":referrer" ":user-agent"'));
 }
 
 // --- Visitor WhatsApp notification ---
@@ -96,8 +107,12 @@ app.post('/api/visitor-notify', visitNotifyLimiter, async (req, res) => {
     const isBot = /bot|crawl|spider|slurp|google|bing|yandex/i.test(userAgent);
     if (isBot) return res.status(200).json({ ok: true });
 
+    // Trunca a 200 caracteres para evitar abuso de payload en un endpoint público.
+    const safePage = String(page || '/').slice(0, 200);
+    const safeReferrer = String(referrer || 'directo').slice(0, 200);
+
     const fecha = new Date().toLocaleString('es-CO', { timeZone: 'America/Bogota' });
-    const msg = `🟢 *Nueva visita a BRS Digital*\n\n📄 Pagina: ${page || '/'}\n🔗 Referido: ${referrer || 'directo'}\n🕐 ${fecha}`;
+    const msg = `🟢 *Nueva visita a BRS Digital*\n\n📄 Pagina: ${safePage}\n🔗 Referido: ${safeReferrer}\n🕐 ${fecha}`;
 
     const fetch = (await import('node-fetch')).default;
     let formattedNumber = NOTIFY_NUMBER.replace(/[+\-\s]/g, '') + '@s.whatsapp.net';
@@ -136,14 +151,16 @@ try {
   app.use('/api/auth', require('./routes/auth'));
   console.log('✅ Auth routes loaded');
 } catch (error) {
-  console.error('❌ Error loading auth routes:', error.message);
+  console.error('❌ Error loading auth routes:', error);
+  process.exit(1);
 }
 
 try {
   app.use('/api/system', require('./routes/system'));
   console.log('✅ System routes loaded');
 } catch (error) {
-  console.error('❌ Error loading system routes:', error.message);
+  console.error('❌ Error loading system routes:', error);
+  process.exit(1);
 }
 
 // Load additional routes
@@ -151,14 +168,16 @@ try {
   app.use('/api/companies', require('./routes/companies'));
   console.log('✅ Companies routes loaded');
 } catch (error) {
-  console.error('❌ Error loading companies routes:', error.message);
+  console.error('❌ Error loading companies routes:', error);
+  process.exit(1);
 }
 
 try {
   app.use('/api/users', require('./routes/users'));
   console.log('✅ Users routes loaded');
 } catch (error) {
-  console.error('❌ Error loading users routes:', error.message);
+  console.error('❌ Error loading users routes:', error);
+  process.exit(1);
 }
 
 // Load evaluation routes
@@ -166,7 +185,8 @@ try {
   app.use('/api/evaluations', require('./routes/evaluations'));
   console.log('✅ Evaluations routes loaded');
 } catch (error) {
-  console.error('❌ Error loading evaluations routes:', error.message);
+  console.error('❌ Error loading evaluations routes:', error);
+  process.exit(1);
 }
 
 // Add evaluator dashboard endpoint
@@ -241,7 +261,8 @@ try {
   app.use('/api/participants', require('./routes/participants'));
   console.log('✅ Participants routes loaded');
 } catch (error) {
-  console.error('❌ Error loading participants routes:', error.message);
+  console.error('❌ Error loading participants routes:', error);
+  process.exit(1);
 }
 
 // Load questionnaires routes
@@ -249,7 +270,8 @@ try {
   app.use('/api/questionnaires', require('./routes/questionnaires'));
   console.log('✅ Questionnaires routes loaded');
 } catch (error) {
-  console.error('❌ Error loading questionnaires routes:', error.message);
+  console.error('❌ Error loading questionnaires routes:', error);
+  process.exit(1);
 }
 
 // Load responses routes
@@ -257,7 +279,8 @@ try {
   app.use('/api/responses', require('./routes/responses'));
   console.log('✅ Responses routes loaded');
 } catch (error) {
-  console.error('❌ Error loading responses routes:', error.message);
+  console.error('❌ Error loading responses routes:', error);
+  process.exit(1);
 }
 
 // Load participant access routes (no auth required)
@@ -265,7 +288,8 @@ try {
   app.use('/api/participant-access', require('./routes/participant-access'));
   console.log('✅ Participant access routes loaded');
 } catch (error) {
-  console.error('❌ Error loading participant access routes:', error.message);
+  console.error('❌ Error loading participant access routes:', error);
+  process.exit(1);
 }
 
 // Results and reports routes
@@ -279,7 +303,8 @@ try {
   app.use('/api/admin', require('./routes/admin'));
   console.log('✅ Admin routes loaded');
 } catch (error) {
-  console.error('❌ Error loading admin routes:', error.message);
+  console.error('❌ Error loading admin routes:', error);
+  process.exit(1);
 }
 
 // Photo import (Claude Vision) routes
@@ -287,7 +312,8 @@ try {
   app.use('/api/photo-import', require('./routes/photo-import'));
   console.log('✅ Photo import routes loaded');
 } catch (error) {
-  console.error('❌ Error loading photo-import routes:', error.message);
+  console.error('❌ Error loading photo-import routes:', error);
+  process.exit(1);
 }
 
 // Server-to-server integration routes (BSL-PLATAFORMA2 / Platzi)
@@ -295,7 +321,8 @@ try {
   app.use('/api/integration', require('./routes/integration'));
   console.log('✅ Integration routes loaded');
 } catch (error) {
-  console.error('❌ Error loading integration routes:', error.message);
+  console.error('❌ Error loading integration routes:', error);
+  process.exit(1);
 }
 
 // Serve static files (uploads, reports)
@@ -416,6 +443,17 @@ app.use('*', (req, res) => {
   }
 
   res.status(404).json({ error: 'Endpoint no encontrado' });
+});
+
+// Handlers globales de errores del proceso.
+// Se loguean con stack completo. En uncaughtException elegimos loguear-sin-crashear
+// para no tumbar producción por un error aislado (en vez de un exit silencioso).
+process.on('unhandledRejection', (reason) => {
+  console.error('⚠️ unhandledRejection:', reason instanceof Error ? reason.stack : reason);
+});
+
+process.on('uncaughtException', (err) => {
+  console.error('⚠️ uncaughtException:', err && err.stack ? err.stack : err);
 });
 
 const PORT = process.env.PORT || 5000;

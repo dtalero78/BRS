@@ -12,8 +12,23 @@ async function autoCalculateResults(peId) {
     const toProcess = responses.filter(r => r.questionnaire_type !== 'ficha_datos');
     if (toProcess.length === 0) return;
 
+    // Grupo ocupacional según el formType del participante (A=jefes/profesionales,
+    // B=auxiliares/operarios) — determina los baremos duales de extralaboral y estrés.
+    // Se toma del formType real y solo se cae a la heurística por presencia de Forma B
+    // si no hay formType registrado.
+    const peRow = await db('participant_evaluations')
+      .join('participants', 'participant_evaluations.participant_id', 'participants.id')
+      .where('participant_evaluations.id', peId)
+      .select('participants.demographic_data')
+      .first();
+    let formType = null;
+    if (peRow) {
+      let demo = peRow.demographic_data;
+      if (typeof demo === 'string') { try { demo = JSON.parse(demo); } catch (e) { demo = {}; } }
+      formType = (demo && demo.formType) || null;
+    }
     const hasBForm = toProcess.some(r => r.questionnaire_type === 'intralaboral_b');
-    const occupationalGroup = hasBForm ? 'auxiliares' : 'jefes';
+    const occupationalGroup = (formType === 'B' || (formType == null && hasBForm)) ? 'auxiliares' : 'jefes';
     const allResults = [];
 
     for (const responseRecord of toProcess) {
@@ -381,10 +396,22 @@ router.get('/:token/questionnaires', async (req, res) => {
 });
 
 // Save responses by token
+const VALID_QUESTIONNAIRE_TYPES = ['ficha_datos', 'intralaboral_a', 'intralaboral_b', 'extralaboral', 'estres', 'coping'];
+
 router.post('/:token/responses', async (req, res) => {
   try {
     const { token } = req.params;
     const { questionnaireType, responses } = req.body;
+
+    // Validación de entrada: sin esto, un body con un questionnaireType arbitrario
+    // y claves basura podía persistirse y (según su forma) empujar el estado hacia
+    // "completado", disparando cálculo y webhook con datos inválidos.
+    if (!VALID_QUESTIONNAIRE_TYPES.includes(questionnaireType)) {
+      return res.status(400).json({ error: 'questionnaireType inválido' });
+    }
+    if (responses == null || typeof responses !== 'object') {
+      return res.status(400).json({ error: 'responses debe ser un objeto o arreglo' });
+    }
 
     // Find participant by token
     const participantEvaluation = await db('participant_evaluations')
@@ -401,6 +428,13 @@ router.post('/:token/responses', async (req, res) => {
 
     if (!participantEvaluation) {
       return res.status(404).json({ error: 'Token inválido o expirado' });
+    }
+
+    // Una batería ya completada no admite más escrituras vía token: el access_token
+    // sigue siendo válido (TTL 90 días) pero no debe permitir sobrescribir respuestas
+    // ni forzar recálculos después de terminada.
+    if (participantEvaluation.pe_status === 'completed') {
+      return res.status(409).json({ error: 'La batería ya fue completada; no se admiten más respuestas.' });
     }
 
     let isCompleted = false;

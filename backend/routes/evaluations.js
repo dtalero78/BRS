@@ -139,10 +139,20 @@ router.get('/:id', auth, async (req, res) => {
     const total = parseInt(peCounts.total) || 0;
     const completed = parseInt(peCounts.completed) || 0;
 
-    // Get participants
-    const participants = await db('participants')
-      .where('evaluation_id', id)
-      .select('*');
+    // Get participants a través de participant_evaluations (los participantes
+    // se vinculan a la evaluación por esta tabla, no por una columna directa)
+    const participants = await db('participant_evaluations as pe')
+      .join('participants as p', 'p.id', 'pe.participant_id')
+      .where('pe.evaluation_id', id)
+      .select(
+        'pe.id as participant_evaluation_id',
+        'p.id as participant_id',
+        'p.email',
+        'p.demographic_data',
+        'pe.status',
+        'pe.assigned_at',
+        'pe.completed_at'
+      );
 
     res.json({
       id: evaluation.id,
@@ -159,15 +169,12 @@ router.get('/:id', auth, async (req, res) => {
       createdAt: evaluation.created_at,
       updatedAt: evaluation.updated_at,
       participants: participants.map(p => ({
-        id: p.id,
-        firstName: p.first_name,
-        lastName: p.last_name,
-        department: p.department,
-        position: p.position,
+        id: p.participant_id,
+        participantEvaluationId: p.participant_evaluation_id,
+        email: p.email,
+        demographicData: p.demographic_data,
         status: p.status,
-        completionPercentage: p.completion_percentage,
-        formType: p.form_type,
-        startedAt: p.started_at,
+        assignedAt: p.assigned_at,
         completedAt: p.completed_at
       }))
     });
@@ -476,20 +483,6 @@ function buildFichaFromExcelRow(row, socio) {
 }
 
 /**
- * Determine the formType (A or B) based on the tipo de cargo field.
- * Forma A: Jefes, profesionales, técnicos
- * Forma B: Auxiliares, operarios
- */
-function determineFormType(tipoCargo) {
-  if (!tipoCargo) return 'B'; // default to B if unknown
-  const upper = tipoCargo.toString().toUpperCase();
-  if (upper.includes('JEFATURA') || upper.includes('PROFESIONAL') || upper.includes('TÉCNICO') || upper.includes('TECNICO')) {
-    return 'A';
-  }
-  return 'B';
-}
-
-/**
  * Map gender text from Excel to our standard values.
  */
 function mapGender(sexo) {
@@ -513,17 +506,6 @@ function mapMaritalStatus(status) {
   if (upper.includes('DIVORCIADO')) return 'Divorciado(a)';
   if (upper.includes('VIUDO')) return 'Viudo(a)';
   return 'Soltero(a)';
-}
-
-/**
- * Convert an Excel serial date number to a JS Date string (YYYY-MM-DD).
- */
-function excelDateToString(serial) {
-  if (!serial || typeof serial !== 'number') return new Date().toISOString().split('T')[0];
-  // Excel epoch starts 1900-01-01, but has a leap year bug at 1900-02-29
-  const utcDays = Math.floor(serial - 25569);
-  const d = new Date(utcDays * 86400 * 1000);
-  return d.toISOString().split('T')[0];
 }
 
 /**

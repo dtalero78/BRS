@@ -16,6 +16,31 @@ const db = require('../config/database');
 
 const REQUEST_TIMEOUT_MS = 8000;
 
+// Valida que una URL de callback sea segura para hacerle POST desde el servidor.
+// Bloquea SSRF hacia recursos internos: localhost, loopback, IPs privadas,
+// link-local (incluye la IP de metadata de la nube 169.254.169.254) y hostnames
+// internos. Nota: es una defensa por hostname; no resuelve DNS, así que no cubre
+// DNS-rebinding — para eso habría que resolver y fijar la IP antes de conectar.
+function isSafeWebhookUrl(rawUrl) {
+  let u;
+  try { u = new URL(String(rawUrl)); } catch (e) { return false; }
+  if (u.protocol !== 'http:' && u.protocol !== 'https:') return false;
+  const host = u.hostname.toLowerCase();
+  if (!host) return false;
+  if (host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.internal') || host.endsWith('.local')) return false;
+  if (host === '::1' || host.startsWith('fc') || host.startsWith('fd') || host.startsWith('fe80')) return false;
+  const m = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (m) {
+    const a = parseInt(m[1], 10), b = parseInt(m[2], 10);
+    if (a === 127 || a === 10 || a === 0) return false;              // loopback / privada / reservada
+    if (a === 192 && b === 168) return false;                        // privada
+    if (a === 172 && b >= 16 && b <= 31) return false;               // privada
+    if (a === 169 && b === 254) return false;                        // link-local (metadata)
+    if (a >= 224) return false;                                      // multicast / reservada
+  }
+  return true;
+}
+
 function signBody(secret, bodyString) {
   return crypto.createHmac('sha256', secret).update(bodyString).digest('hex');
 }
@@ -82,6 +107,13 @@ async function notifyEvaluationCompleted(participantEvaluationId) {
       return;
     }
 
+    // Defensa en profundidad contra SSRF: no hacer POST a URLs internas aunque
+    // hayan quedado guardadas en integration_metadata.
+    if (!isSafeWebhookUrl(metadata.callbackUrl)) {
+      console.error(`[webhook-emitter] callbackUrl no permitido (posible SSRF), webhook no enviado: ${metadata.callbackUrl}`);
+      return;
+    }
+
     const secret = process.env.BRS_WEBHOOK_SECRET;
     if (!secret) {
       console.error('[webhook-emitter] BRS_WEBHOOK_SECRET no configurado — webhook no enviado');
@@ -117,5 +149,6 @@ async function notifyEvaluationCompleted(participantEvaluationId) {
 }
 
 module.exports = {
-  notifyEvaluationCompleted
+  notifyEvaluationCompleted,
+  isSafeWebhookUrl
 };

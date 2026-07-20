@@ -436,6 +436,26 @@ function minRequiredItems(totalItems, isLenient) {
   return isLenient ? Math.max(totalItems - 1, 0) : totalItems;
 }
 
+// Construye el mapa questionNumber -> valor validado a partir del array de respuestas.
+//  - A7: descarta valores fuera de la escala entera [0, maxVal] (no responde).
+//  - Doble marcacion: si un mismo questionNumber llega con valores DISTINTOS, se
+//    trata como dato perdido y el item se excluye (Manual: las dobles respuestas se
+//    manejan igual que los items sin respuesta). Antes "ganaba la ultima" en silencio.
+function buildResponseMap(responses, maxVal) {
+  const map = {};
+  const firstVal = {};
+  const conflicting = new Set();
+  responses.forEach(r => {
+    const q = r.question_number;
+    const v = r.response_value;
+    if (!Number.isInteger(v) || v < 0 || v > maxVal) return;
+    if (firstVal[q] === undefined) { firstVal[q] = v; map[q] = v; }
+    else if (firstVal[q] !== v) { conflicting.add(q); }
+  });
+  conflicting.forEach(q => { delete map[q]; });
+  return map;
+}
+
 // ========================================================================
 // CALCULO INTRALABORAL (Forma A o B)
 // ========================================================================
@@ -446,17 +466,8 @@ async function calculateIntralaboralResults(questionnaireType, responses) {
   const invertedItems = forma === 'A' ? FORMA_A_INVERTED_ITEMS : FORMA_B_INVERTED_ITEMS;
   const results = [];
 
-  // Agrupar respuestas por numero de pregunta.
-  // A7: solo valores enteros en la escala 0..4 son respuestas validas. Un valor
-  // fuera de rango (negativo, >4, no entero, null) NO se registra: se trata como
-  // item no respondido en vez de inyectar un puntaje bruto corrupto.
-  const responseMap = {};
-  responses.forEach(response => {
-    const v = response.response_value;
-    if (Number.isInteger(v) && v >= 0 && v <= 4) {
-      responseMap[response.question_number] = v;
-    }
-  });
+  // Agrupar respuestas: valida rango (A7) y maneja dobles marcaciones (buildResponseMap).
+  const responseMap = buildResponseMap(responses, 4);
 
   // Estado por dominio (Manual Paso 2b/2c): un dominio y el total no se calculan si
   // alguna de sus dimensiones es invalida por falta de items.
@@ -581,14 +592,8 @@ async function calculateExtralaboralResults(questionnaireType, responses, option
   const dimensions = EXTRALABORAL_DIMENSIONS;
   const occupationalGroup = options.occupationalGroup || 'jefes';
 
-  // Agrupar respuestas por numero de pregunta (A7: solo enteros 0..4 validos).
-  const responseMap = {};
-  responses.forEach(response => {
-    const v = response.response_value;
-    if (Number.isInteger(v) && v >= 0 && v <= 4) {
-      responseMap[response.question_number] = v;
-    }
-  });
+  // Agrupar respuestas: valida rango (A7) y maneja dobles marcaciones (buildResponseMap).
+  const responseMap = buildResponseMap(responses, 4);
 
   const baremoSet = occupationalGroup === 'auxiliares'
     ? BAREMOS_BRS.extralaboral_auxiliares
@@ -671,16 +676,8 @@ async function calculateStressResults(questionnaireType, responses, options = {}
   const results = [];
   const occupationalGroup = options.occupationalGroup || 'jefes';
 
-  // Agrupar respuestas por numero de pregunta.
-  // A7: la escala de estres es 0..3; un valor fuera de rango se trata como no
-  // respondido en vez de mapearse silenciosamente a 0 ('Nunca').
-  const responseMap = {};
-  responses.forEach(response => {
-    const v = response.response_value;
-    if (Number.isInteger(v) && v >= 0 && v <= 3) {
-      responseMap[response.question_number] = v;
-    }
-  });
+  // Agrupar respuestas: escala de estres 0..3 (A7) + dobles marcaciones (buildResponseMap).
+  const responseMap = buildResponseMap(responses, 3);
 
   // Calculo del puntaje bruto total ponderado (metodologia oficial):
   // a) Promedio items 1-8 x 4

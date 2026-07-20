@@ -879,8 +879,11 @@ function drawRiskPrioritizationMatrix(doc, x, startY, tableWidth, data, options 
   const headerBg = '#0D9488';
   const borderColor = '#B0BEC5';
 
-  const colWidths = [0.38, 0.15, 0.17, 0.15, 0.15];
-  const colLabels = ['Dominio', 'Magnitud', 'Indice Asociacion', 'Estres', 'Intra'];
+  // Solo columnas derivadas de los datos reales. Se retiraron "Indice Asociacion"
+  // (constante 0.3-0.5 inventada) y "Estres" (estimación cruzada arbitraria), que
+  // se publicaban como si fueran estadísticos calculados.
+  const colWidths = [0.55, 0.22, 0.23];
+  const colLabels = ['Dominio / Dimensión', 'Magnitud', 'Riesgo alto/muy alto'];
 
   function drawHeader(atY) {
     doc.save();
@@ -938,13 +941,7 @@ function drawRiskPrioritizationMatrix(doc, x, startY, tableWidth, data, options 
       doc.text(row.magnitud.toFixed(0) + ' %', colX + cellPad, currentY + cellPad, { width: colWidths[1] * tableWidth - cellPad * 2, align: 'center' });
       colX += colWidths[1] * tableWidth;
 
-      doc.text(row.indiceAsociacion.toFixed(1), colX + cellPad, currentY + cellPad, { width: colWidths[2] * tableWidth - cellPad * 2, align: 'center' });
-      colX += colWidths[2] * tableWidth;
-
-      doc.text(String(row.estres), colX + cellPad, currentY + cellPad, { width: colWidths[3] * tableWidth - cellPad * 2, align: 'center' });
-      colX += colWidths[3] * tableWidth;
-
-      doc.text(String(row.intra), colX + cellPad, currentY + cellPad, { width: colWidths[4] * tableWidth - cellPad * 2, align: 'center' });
+      doc.text(String(row.intra), colX + cellPad, currentY + cellPad, { width: colWidths[2] * tableWidth - cellPad * 2, align: 'center' });
       doc.restore();
       currentY += rowH;
     }
