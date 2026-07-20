@@ -38,6 +38,7 @@ const getRiskLevelColor = (riskLevel: string) => {
     case 'medio': return 'bg-yellow-100 text-yellow-800 border-yellow-200';
     case 'alto': return 'bg-orange-100 text-orange-800 border-orange-200';
     case 'muy_alto': return 'bg-red-100 text-red-800 border-red-200';
+    case 'no_calculable': return 'bg-gray-100 text-gray-800 border-gray-200';
     default: return 'bg-gray-100 text-gray-800 border-gray-200';
   }
 };
@@ -54,6 +55,7 @@ const getRiskLevelLabel = (riskLevel: string) => {
     case 'medio': return 'Medio';
     case 'alto': return 'Alto';
     case 'muy_alto': return 'Muy Alto';
+    case 'no_calculable': return 'No calculable';
     default: return riskLevel;
   }
 };
@@ -171,9 +173,11 @@ export default function ParticipantResults() {
   };
 
   const calculateAverageScore = (results: Result[]) => {
-    if (results.length === 0) return 0;
-    const sum = results.reduce((acc, result) => acc + (result.transformedScore || 0), 0);
-    return (sum / results.length).toFixed(2);
+    // Excluir dimensiones sin puntaje (no_calculable) para no sesgar el promedio (R4)
+    const scored = results.filter(r => r.transformedScore != null);
+    if (scored.length === 0) return 'N/C';
+    const sum = scored.reduce((acc, result) => acc + (result.transformedScore as number), 0);
+    return (sum / scored.length).toFixed(2);
   };
 
   if (loading) return <FlowLayout backHref="/evaluator/results" backLabel="Volver" maxWidth="full"><div className="text-center py-8">Cargando resultados...</div></FlowLayout>;
@@ -315,9 +319,10 @@ export default function ParticipantResults() {
                                 result.riskLevel === 'riesgo_bajo' || result.riskLevel === 'bajo' ? 'bg-blue-500' :
                                 result.riskLevel === 'riesgo_medio' || result.riskLevel === 'medio' ? 'bg-yellow-500' :
                                 result.riskLevel === 'riesgo_alto' || result.riskLevel === 'alto' ? 'bg-orange-500' :
-                                'bg-red-500'
+                                result.riskLevel === 'riesgo_muy_alto' || result.riskLevel === 'muy_alto' ? 'bg-red-500' :
+                                'bg-gray-400'
                               }`}
-                              style={{ width: `${result.transformedScore || 0}%` }}
+                              style={{ width: result.transformedScore != null ? `${Math.min(result.transformedScore, 100)}%` : '0%' }}
                             />
                           </div>
                         </td>

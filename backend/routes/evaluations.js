@@ -655,6 +655,11 @@ router.post('/:evaluationId/import-excel', auth, authorize('admin', 'evaluator')
     const sheets = parsed.sheets;
 
     const crypto = require('crypto');
+    // Dirección de la escala numérica del Excel. 'inverted' (default) = formato
+    // oficial del Ministerio (Siempre=0). 'direct' para Excels ya en escala BRS
+    // (Siempre=4). Los números 0-4 no se pueden auto-detectar; el evaluador la
+    // declara explícitamente para no importar los resultados al revés.
+    const numericScale = (req.body && req.body.numericScale === 'direct') ? 'direct' : 'inverted';
     let totalCreated = 0;
     let totalSkipped = 0;
     let totalErrors = 0;
@@ -710,6 +715,29 @@ router.post('/:evaluationId/import-excel', auth, authorize('admin', 'evaluator')
         }
 
         rowsToProcess.push({ row, rowNum, nombre, docId, documentNumber, email, formKey, layout });
+      }
+    }
+
+    // Dedupe por email dentro del archivo: un documento repetido (misma persona en
+    // dos filas, o presente en FA y FB) genera dos filas con el mismo email. Sin
+    // dedup, el insert de participant_evaluations produce dos PE con el mismo
+    // participant_id → viola UNIQUE(evaluation_id, participant_id) y tumbaba TODA
+    // la importación con 500. Nos quedamos con la primera y omitimos las demás.
+    {
+      const seenEmails = new Set();
+      const duplicates = [];
+      const dedupedRows = rowsToProcess.filter(item => {
+        if (seenEmails.has(item.email)) { duplicates.push(item); return false; }
+        seenEmails.add(item.email);
+        return true;
+      });
+      if (duplicates.length > 0) {
+        totalSkipped += duplicates.length;
+        duplicates.forEach(item => {
+          errors.push(`Fila ${item.rowNum}: documento ${item.documentNumber} duplicado en el archivo, se omitió (ya procesado en una fila anterior)`);
+        });
+        rowsToProcess.length = 0;
+        rowsToProcess.push(...dedupedRows);
       }
     }
 
@@ -812,7 +840,7 @@ router.post('/:evaluationId/import-excel', auth, authorize('admin', 'evaluator')
               const out = {};
               for (const [itemNumStr, col] of Object.entries(itemMap)) {
                 const val = row[col];
-                const parsed = excelDetector.parseResponseValue(val, scale);
+                const parsed = excelDetector.parseResponseValue(val, scale, numericScale);
                 if (parsed !== null) out[itemNumStr] = parsed;
               }
               return out;

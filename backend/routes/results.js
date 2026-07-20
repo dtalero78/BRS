@@ -331,9 +331,15 @@ router.get('/evaluation/:evaluationId', auth, async (req, res) => {
             };
           }
 
-          statistics[key].riskLevels[dimensionResult.riskLevel]++;
+          // no_calculable no es un nivel de riesgo: no se cuenta en la distribucion
+          // ni entra al promedio (evita NaN en riskLevels y sesgo en averageScore).
+          if (statistics[key].riskLevels[dimensionResult.riskLevel] !== undefined) {
+            statistics[key].riskLevels[dimensionResult.riskLevel]++;
+          }
           statistics[key].totalParticipants++;
-          statistics[key].scores.push(dimensionResult.transformedScore);
+          if (dimensionResult.transformedScore != null) {
+            statistics[key].scores.push(dimensionResult.transformedScore);
+          }
         });
       } catch (e) {
         console.error('Error parsing results JSON:', e);

@@ -28,6 +28,7 @@ const getRiskLevelLabel = (riskLevel: string) => {
     case 'riesgo_medio': return 'Riesgo Medio';
     case 'riesgo_alto': return 'Riesgo Alto';
     case 'riesgo_muy_alto': return 'Riesgo Muy Alto';
+    case 'no_calculable': return 'No calculable';
     default: return riskLevel;
   }
 };
@@ -39,14 +40,19 @@ const getRiskIcon = (riskLevel: string) => {
     case 'riesgo_medio': return '🟠';
     case 'riesgo_alto': return '🔴';
     case 'riesgo_muy_alto': return '🚨';
-    default: return '❓';
+    case 'no_calculable': return '—';
+    default: return '—';
   }
 };
 
 const generateDomainInterpretation = (domain: DomainGroup): string => {
   const riskLevel = domain.averageRisk;
   const domainName = domain.name;
-  
+
+  if (riskLevel === 'no_calculable') {
+    return `El dominio ${domainName} no es calculable por falta de respuestas suficientes según el manual oficial.`;
+  }
+
   switch (domainName) {
     case 'Demandas del Trabajo':
       switch (riskLevel) {
@@ -176,7 +182,7 @@ export default function ResultsInterpretation({ domainGroups, participantName, a
   const priorityDomains = domainGroups
     .filter(d => d.averageRisk === 'riesgo_alto' || d.averageRisk === 'riesgo_muy_alto')
     .sort((a, b) => {
-      const riskOrder = { 'riesgo_muy_alto': 4, 'riesgo_alto': 3, 'riesgo_medio': 2, 'riesgo_bajo': 1, 'sin_riesgo': 0 };
+      const riskOrder = { 'riesgo_muy_alto': 4, 'riesgo_alto': 3, 'riesgo_medio': 2, 'riesgo_bajo': 1, 'sin_riesgo': 0, 'no_calculable': -1 };
       return riskOrder[b.averageRisk as keyof typeof riskOrder] - riskOrder[a.averageRisk as keyof typeof riskOrder];
     });
 
@@ -225,7 +231,8 @@ export default function ResultsInterpretation({ domainGroups, participantName, a
                 domain.averageRisk === 'riesgo_bajo' ? 'bg-blue-100 text-blue-800' :
                 domain.averageRisk === 'riesgo_medio' ? 'bg-yellow-100 text-yellow-800' :
                 domain.averageRisk === 'riesgo_alto' ? 'bg-orange-100 text-orange-800' :
-                'bg-red-100 text-red-800'
+                domain.averageRisk === 'riesgo_muy_alto' ? 'bg-red-100 text-red-800' :
+                'bg-gray-100 text-gray-800'
               }`}>
                 {getRiskLevelLabel(domain.averageRisk)}
               </span>

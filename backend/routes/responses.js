@@ -5,9 +5,11 @@ const { auth, getOwnedCompanyIds } = require('../middleware/auth');
 const db = require('../config/database');
 const { isQuestionnaireComplete } = require('../utils/questionnaire-totals');
 
-// Validation schema for saving responses
+// Validation schema for saving responses.
+// participants.id es serial integer (no UUID); exigir UUID hacia que TODO
+// request valido fallara con 400. Debe ser un entero positivo.
 const saveResponsesSchema = Joi.object({
-  participantId: Joi.string().uuid().required(),
+  participantId: Joi.number().integer().positive().required(),
   questionnaireType: Joi.string().valid('intralaboral_a', 'intralaboral_b', 'extralaboral', 'stress', 'coping').required(),
   responses: Joi.array().items(Joi.object({
     questionNumber: Joi.number().integer().min(1).required(),

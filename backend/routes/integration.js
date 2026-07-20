@@ -84,12 +84,16 @@ router.post('/participant', apiKeyAuth, async (req, res) => {
       return res.status(404).json({ error: `Evaluator not found: ${resolvedEvaluatorEmail}` });
     }
 
-    // Empresa: debe existir (no la auto-creamos para evitar typos del caller)
+    // Empresa: debe existir Y pertenecer al evaluador resuelto (created_by).
+    // El nombre NO es unico: sin el filtro de ownership, un name repetido podia
+    // colocar al participante en la empresa de OTRO evaluador (fuga cross-tenant).
+    // No la auto-creamos para evitar typos del caller.
     const company = await db('companies')
+      .where('created_by', evaluator.id)
       .whereRaw('LOWER(name) = ?', [resolvedCompanyName.toLowerCase()])
       .first();
     if (!company) {
-      return res.status(404).json({ error: `Company not found: ${resolvedCompanyName}` });
+      return res.status(404).json({ error: `Company not found for evaluator ${resolvedEvaluatorEmail}: ${resolvedCompanyName}` });
     }
 
     // Evaluación contenedora: una sola por empresa+evaluador para todos los
@@ -171,10 +175,18 @@ router.post('/participant', apiKeyAuth, async (req, res) => {
       .where({ evaluation_id: evaluation.id, participant_id: participant.id })
       .first();
 
+    // Reusamos el PE previo SOLO si no está completado. Si ya está 'completed'
+    // (A9: re-orden tras completar la batería), reusarlo dejaría al caller con un
+    // token a una batería terminada y sin disparar un webhook nuevo → se trata
+    // como orden nueva.
+    const reuseExisting = existingPe && existingPe.status !== 'completed';
+
     let pe;
     let finalToken;
     let finalExpiresAt;
-    if (existingPe) {
+    let targetEvaluationId = evaluation.id;
+
+    if (reuseExisting) {
       const tokenStillValid = existingPe.access_token
         && existingPe.token_expires_at
         && new Date(existingPe.token_expires_at) > new Date();
@@ -206,13 +218,32 @@ router.post('/participant', apiKeyAuth, async (req, res) => {
         finalExpiresAt = tokenExpiresAt;
       }
     } else {
+      // Sin PE previo, o el previo ya está 'completed'. En el caso completed no se
+      // puede insertar otro PE bajo la misma evaluación (UNIQUE evaluation_id +
+      // participant_id): se crea una evaluación dedicada para esta re-orden.
+      if (existingPe && existingPe.status === 'completed') {
+        const reEvalName = `${company.name} - Integración BSL (re-eval ${String(externalRef)})`;
+        let reEval = await db('evaluations').where({ company_id: company.id, name: reEvalName }).first();
+        if (!reEval) {
+          const [created] = await db('evaluations').insert({
+            company_id: company.id,
+            created_by: evaluator.id,
+            name: reEvalName,
+            description: 'Re-evaluación auto-provisionada por integración (el participante ya había completado la anterior). No editar manualmente.',
+            status: 'active'
+          }).returning('*');
+          reEval = created;
+        }
+        targetEvaluationId = reEval.id;
+      }
+
       // Race con UNIQUE en (integration_metadata->>'externalRef'): si dos
       // POSTs concurrentes con mismo externalRef pasan el SELECT inicial al
       // mismo tiempo, uno hará el INSERT y el otro chocará con la UNIQUE.
       // Manejamos la violación re-queryando y devolviendo el ganador.
       try {
         [pe] = await db('participant_evaluations').insert({
-          evaluation_id: evaluation.id,
+          evaluation_id: targetEvaluationId,
           participant_id: participant.id,
           status: 'assigned',
           assigned_at: new Date(),
@@ -252,12 +283,12 @@ router.post('/participant', apiKeyAuth, async (req, res) => {
       token: finalToken,
       participantId: participant.id,
       participantEvaluationId: pe.id,
-      evaluationId: evaluation.id,
+      evaluationId: targetEvaluationId,
       companyId: company.id,
       url: `${publicBaseUrl(req)}/participant/evaluation/${finalToken}`,
       expiresAt: finalExpiresAt,
       status: pe.status,
-      isNew: !existingPe
+      isNew: !reuseExisting
     });
 
   } catch (error) {

@@ -328,7 +328,10 @@ function getAtRiskDimensions(aggregatedResults) {
     const total = sumCounts(riskCounts);
     const highRisk = (riskCounts.riesgo_alto || 0) + (riskCounts.riesgo_muy_alto || 0);
     const highPct = total > 0 ? (highRisk / total) * 100 : 0;
-    atRisk.push({ dimension: dimKey, form: 'A', riskCounts, highRiskPct: highPct, totalParticipants: total });
+    // Clonar riskCounts: el merge de Forma B (más abajo) muta existingA.riskCounts.
+    // Sin la copia, esa mutación reescribe r.intralaboralA.dimensions y el informe
+    // publicaría cifras A+B rotuladas como Forma A.
+    atRisk.push({ dimension: dimKey, form: 'A', riskCounts: { ...riskCounts }, highRiskPct: highPct, totalParticipants: total });
   }
 
   // Intralaboral B dimensions
@@ -349,7 +352,7 @@ function getAtRiskDimensions(aggregatedResults) {
         ? ((existingA.riskCounts.riesgo_alto || 0) + (existingA.riskCounts.riesgo_muy_alto || 0)) / existingA.totalParticipants * 100
         : 0;
     } else {
-      atRisk.push({ dimension: dimKey, form: 'B', riskCounts, highRiskPct: highPct, totalParticipants: total });
+      atRisk.push({ dimension: dimKey, form: 'B', riskCounts: { ...riskCounts }, highRiskPct: highPct, totalParticipants: total });
     }
   }
 
@@ -358,7 +361,7 @@ function getAtRiskDimensions(aggregatedResults) {
     const total = sumCounts(riskCounts);
     const highRisk = (riskCounts.riesgo_alto || 0) + (riskCounts.riesgo_muy_alto || 0);
     const highPct = total > 0 ? (highRisk / total) * 100 : 0;
-    atRisk.push({ dimension: dimKey, form: 'TODOS', riskCounts, highRiskPct: highPct, totalParticipants: total });
+    atRisk.push({ dimension: dimKey, form: 'TODOS', riskCounts: { ...riskCounts }, highRiskPct: highPct, totalParticipants: total });
   }
 
   // Sort by high risk percentage descending

@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, ReactNode } from 'react';
 import { useRouter } from 'next/router';
+import toast from 'react-hot-toast';
 import { ClipboardList, Briefcase, HardHat, Home, Brain, Shield, FileText, CheckCircle2, LucideIcon } from 'lucide-react';
 
 // Simple wrapper for participant pages (no auth required)
@@ -430,26 +431,33 @@ const ParticipantEvaluationPage = () => {
     try {
       await saveResponses(responsesToSave);
     } catch (error: any) {
-      // Check if it's a rate limit error
-      if (error.message?.includes('429') || error.message?.includes('Too Many Requests')) {
-        if (retryCount < maxRetries) {
-          // Exponential backoff: 2s, 4s, 8s
-          const delay = baseDelay * Math.pow(2, retryCount);
-          console.log(`Rate limited. Retrying in ${delay/1000}s...`);
-          
-          setTimeout(() => {
-            saveResponsesWithRetry(responsesToSave, retryCount + 1);
-          }, delay);
-        } else {
-          console.error('Max retries reached. Responses may not be saved.');
-          // Store in localStorage as backup
-          const backupKey = `brs_backup_${token}_${currentQuestionnaire?.type}`;
-          localStorage.setItem(backupKey, JSON.stringify(responsesToSave));
-          console.log('Responses backed up to localStorage');
-        }
-      } else {
-        console.error('Save error:', error);
+      const isRateLimit = error.message?.includes('429') || error.message?.includes('Too Many Requests');
+
+      // Reintenta CUALQUIER fallo transitorio (rate limit, red, 5xx) con backoff exponencial.
+      // Antes solo se reintentaba/respaldaba el caso 429 y cualquier otro error se perdía
+      // en silencio (console.error) sin backup ni aviso al participante.
+      if (retryCount < maxRetries) {
+        const delay = baseDelay * Math.pow(2, retryCount);
+        console.log(`Guardado falló (${isRateLimit ? 'rate limit' : error?.message}). Reintento en ${delay / 1000}s...`);
+        setTimeout(() => {
+          saveResponsesWithRetry(responsesToSave, retryCount + 1);
+        }, delay);
+        return;
       }
+
+      // Reintentos agotados: respalda SIEMPRE en localStorage y avisa al usuario.
+      console.error('Guardado fallido tras reintentos:', error);
+      try {
+        const backupKey = `brs_backup_${token}_${currentQuestionnaire?.type}`;
+        localStorage.setItem(backupKey, JSON.stringify(responsesToSave));
+      } catch (storageErr) {
+        console.error('No se pudo respaldar en localStorage:', storageErr);
+      }
+      toast.error(
+        'No pudimos guardar tus últimas respuestas (revisa tu conexión). Quedaron respaldadas ' +
+        'en este dispositivo; no cierres esta pestaña e intenta continuar.',
+        { duration: 8000 }
+      );
     }
   };
 

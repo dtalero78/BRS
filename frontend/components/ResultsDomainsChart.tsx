@@ -2,7 +2,7 @@ import React from 'react';
 
 interface DomainResult {
   domain: string;
-  averageScore: number;
+  averageScore: number | null;
   riskLevel: string;
   dimensionCount: number;
 }
@@ -12,7 +12,8 @@ interface ResultsDomainsChartProps {
   title?: string;
 }
 
-const getRiskLevelColor = (score: number): string => {
+const getRiskLevelColor = (score: number | null): string => {
+  if (score == null) return '#9CA3AF'; // gray-400 (no calculable)
   if (score <= 20) return '#10B981'; // green
   if (score <= 40) return '#3B82F6'; // blue
   if (score <= 60) return '#F59E0B'; // yellow
@@ -49,22 +50,22 @@ const ResultsDomainsChart: React.FC<ResultsDomainsChartProps> = ({ domains, titl
                   ({domain.dimensionCount} dimensiones)
                 </span>
                 <span className="text-sm font-bold text-gray-900">
-                  {domain.averageScore.toFixed(1)}%
+                  {domain.averageScore != null ? `${domain.averageScore.toFixed(1)}%` : 'N/C'}
                 </span>
               </div>
             </div>
-            
+
             <div className="relative">
               <div className="w-full bg-gray-100 rounded-full h-8">
                 <div
                   className="h-8 rounded-full flex items-center justify-end pr-2 transition-all duration-300"
                   style={{
-                    width: `${Math.min(domain.averageScore, maxScore)}%`,
+                    width: domain.averageScore != null ? `${Math.min(domain.averageScore, maxScore)}%` : '0%',
                     backgroundColor: getRiskLevelColor(domain.averageScore)
                   }}
                 >
                   <span className="text-xs font-semibold text-white">
-                    {domain.averageScore.toFixed(0)}
+                    {domain.averageScore != null ? domain.averageScore.toFixed(0) : ''}
                   </span>
                 </div>
               </div>

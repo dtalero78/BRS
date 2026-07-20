@@ -30,9 +30,12 @@ PostgreSQL (DigitalOcean Managed Database, SSL requerido)
 ### Usuarios de Prueba
 | Rol | Email | Password |
 |-----|-------|----------|
-| Admin | admin@brsdigital.com | admin123 |
-| Evaluador | evaluator@test.com | evaluator123 |
+| Admin | admin@brsdigital.com | (en gestor de contraseñas) |
+| Evaluador | evaluator@test.com | (en gestor de contraseñas) |
 | Participante | carlos.ruiz@techcorp.com | (acceso por token) |
+
+> ⚠️ Las contraseñas NO se documentan aquí (repo público). Guárdalas en un gestor
+> de contraseñas. Este archivo antes exponía `admin123`/`evaluator123`: **rótalas**.
 
 ### Datos de Prueba
 - Participante Carlos Ruiz: `participant_id=5`, `participant_evaluation_id=5`
@@ -51,11 +54,13 @@ BRS/
 │   ├── config/
 │   │   └── database.js       # Conexión PostgreSQL con Knex.js (SSL)
 │   ├── middleware/
-│   │   └── auth.js           # JWT verification, role-based auth, getOwnedCompanyIds()
+│   │   ├── auth.js           # JWT verification, role-based auth, getOwnedCompanyIds()
+│   │   └── api-key.js        # Auth por X-Api-Key (integración server-to-server, timing-safe)
 │   ├── migrations/           # Migraciones Knex (corren auto en cada deploy)
 │   │   ├── 20241201*.js      # Esquema inicial (companies, users, evaluations, …)
 │   │   ├── 20250903*.js      # access_token + ficha_datos questionnaire_type
-│   │   └── 20260420000001_scope_participants_email_per_company.js
+│   │   ├── 20260420000001_scope_participants_email_per_company.js
+│   │   └── 20260526000001_add_integration_metadata_to_participant_evaluations.js
 │   ├── routes/
 │   │   ├── auth.js           # Login, register (self-service evaluador), refresh, logout
 │   │   ├── companies.js      # CRUD empresas (admin + evaluador con ownership)
@@ -63,11 +68,14 @@ BRS/
 │   │   ├── evaluations.js    # Gestión de evaluaciones + import/preview Excel
 │   │   ├── participants.js   # Gestión de participantes (filtrado por ownership)
 │   │   ├── participant-access.js # Acceso público por token
+│   │   ├── integration.js    # Provisión server-to-server de participantes (BSL-PLATAFORMA2)
 │   │   ├── questionnaires.js # Servir cuestionarios
 │   │   ├── responses.js      # Guardar/recuperar respuestas
 │   │   ├── results.js        # Calcular y consultar resultados (filtrado por ownership)
 │   │   ├── reports.js        # Generación de PDF (PDFKit)
 │   │   └── system.js         # Config, health, baremos
+│   ├── services/
+│   │   └── webhook-emitter.js # Webhook evaluation.completed (HMAC-SHA256) a sistemas externos
 │   └── utils/
 │       ├── calculate-results.js      # Motor de cálculo BRS oficial
 │       ├── baremos-completos.js      # Baremos Tablas 29-34 del Ministerio
@@ -223,6 +231,9 @@ Dimensiones con sufijo `_total` son totales de dominio.
 - `GET /token/:token/questionnaires` - Cuestionarios disponibles
 - `POST /token/:token/responses` - Guardar respuestas
 
+### Integración server-to-server (`/api/integration`) - Auth por `X-Api-Key`
+- `POST /participant` - Provisiona participant + participant_evaluation y devuelve token de acceso + URL. Idempotente por `externalRef`.
+
 ### Sistema (`/api/system`)
 - `GET /health` | `POST /load-questionnaires` | `POST /load-baremos` | `GET /baremos-summary`
 
@@ -283,6 +294,39 @@ Como los Excel no traen email, el importador minta `cc_<documento>@temp.com` por
 | FB (auxiliares/operarios) | 97 | 31 | 31 |
 
 El preview muestra cuántos items detectó vs los esperados, columnas filtro, items faltantes y muestra de los primeros 5 participantes con conteo de respuestas válidas.
+
+## INTEGRACIÓN SERVER-TO-SERVER (BSL-PLATAFORMA2)
+
+Permite que un sistema externo (ej. BSL-PLATAFORMA2 / Platzi) provisione participantes en BRS y reciba notificación cuando completan la batería. Sin intervención manual del evaluador.
+
+**Auth**: header `X-Api-Key` validado (timing-safe) contra `BRS_INTEGRATION_API_KEY` en `middleware/api-key.js`. Si la env var no está configurada, el endpoint responde 503 (fail-closed).
+
+### Flujo de provisión — `POST /api/integration/participant`
+Body: `{ externalRef, documentNumber, firstName, lastName, formType ('A'|'B'), email?, phone?, tenantId?, evaluatorEmail?, companyName?, callbackUrl?, returnUrl? }`. El evaluador y la empresa deben existir (no se auto-crean); se resuelven del body o de `BRS_INTEGRATION_DEFAULT_EVALUATOR` / `BRS_INTEGRATION_DEFAULT_COMPANY`.
+
+1. **Idempotencia por `externalRef`**: si ya hay un PE con ese `externalRef` (columna `integration_metadata`), lo devuelve sin crear otro. Reintentos seguros.
+2. Auto-crea una evaluación contenedora `"<Empresa> - Integración BSL"` por empresa (no editar manualmente).
+3. Upsert de participant por `(company_id, email)`. Si no viene email, minta `cc_<documento>@temp.com` (mismo patrón que el importador de Excel).
+4. PE con `access_token` de 64 chars y TTL de 90 días. Si ya existe un PE para `(evaluation_id, participant_id)`: **reusa** el token si sigue válido (regenerar dejaría la orden previa apuntando a 404); solo regenera si expiró.
+5. Race-safe: la UNIQUE parcial `uniq_pe_external_ref` sobre `integration_metadata->>'externalRef'` previene PEs duplicados en POSTs concurrentes; la violación se maneja re-queryando al ganador.
+
+Devuelve `{ token, url, participantId, participantEvaluationId, evaluationId, expiresAt, status, isNew }`. La `url` es `<BRS_PUBLIC_URL>/participant/evaluation/<token>`.
+
+### Webhook de finalización (`services/webhook-emitter.js`)
+Cuando el participante completa **toda** la batería, `participant-access.js` llama (sin await, fire-and-forget) a `notifyEvaluationCompleted(peId)`:
+- No-op si el PE no tiene `integration_metadata.callbackUrl` (flujos no-integration son silenciosos).
+- POST a `callbackUrl` con payload `evaluation.completed` (`externalRef`, `tenantId`, IDs, `status`, `completedAt`).
+- Firma `X-Brs-Signature` = HMAC-SHA256(`BRS_WEBHOOK_SECRET`, body). Header `X-Brs-Event: evaluation.completed`.
+- Timeout 8s, 1 reintento con backoff de 2s.
+
+### `integration_metadata` (JSONB en `participant_evaluations`)
+`{ source, externalRef, tenantId, callbackUrl, returnUrl, createdAt }`. Migración `20260526000001`. Índice GIN + UNIQUE parcial sobre `externalRef`.
+
+### Redirect de retorno — DESACTIVADO
+El `returnUrl` se sigue guardando y exponiendo en el API, pero el frontend **ya no redirige** al participante a la app externa al terminar (se quitó el `window.location.href` de `participant/evaluation/[token].tsx`). Ahora todos los participantes se quedan en la pantalla de éxito de BRS. El webhook sí sigue notificando a BSL.
+
+### Env vars de integración
+`BRS_INTEGRATION_API_KEY` (requerida), `BRS_WEBHOOK_SECRET` (requerida para webhooks), `BRS_PUBLIC_URL` (base de la URL del token), `BRS_INTEGRATION_DEFAULT_EVALUATOR`, `BRS_INTEGRATION_DEFAULT_COMPANY` (fallbacks).
 
 ## GENERACIÓN DE REPORTES PDF
 
@@ -481,6 +525,8 @@ git push origin main
 - [x] **Sistema de migraciones Knex** — auto-aplicación en arranque del container
 - [x] **Constraint de email per-empresa** — `participants.email` único por `(company_id, email)` para que múltiples empresas importen los mismos documentos
 - [x] **Tabla de participantes con scroll fijo** — `h-[calc(100vh-260px)]` + sticky header
+- [x] **Integración server-to-server** — `POST /api/integration/participant` (auth `X-Api-Key`, idempotente por `externalRef`) + webhook `evaluation.completed` firmado con HMAC
+- [x] **Auto-redirect de retorno desactivado** — el participante ya no es redirigido a la app externa al terminar; se queda en la pantalla de éxito de BRS (webhook sigue notificando)
 
 ### Pendiente
 - [ ] Tests unitarios y de integración

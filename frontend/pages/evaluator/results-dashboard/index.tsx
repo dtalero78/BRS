@@ -224,6 +224,7 @@ export default function ResultsDashboard() {
       case 'riesgo_medio': return 'bg-orange-100 text-orange-800';
       case 'riesgo_alto': return 'bg-red-100 text-red-800';
       case 'riesgo_muy_alto': return 'bg-red-200 text-red-900';
+      case 'no_calculable': return 'bg-gray-100 text-gray-800';
       default: return 'bg-gray-100 text-gray-800';
     }
   };

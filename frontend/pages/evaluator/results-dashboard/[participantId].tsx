@@ -67,9 +67,19 @@ const getRiskLevelNumericValue = (riskLevel: string) => {
 const getNumericRiskLabel = (value: number) => {
   if (value <= 0.5) return 'sin_riesgo';
   if (value <= 1.5) return 'riesgo_bajo';
-  if (value <= 2.5) return 'riesgo_medio';  
+  if (value <= 2.5) return 'riesgo_medio';
   if (value <= 3.5) return 'riesgo_alto';
   return 'riesgo_muy_alto';
+};
+
+// Promedia el nivel de riesgo de un grupo de dimensiones EXCLUYENDO las
+// no_calculable (tratarlas como 0 sesgaría el promedio hacia "sin riesgo", R4).
+// Si ninguna dimensión es calculable, el dominio completo es 'no_calculable'.
+const computeAverageRisk = (dims: Result[]): string => {
+  const scored = dims.filter(d => d.riskLevel !== 'no_calculable');
+  if (scored.length === 0) return 'no_calculable';
+  const avg = scored.reduce((sum, d) => sum + getRiskLevelNumericValue(d.riskLevel), 0) / scored.length;
+  return getNumericRiskLabel(avg);
 };
 
 const calculateRiskSummary = (results: Result[]) => {
@@ -102,41 +112,37 @@ const groupResultsByDomain = (results: { [key: string]: Result[] }): DomainGroup
       const recompensas = questionnaireResults.filter(r => r.dimension.includes('reconocimiento_') || r.dimension.includes('recompensas_'));
       
       if (demandas.length > 0) {
-        const avgRisk = demandas.reduce((sum, d) => sum + getRiskLevelNumericValue(d.riskLevel), 0) / demandas.length;
         domains.push({
           name: 'Demandas del Trabajo',
           dimensions: demandas,
-          averageRisk: getNumericRiskLabel(avgRisk),
+          averageRisk: computeAverageRisk(demandas),
           totalDimensions: demandas.length
         });
       }
-      
+
       if (control.length > 0) {
-        const avgRisk = control.reduce((sum, d) => sum + getRiskLevelNumericValue(d.riskLevel), 0) / control.length;
         domains.push({
           name: 'Control sobre el Trabajo',
           dimensions: control,
-          averageRisk: getNumericRiskLabel(avgRisk),
+          averageRisk: computeAverageRisk(control),
           totalDimensions: control.length
         });
       }
-      
+
       if (liderazgo.length > 0) {
-        const avgRisk = liderazgo.reduce((sum, d) => sum + getRiskLevelNumericValue(d.riskLevel), 0) / liderazgo.length;
         domains.push({
           name: 'Liderazgo y Relaciones Sociales',
           dimensions: liderazgo,
-          averageRisk: getNumericRiskLabel(avgRisk),
+          averageRisk: computeAverageRisk(liderazgo),
           totalDimensions: liderazgo.length
         });
       }
-      
+
       if (recompensas.length > 0) {
-        const avgRisk = recompensas.reduce((sum, d) => sum + getRiskLevelNumericValue(d.riskLevel), 0) / recompensas.length;
         domains.push({
           name: 'Recompensas',
           dimensions: recompensas,
-          averageRisk: getNumericRiskLabel(avgRisk),
+          averageRisk: computeAverageRisk(recompensas),
           totalDimensions: recompensas.length
         });
       }
@@ -160,18 +166,16 @@ const groupResultsByDomain = (results: { [key: string]: Result[] }): DomainGroup
         ...(total.length > 0 ? [{ name: 'Coping: Total', dims: total }] : [])
       ].forEach(({ name, dims }) => {
         if (dims.length > 0) {
-          const avgRisk = dims.reduce((sum, d) => sum + getRiskLevelNumericValue(d.riskLevel), 0) / dims.length;
-          domains.push({ name, dimensions: dims, averageRisk: getNumericRiskLabel(avgRisk), totalDimensions: dims.length });
+          domains.push({ name, dimensions: dims, averageRisk: computeAverageRisk(dims), totalDimensions: dims.length });
         }
       });
     } else {
       // For other questionnaires, treat as single domain
       if (questionnaireResults.length > 0) {
-        const avgRisk = questionnaireResults.reduce((sum, d) => sum + getRiskLevelNumericValue(d.riskLevel), 0) / questionnaireResults.length;
         domains.push({
           name: getQuestionnaireLabel(questionnaireType),
           dimensions: questionnaireResults,
-          averageRisk: getNumericRiskLabel(avgRisk),
+          averageRisk: computeAverageRisk(questionnaireResults),
           totalDimensions: questionnaireResults.length
         });
       }
@@ -345,9 +349,10 @@ export default function ResultsDashboard() {
                         domain.averageRisk === 'riesgo_bajo' ? 'bg-blue-100 text-blue-800' :
                         domain.averageRisk === 'riesgo_medio' ? 'bg-yellow-100 text-yellow-800' :
                         domain.averageRisk === 'riesgo_alto' ? 'bg-orange-100 text-orange-800' :
-                        'bg-red-100 text-red-800'
+                        domain.averageRisk === 'riesgo_muy_alto' ? 'bg-red-100 text-red-800' :
+                        'bg-gray-100 text-gray-800'
                       }`}>
-                        {domain.averageRisk.replace('_', ' ')}
+                        {domain.averageRisk === 'no_calculable' ? 'No calculable' : domain.averageRisk.replace('_', ' ')}
                       </span>
                     </div>
                   </div>

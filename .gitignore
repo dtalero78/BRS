@@ -54,3 +54,15 @@ coverage/
 # Cache
 .cache/
 .parcel-cache/
+
+# Local tooling / secrets (settings.json puede contener credenciales de BD)
+.claude/settings.json
+.claude/settings.local.json
+.playwright-mcp/
+cookies.txt
+
+# Datos con PII y artefactos sueltos en la RAÍZ del repo (anclados con / para no
+# afectar assets del frontend). Ley 1581/2012: no versionar datos de participantes.
+/*.xlsx
+/*.pdf
+/*.png

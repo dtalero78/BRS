@@ -29,6 +29,17 @@ const limiter = rateLimit({
 });
 app.use('/api/', limiter);
 
+// Rate limit estricto para autenticación: frena fuerza bruta contra /login y /register.
+// skipSuccessfulRequests: solo cuentan los intentos FALLIDOS, así un usuario legítimo
+// que entra bien nunca se bloquea; un atacante que adivina contraseñas sí se frena.
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  skipSuccessfulRequests: true,
+  message: 'Demasiados intentos de autenticación. Intenta de nuevo en unos minutos.',
+  validate: { trustProxy: false }
+});
+
 // CORS configuration - allow same origin and common dev origins
 app.use(cors({
   origin: true,
@@ -120,6 +131,8 @@ app.get('/health', (req, res) => {
 
 // API Routes
 try {
+  app.use('/api/auth/login', authLimiter);
+  app.use('/api/auth/register', authLimiter);
   app.use('/api/auth', require('./routes/auth'));
   console.log('✅ Auth routes loaded');
 } catch (error) {

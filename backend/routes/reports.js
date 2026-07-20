@@ -488,8 +488,9 @@ function drawRiskBar(doc, x, y, width, score, riskLevel) {
   const barHeight = 10;
   // Background
   doc.rect(x, y, width, barHeight).fillColor('#E5E7EB').fill();
-  // Filled portion
-  const fillWidth = (score / 100) * width;
+  // Filled portion (score puede ser null en dimensiones no_calculable → barra vacia)
+  const safeScore = Number.isFinite(score) ? score : 0;
+  const fillWidth = (safeScore / 100) * width;
   doc.rect(x, y, fillWidth, barHeight).fillColor(RISK_COLORS[riskLevel] || COPING_LEVEL_COLORS[riskLevel] || '#6B7280').fill();
 }
 
@@ -636,14 +637,15 @@ function generateIndividualPDF(doc, { participant, demo, resultsByType, ficha, e
       domainResults.forEach(d => {
         ensureSpace(doc, 40);
         const name = formatDimensionName(d.dimension);
-        const score = d.transformedScore != null ? d.transformedScore.toFixed(1) : '0';
+        const hasScore = d.transformedScore != null;
+        const scoreText = hasScore ? `${d.transformedScore.toFixed(1)}%` : 'N/C';
         const risk = getRiskLabel(d.riskLevel);
 
         doc.fontSize(10).fillColor('#1F2937').font('Helvetica-Bold').text(name);
         doc.font('Helvetica').fillColor(getRiskColor(d.riskLevel))
-          .text(`  Puntaje: ${score}%  |  ${risk}`);
+          .text(`  Puntaje: ${scoreText}  |  ${risk}`);
 
-        drawRiskBar(doc, m, doc.y + 2, pageW * 0.6, parseFloat(score), d.riskLevel);
+        drawRiskBar(doc, m, doc.y + 2, pageW * 0.6, hasScore ? d.transformedScore : 0, d.riskLevel);
         doc.moveDown(1.5);
       });
 
@@ -655,14 +657,15 @@ function generateIndividualPDF(doc, { participant, demo, resultsByType, ficha, e
       overallTotals.forEach(d => {
         ensureSpace(doc, 50);
         const name = formatDimensionName(d.dimension);
-        const score = d.transformedScore != null ? d.transformedScore.toFixed(1) : '0';
+        const hasScore = d.transformedScore != null;
+        const scoreText = hasScore ? `${d.transformedScore.toFixed(1)}%` : 'N/C';
         const risk = getRiskLabel(d.riskLevel);
 
         doc.fontSize(13).fillColor('#1E40AF').font('Helvetica-Bold').text(name.toUpperCase());
         doc.font('Helvetica').fontSize(11).fillColor(getRiskColor(d.riskLevel))
-          .text(`  Puntaje transformado: ${score}%  |  ${risk}`);
+          .text(`  Puntaje transformado: ${scoreText}  |  ${risk}`);
 
-        drawRiskBar(doc, m, doc.y + 2, pageW * 0.7, parseFloat(score), d.riskLevel);
+        drawRiskBar(doc, m, doc.y + 2, pageW * 0.7, hasScore ? d.transformedScore : 0, d.riskLevel);
         doc.moveDown(2);
       });
     }

@@ -65,9 +65,15 @@ async function getOwnedCompanyIds(userId) {
   return rows.map(r => r.id);
 }
 
-// Super-admin: role='admin' OR email matches the configured super-admin email.
-// Lets us gate cross-tenant admin features without changing the existing role of d_talero@yahoo.com.
-const SUPER_ADMIN_EMAILS = ['d_talero@yahoo.com'];
+// Super-admin: role='admin' O email en la allowlist configurada por entorno.
+// La allowlist NO se hardcodea en el repo (era publico): se lee de
+// BRS_SUPER_ADMIN_EMAILS (lista separada por comas). Sin la env var, solo
+// role='admin' concede super-admin. Esto evita que un auto-registro con un
+// email "privilegiado" hardcodeado escale a super-admin.
+const SUPER_ADMIN_EMAILS = (process.env.BRS_SUPER_ADMIN_EMAILS || '')
+  .split(',')
+  .map(e => e.trim().toLowerCase())
+  .filter(Boolean);
 
 function isSuperAdmin(user) {
   if (!user) return false;

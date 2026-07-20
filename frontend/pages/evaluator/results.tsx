@@ -32,7 +32,8 @@ const getRiskLevelBadge = (riskLevel: string | undefined) => {
     'riesgo_bajo': 'bg-blue-100 text-blue-800',
     'riesgo_medio': 'bg-yellow-100 text-yellow-800',
     'riesgo_alto': 'bg-orange-100 text-orange-800',
-    'riesgo_muy_alto': 'bg-red-100 text-red-800'
+    'riesgo_muy_alto': 'bg-red-100 text-red-800',
+    'no_calculable': 'bg-gray-100 text-gray-800'
   };
 
   const labels = {
@@ -40,7 +41,8 @@ const getRiskLevelBadge = (riskLevel: string | undefined) => {
     'riesgo_bajo': 'Riesgo Bajo',
     'riesgo_medio': 'Riesgo Medio',
     'riesgo_alto': 'Riesgo Alto',
-    'riesgo_muy_alto': 'Riesgo Muy Alto'
+    'riesgo_muy_alto': 'Riesgo Muy Alto',
+    'no_calculable': 'No calculable'
   };
 
   return (

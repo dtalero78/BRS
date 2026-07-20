@@ -364,9 +364,14 @@ const STRESS_TRANSFORM_FACTOR = 61.16;
 // ========================================================================
 
 // Transformar puntaje bruto a porcentaje (escala 0-100) - FORMULA OFICIAL BRS
+// Manual General del Ministerio, Paso 3: "Los puntajes transformados deben ser
+// manejados con un sólo decimal a través del método de aproximación por redondeo,
+// de lo contrario la comparación con la tabla de baremos carecerá de validez".
+// Redondear a 2 decimales producía valores (p.ej. 3.85) que caían en los huecos de
+// 0.1 de las tablas de baremos y getRiskLevel los clasificaba mal como 'riesgo_medio'.
 function transformScore(rawScore, maxScore) {
   if (maxScore === 0) return 0;
-  return Math.round((rawScore / maxScore) * 100 * 100) / 100;
+  return Math.round((rawScore / maxScore) * 100 * 10) / 10;
 }
 
 // Obtener puntaje de item intralaboral/extralaboral con manejo de inversion
@@ -404,6 +409,34 @@ function getBaremosForCalculation(forma, tipo, dimension) {
 }
 
 // ========================================================================
+// REGLAS DE VALIDEZ POR ITEMS MINIMOS (Manual General, Paso 2)
+// ========================================================================
+const NO_CALCULABLE = 'no_calculable';
+
+// Dimensiones que admiten HASTA 1 item sin respuesta (caja "Importante" del manual).
+// El resto requiere TODOS sus items para ser valida.
+const LENIENT_INTRALABORAL = new Set([
+  'caracteristicas_liderazgo', 'relaciones_sociales_trabajo',
+  'relacion_colaboradores', 'demandas_ambientales'
+]);
+const LENIENT_EXTRALABORAL = new Set(['caracteristicas_vivienda']);
+
+// Dimensiones cuyos items estan tras una pregunta de filtro: si el trabajador
+// responde NO al filtro, la dimension obtiene puntaje bruto 0 automatico y es
+// VALIDA (Manual: "obtendra automaticamente un puntaje bruto de cero"), no invalida.
+//  - demandas_emocionales:  filtro "brindo servicio a clientes"  (items 106-114 A / 89-97 B)
+//  - relacion_colaboradores: filtro "soy jefe de otras personas" (items 115-123 A)
+// En el modelo de datos no se guarda la respuesta del filtro; 0 items respondidos
+// en estas dimensiones se interpreta como filtro=NO (el flujo del participante y el
+// Excel dejan la seccion vacia en ese caso).
+const CONDITIONAL_INTRALABORAL = new Set(['demandas_emocionales', 'relacion_colaboradores']);
+
+// Devuelve cuantos items debe tener respondidos una dimension para ser valida.
+function minRequiredItems(totalItems, isLenient) {
+  return isLenient ? Math.max(totalItems - 1, 0) : totalItems;
+}
+
+// ========================================================================
 // CALCULO INTRALABORAL (Forma A o B)
 // ========================================================================
 
@@ -413,106 +446,126 @@ async function calculateIntralaboralResults(questionnaireType, responses) {
   const invertedItems = forma === 'A' ? FORMA_A_INVERTED_ITEMS : FORMA_B_INVERTED_ITEMS;
   const results = [];
 
-  // Agrupar respuestas por numero de pregunta
+  // Agrupar respuestas por numero de pregunta.
+  // A7: solo valores enteros en la escala 0..4 son respuestas validas. Un valor
+  // fuera de rango (negativo, >4, no entero, null) NO se registra: se trata como
+  // item no respondido en vez de inyectar un puntaje bruto corrupto.
   const responseMap = {};
   responses.forEach(response => {
-    responseMap[response.question_number] = response.response_value;
+    const v = response.response_value;
+    if (Number.isInteger(v) && v >= 0 && v <= 4) {
+      responseMap[response.question_number] = v;
+    }
   });
 
-  // Calcular puntaje por dimension
+  // Estado por dominio (Manual Paso 2b/2c): un dominio y el total no se calculan si
+  // alguna de sus dimensiones es invalida por falta de items.
+  const domainState = {}; // domain -> { valid, raw, max, answered }
+  const slotFor = (d) => (domainState[d] || (domainState[d] = { valid: true, raw: 0, max: 0, answered: 0 }));
+
+  // Calcular puntaje por dimension aplicando la regla de items minimos (C2).
   for (const [dimensionName, dimensionData] of Object.entries(dimensions)) {
+    const { questions, maxScore, baremoKey, domain } = dimensionData;
+    const slot = slotFor(domain);
+
     let rawScore = 0;
     let answeredQuestions = 0;
-
-    dimensionData.questions.forEach(questionNumber => {
+    questions.forEach(questionNumber => {
       if (responseMap[questionNumber] !== undefined) {
         rawScore += getItemScore(questionNumber, responseMap[questionNumber], invertedItems);
         answeredQuestions++;
       }
     });
 
-    if (answeredQuestions === 0) continue;
+    const isLenient = LENIENT_INTRALABORAL.has(baremoKey);
+    const isConditional = dimensionData.conditional === true || CONDITIONAL_INTRALABORAL.has(baremoKey);
+    const minItems = minRequiredItems(questions.length, isLenient);
+    const dimensionBaremos = getBaremosForCalculation(forma, 'dimension', baremoKey);
 
-    const transformedScore = transformScore(rawScore, dimensionData.maxScore);
-
-    // Nivel de riesgo con baremos oficiales
-    const dimensionBaremos = getBaremosForCalculation(forma, 'dimension', dimensionData.baremoKey);
-    const riskLevel = getRiskLevel(transformedScore, dimensionBaremos);
-
-    results.push({
-      questionnaireType,
-      dimension: dimensionName,
-      domain: dimensionData.domain,
-      rawScore,
-      transformedScore,
-      percentile: transformedScore,
-      riskLevel,
-      answeredQuestions,
-      totalQuestions: dimensionData.questions.length
-    });
-  }
-
-  // Calcular puntajes por DOMINIO
-  const domainScores = {};
-  const domainQuestionCounts = {};
-  const domainMaxScores = {};
-
-  results.forEach(result => {
-    if (!domainScores[result.domain]) {
-      domainScores[result.domain] = 0;
-      domainQuestionCounts[result.domain] = 0;
-      domainMaxScores[result.domain] = 0;
+    // Caso 1: seccion de filtro respondida NO (0 items) -> puntaje bruto 0 automatico, VALIDA.
+    if (answeredQuestions === 0 && isConditional) {
+      const transformedScore = transformScore(0, maxScore);
+      results.push({
+        questionnaireType, dimension: dimensionName, domain,
+        rawScore: 0, transformedScore, percentile: transformedScore,
+        riskLevel: getRiskLevel(transformedScore, dimensionBaremos), valid: true,
+        answeredQuestions: 0, totalQuestions: questions.length
+      });
+      slot.max += maxScore; // raw 0, pero cuenta en el denominador del dominio (Tabla 26)
+      continue;
     }
 
-    const dimensionData = dimensions[result.dimension];
-    domainScores[result.domain] += result.rawScore;
-    domainQuestionCounts[result.domain] += result.answeredQuestions;
-    domainMaxScores[result.domain] += dimensionData.maxScore;
-  });
+    // Caso 2: no alcanza el minimo de items -> INVALIDA (Manual: no debe calcularse).
+    if (answeredQuestions < minItems) {
+      results.push({
+        questionnaireType, dimension: dimensionName, domain,
+        rawScore: null, transformedScore: null, percentile: null,
+        riskLevel: NO_CALCULABLE, valid: false,
+        answeredQuestions, totalQuestions: questions.length
+      });
+      slot.valid = false;
+      continue;
+    }
 
+    // Caso 3: valida -> se transforma con el factor completo (Manual).
+    const transformedScore = transformScore(rawScore, maxScore);
+    results.push({
+      questionnaireType, dimension: dimensionName, domain,
+      rawScore, transformedScore, percentile: transformedScore,
+      riskLevel: getRiskLevel(transformedScore, dimensionBaremos), valid: true,
+      answeredQuestions, totalQuestions: questions.length
+    });
+    slot.raw += rawScore;
+    slot.max += maxScore;
+    slot.answered += answeredQuestions;
+  }
+
+  // Puntajes por DOMINIO: no_calculable si alguna dimension del dominio es invalida.
+  let totalValid = true;
   let totalRawScore = 0;
   let totalMaxScore = 0;
+  let totalAnswered = 0;
 
-  for (const [domainName, domainRawScore] of Object.entries(domainScores)) {
-    const domainTransformedScore = transformScore(domainRawScore, domainMaxScores[domainName]);
+  for (const [domainName, slot] of Object.entries(domainState)) {
+    if (!slot.valid) {
+      totalValid = false;
+      results.push({
+        questionnaireType, dimension: `${domainName}_total`, domain: domainName,
+        rawScore: null, transformedScore: null, percentile: null,
+        riskLevel: NO_CALCULABLE, valid: false, isDomainTotal: true
+      });
+      continue;
+    }
 
+    const domainTransformedScore = transformScore(slot.raw, slot.max);
     const domainBaremos = getBaremosForCalculation(forma, 'dominio', domainName);
-    const domainRiskLevel = getRiskLevel(domainTransformedScore, domainBaremos);
-
-    totalRawScore += domainRawScore;
-    totalMaxScore += domainMaxScores[domainName];
+    totalRawScore += slot.raw;
+    totalMaxScore += slot.max;
+    totalAnswered += slot.answered;
 
     results.push({
-      questionnaireType,
-      dimension: `${domainName}_total`,
-      domain: domainName,
-      rawScore: domainRawScore,
-      transformedScore: domainTransformedScore,
-      percentile: domainTransformedScore,
-      riskLevel: domainRiskLevel,
-      answeredQuestions: domainQuestionCounts[domainName],
-      totalQuestions: domainQuestionCounts[domainName],
-      isDomainTotal: true
+      questionnaireType, dimension: `${domainName}_total`, domain: domainName,
+      rawScore: slot.raw, transformedScore: domainTransformedScore, percentile: domainTransformedScore,
+      riskLevel: getRiskLevel(domainTransformedScore, domainBaremos), valid: true,
+      answeredQuestions: slot.answered, totalQuestions: slot.answered, isDomainTotal: true
     });
   }
 
-  // Puntaje TOTAL INTRALABORAL (Tabla 33)
-  if (totalMaxScore > 0) {
+  // Puntaje TOTAL INTRALABORAL (Tabla 33): no_calculable si algun dominio lo es (Manual Paso 2c).
+  if (!totalValid) {
+    results.push({
+      questionnaireType, dimension: 'puntaje_total_intralaboral', domain: 'intralaboral',
+      rawScore: null, transformedScore: null, percentile: null,
+      riskLevel: NO_CALCULABLE, valid: false, isTotal: true
+    });
+  } else if (totalMaxScore > 0) {
     const totalTransformedScore = transformScore(totalRawScore, totalMaxScore);
     const totalBaremos = getBaremosForCalculation(forma, 'total', null);
-    const totalRiskLevel = getRiskLevel(totalTransformedScore, totalBaremos);
-
     results.push({
-      questionnaireType,
-      dimension: 'puntaje_total_intralaboral',
-      domain: 'intralaboral',
-      rawScore: totalRawScore,
-      transformedScore: totalTransformedScore,
-      percentile: totalTransformedScore,
-      riskLevel: totalRiskLevel,
-      answeredQuestions: Object.values(domainQuestionCounts).reduce((a, b) => a + b, 0),
-      totalQuestions: Object.values(domainQuestionCounts).reduce((a, b) => a + b, 0),
-      isTotal: true
+      questionnaireType, dimension: 'puntaje_total_intralaboral', domain: 'intralaboral',
+      rawScore: totalRawScore, transformedScore: totalTransformedScore, percentile: totalTransformedScore,
+      riskLevel: getRiskLevel(totalTransformedScore, totalBaremos), valid: true,
+      answeredQuestions: totalAnswered, totalQuestions: totalAnswered, isTotal: true
     });
   }
 
@@ -528,18 +581,28 @@ async function calculateExtralaboralResults(questionnaireType, responses, option
   const dimensions = EXTRALABORAL_DIMENSIONS;
   const occupationalGroup = options.occupationalGroup || 'jefes';
 
-  // Agrupar respuestas por numero de pregunta
+  // Agrupar respuestas por numero de pregunta (A7: solo enteros 0..4 validos).
   const responseMap = {};
   responses.forEach(response => {
-    responseMap[response.question_number] = response.response_value;
+    const v = response.response_value;
+    if (Number.isInteger(v) && v >= 0 && v <= 4) {
+      responseMap[response.question_number] = v;
+    }
   });
 
-  let totalRawScore = 0;
+  const baremoSet = occupationalGroup === 'auxiliares'
+    ? BAREMOS_BRS.extralaboral_auxiliares
+    : BAREMOS_BRS.extralaboral_jefes;
 
+  let totalRawScore = 0;
+  let totalAnswered = 0;
+  let totalValid = true;
+
+  // Extralaboral no tiene dominios ni secciones de filtro. Solo la dimension
+  // "caracteristicas de la vivienda" admite 1 item faltante; el resto, todos (C2).
   for (const [dimensionName, dimensionData] of Object.entries(dimensions)) {
     let rawScore = 0;
     let answeredQuestions = 0;
-
     dimensionData.questions.forEach(questionNumber => {
       if (responseMap[questionNumber] !== undefined) {
         rawScore += getItemScore(questionNumber, responseMap[questionNumber], EXTRALABORAL_INVERTED_ITEMS);
@@ -547,63 +610,53 @@ async function calculateExtralaboralResults(questionnaireType, responses, option
       }
     });
 
-    if (answeredQuestions === 0) continue;
-
-    totalRawScore += rawScore;
-
-    const transformedScore = transformScore(rawScore, dimensionData.maxScore);
-
-    // Baremos duales segun grupo ocupacional (Tabla 17 jefes / Tabla 18 auxiliares)
-    const baremoSet = occupationalGroup === 'auxiliares'
-      ? BAREMOS_BRS.extralaboral_auxiliares
-      : BAREMOS_BRS.extralaboral_jefes;
-
     const dimensionBaremos = (baremoSet && baremoSet.dimensiones && baremoSet.dimensiones[dimensionName]) || {
       sin_riesgo: [0, 25], riesgo_bajo: [25.1, 37.5], riesgo_medio: [37.6, 50],
       riesgo_alto: [50.1, 62.5], riesgo_muy_alto: [62.6, 100]
     };
 
-    const riskLevel = getRiskLevel(transformedScore, dimensionBaremos);
+    const minItems = minRequiredItems(dimensionData.questions.length, LENIENT_EXTRALABORAL.has(dimensionName));
 
+    if (answeredQuestions < minItems) {
+      results.push({
+        questionnaireType, dimension: dimensionName, domain: 'extralaboral',
+        rawScore: null, transformedScore: null, percentile: null,
+        riskLevel: NO_CALCULABLE, valid: false,
+        answeredQuestions, totalQuestions: dimensionData.questions.length
+      });
+      totalValid = false;
+      continue;
+    }
+
+    totalRawScore += rawScore;
+    totalAnswered += answeredQuestions;
+    const transformedScore = transformScore(rawScore, dimensionData.maxScore);
     results.push({
-      questionnaireType,
-      dimension: dimensionName,
-      domain: 'extralaboral',
-      rawScore,
-      transformedScore,
-      percentile: transformedScore,
-      riskLevel,
-      answeredQuestions,
-      totalQuestions: dimensionData.questions.length
+      questionnaireType, dimension: dimensionName, domain: 'extralaboral',
+      rawScore, transformedScore, percentile: transformedScore,
+      riskLevel: getRiskLevel(transformedScore, dimensionBaremos), valid: true,
+      answeredQuestions, totalQuestions: dimensionData.questions.length
     });
   }
 
-  // Puntaje TOTAL EXTRALABORAL
-  if (results.length > 0) {
+  // Puntaje TOTAL EXTRALABORAL: no_calculable si alguna dimension es invalida (Manual Paso 2b).
+  if (!totalValid) {
+    results.push({
+      questionnaireType, dimension: 'puntaje_total_extralaboral', domain: 'extralaboral',
+      rawScore: null, transformedScore: null, percentile: null,
+      riskLevel: NO_CALCULABLE, valid: false, isTotal: true
+    });
+  } else if (results.length > 0) {
     const totalTransformedScore = transformScore(totalRawScore, EXTRALABORAL_TOTAL_MAX_SCORE);
-
-    const baremoSet = occupationalGroup === 'auxiliares'
-      ? BAREMOS_BRS.extralaboral_auxiliares
-      : BAREMOS_BRS.extralaboral_jefes;
-
     const totalBaremos = (baremoSet && baremoSet.total) || {
       sin_riesgo: [0, 11.3], riesgo_bajo: [11.4, 16.9], riesgo_medio: [17, 22.6],
       riesgo_alto: [22.7, 29], riesgo_muy_alto: [29.1, 100]
     };
-
-    const totalRiskLevel = getRiskLevel(totalTransformedScore, totalBaremos);
-
     results.push({
-      questionnaireType,
-      dimension: 'puntaje_total_extralaboral',
-      domain: 'extralaboral',
-      rawScore: totalRawScore,
-      transformedScore: totalTransformedScore,
-      percentile: totalTransformedScore,
-      riskLevel: totalRiskLevel,
-      answeredQuestions: results.reduce((sum, r) => sum + r.answeredQuestions, 0),
-      totalQuestions: 31,
-      isTotal: true
+      questionnaireType, dimension: 'puntaje_total_extralaboral', domain: 'extralaboral',
+      rawScore: totalRawScore, transformedScore: totalTransformedScore, percentile: totalTransformedScore,
+      riskLevel: getRiskLevel(totalTransformedScore, totalBaremos), valid: true,
+      answeredQuestions: totalAnswered, totalQuestions: 31, isTotal: true
     });
   }
 
@@ -618,10 +671,15 @@ async function calculateStressResults(questionnaireType, responses, options = {}
   const results = [];
   const occupationalGroup = options.occupationalGroup || 'jefes';
 
-  // Agrupar respuestas por numero de pregunta
+  // Agrupar respuestas por numero de pregunta.
+  // A7: la escala de estres es 0..3; un valor fuera de rango se trata como no
+  // respondido en vez de mapearse silenciosamente a 0 ('Nunca').
   const responseMap = {};
   responses.forEach(response => {
-    responseMap[response.question_number] = response.response_value;
+    const v = response.response_value;
+    if (Number.isInteger(v) && v >= 0 && v <= 3) {
+      responseMap[response.question_number] = v;
+    }
   });
 
   // Calculo del puntaje bruto total ponderado (metodologia oficial):
@@ -651,10 +709,28 @@ async function calculateStressResults(questionnaireType, responses, options = {}
     }
   }
 
+  // C2 (Manual estres, Paso 2): "Si un cuestionario no cuenta con el total de items
+  // respondidos no debe calcularse su puntaje bruto". El estres exige los 31 items;
+  // si falta alguno, el resultado es no_calculable. Antes, con 1 solo item respondido
+  // en un grupo, su promedio ponderado inflaba el total hasta riesgo_muy_alto.
+  const stressExpectedItems = STRESS_WEIGHT_GROUPS.reduce((n, g) => n + g.items.length, 0);
+  if (Object.keys(responseMap).length < stressExpectedItems) {
+    results.push({
+      questionnaireType: 'estres', dimension: 'puntaje_total_estres', domain: 'estres',
+      rawScore: null, transformedScore: null, percentile: null,
+      riskLevel: NO_CALCULABLE, valid: false,
+      answeredQuestions: Object.keys(responseMap).length, totalQuestions: stressExpectedItems, isTotal: true
+    });
+    return results;
+  }
+
   // Puntaje TOTAL de estres (transformado y con baremos)
   // Nota: La metodologia oficial solo define baremos para el puntaje total,
-  // no para categorias individuales de sintomas
-  const totalTransformedScore = Math.round((puntajeBrutoTotal / STRESS_TRANSFORM_FACTOR) * 100 * 100) / 100;
+  // no para categorias individuales de sintomas.
+  // Usa transformScore para respetar la regla del manual de 1 solo decimal (igual
+  // que intralaboral/extralaboral). Antes redondeaba a 2 decimales y caía en los
+  // huecos de los baremos de estres (Tabla 6), clasificando mal por el fallback.
+  const totalTransformedScore = transformScore(puntajeBrutoTotal, STRESS_TRANSFORM_FACTOR);
 
   // Baremos oficiales por grupo ocupacional (Tabla 6)
   const stressBaremos = occupationalGroup === 'auxiliares'
@@ -674,6 +750,7 @@ async function calculateStressResults(questionnaireType, responses, options = {}
     transformedScore: totalTransformedScore,
     percentile: totalTransformedScore,
     riskLevel: totalRiskLevel,
+    valid: true,
     answeredQuestions: Object.keys(responseMap).length,
     totalQuestions: 31,
     isTotal: true

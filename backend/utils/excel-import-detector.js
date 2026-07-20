@@ -286,31 +286,33 @@ const STRESS_TEXT_MAP = {
  * Convert a raw Excel cell to a BRS numeric response value.
  *
  * Accepts:
- *   - Numbers on the Excel 0-4 scale (legacy format): Siempre=0, Nunca=4
- *     → inverted to BRS scale: Siempre=4, Nunca=0
- *   - Text labels: "Siempre", "Casi siempre", "Algunas veces",
- *     "Casi nunca", "Nunca" → BRS scale directly
+ *   - Numbers 0-maxVal. Su interpretación depende de numericScale:
+ *       'inverted' (default, formato oficial del Ministerio): el Excel trae
+ *          Siempre=0..Nunca=maxVal → se invierte a la escala BRS (Siempre=maxVal).
+ *       'direct': el Excel ya viene en escala BRS (Siempre=maxVal) → se toma tal cual.
+ *     Los números 0-4 no permiten auto-detectar la dirección; por eso es explícita.
+ *   - Text labels: "Siempre", "Casi siempre", ... → mapean a la escala BRS
+ *     directamente (no dependen de numericScale, son inequívocos).
  *
- * scale: 'intra' (0-4) or 'stress' (0-3)
+ * scale: 'intra' (0-4) o 'stress' (0-3)
+ * numericScale: 'inverted' (default) | 'direct'
  */
-function parseResponseValue(val, scale) {
+function parseResponseValue(val, scale, numericScale = 'inverted') {
   if (val === undefined || val === null || val === '') return null;
   const maxVal = scale === 'stress' ? 3 : 4;
 
-  if (typeof val === 'number') {
-    if (val < 0 || val > maxVal) return null;
-    return maxVal - val;
-  }
+  const toBrs = (n) => {
+    if (!Number.isFinite(n) || n < 0 || n > maxVal) return null;
+    return numericScale === 'direct' ? n : maxVal - n;
+  };
+
+  if (typeof val === 'number') return toBrs(val);
 
   const s = String(val).trim();
   if (s === '') return null;
 
   // Pure numeric string like "2" or "4"
-  if (/^\d+$/.test(s)) {
-    const n = parseInt(s, 10);
-    if (n < 0 || n > maxVal) return null;
-    return maxVal - n;
-  }
+  if (/^\d+$/.test(s)) return toBrs(parseInt(s, 10));
 
   const lower = s.toLowerCase().replace(/\s+/g, ' ');
   const map = scale === 'stress' ? STRESS_TEXT_MAP : INTRA_TEXT_MAP;

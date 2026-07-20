@@ -48,6 +48,7 @@ interface OrganizationalMetrics {
     riesgo_medio: number;
     riesgo_alto: number;
     riesgo_muy_alto: number;
+    no_calculable?: number;
   };
   criticalAreas: string[];
   topDimensions: Array<{
@@ -83,6 +84,7 @@ const RISK_COLORS: { [key: string]: string } = {
   'riesgo_medio': '#FB923C',
   'riesgo_alto': '#EF4444',
   'riesgo_muy_alto': '#991B1B',
+  'no_calculable': '#9CA3AF',
   'muy_bajo': '#10B981',
   'bajo': '#FCD34D',
   'medio': '#FB923C',
@@ -96,6 +98,7 @@ const RISK_LABELS: { [key: string]: string } = {
   'riesgo_medio': 'Riesgo Medio',
   'riesgo_alto': 'Riesgo Alto',
   'riesgo_muy_alto': 'Riesgo Muy Alto',
+  'no_calculable': 'No calculable',
   'muy_bajo': 'Muy Bajo',
   'bajo': 'Bajo',
   'medio': 'Medio',
@@ -379,7 +382,8 @@ export default function OrganizationalDashboard() {
           'riesgo_alto': 3,
           'riesgo_medio': 2,
           'riesgo_bajo': 1,
-          'sin_riesgo': 0
+          'sin_riesgo': 0,
+          'no_calculable': -1
         };
         return riskOrder[b.riskLevel as keyof typeof riskOrder] -
                riskOrder[a.riskLevel as keyof typeof riskOrder] ||
@@ -409,7 +413,7 @@ export default function OrganizationalDashboard() {
       mergedDimensions.sort((a, b) => {
         const riskOrder = {
           'riesgo_muy_alto': 4, 'riesgo_alto': 3, 'riesgo_medio': 2,
-          'riesgo_bajo': 1, 'sin_riesgo': 0
+          'riesgo_bajo': 1, 'sin_riesgo': 0, 'no_calculable': -1
         };
         return riskOrder[b.riskLevel as keyof typeof riskOrder] -
                riskOrder[a.riskLevel as keyof typeof riskOrder] ||
@@ -454,6 +458,7 @@ export default function OrganizationalDashboard() {
       case 'riesgo_medio': case 'medio': return 'bg-orange-100 text-orange-800';
       case 'riesgo_alto': case 'alto': return 'bg-red-100 text-red-800';
       case 'riesgo_muy_alto': case 'muy_alto': return 'bg-red-200 text-red-900';
+      case 'no_calculable': return 'bg-gray-100 text-gray-800';
       default: return 'bg-gray-100 text-gray-800';
     }
   };
@@ -702,7 +707,7 @@ export default function OrganizationalDashboard() {
                               {dimension.dimension}
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                              {dimension.averageScore.toFixed(1)}%
+                              {dimension.averageScore != null ? `${dimension.averageScore.toFixed(1)}%` : 'N/C'}
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap">
                               <span className={`px-2 py-1 text-xs font-medium rounded ${getRiskBadgeClass(dimension.riskLevel)}`}>
@@ -728,10 +733,14 @@ export default function OrganizationalDashboard() {
                                   <TrendingUp className="h-3 w-3 mr-1" />
                                   Media
                                 </span>
-                              ) : (
+                              ) : dimension.riskLevel === 'sin_riesgo' || dimension.riskLevel === 'riesgo_bajo' ? (
                                 <span className="inline-flex items-center px-2 py-1 text-xs font-medium bg-green-100 text-green-800 rounded">
                                   <Shield className="h-3 w-3 mr-1" />
                                   Baja
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center px-2 py-1 text-xs font-medium bg-gray-100 text-gray-800 rounded">
+                                  No calculable
                                 </span>
                               )}
                             </td>

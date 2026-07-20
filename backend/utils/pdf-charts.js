@@ -8,9 +8,13 @@ const RISK_COLORS = {
   riesgo_bajo: '#84CC16',
   riesgo_medio: '#EAB308',
   riesgo_alto: '#F97316',
-  riesgo_muy_alto: '#EF4444'
+  riesgo_muy_alto: '#EF4444',
+  no_calculable: '#9CA3AF' // gris neutro: dimension sin el minimo de items (Manual Paso 2)
 };
 
+// Orden de los niveles de riesgo para series/columnas de distribucion.
+// no_calculable NO es un nivel de riesgo: no entra en las graficas de distribucion,
+// se reporta como "No Calculable" en las vistas individuales.
 const RISK_ORDER = ['sin_riesgo', 'riesgo_bajo', 'riesgo_medio', 'riesgo_alto', 'riesgo_muy_alto'];
 
 const RISK_LABELS = {
@@ -18,7 +22,8 @@ const RISK_LABELS = {
   riesgo_bajo: 'Riesgo Bajo',
   riesgo_medio: 'Riesgo Medio',
   riesgo_alto: 'Riesgo Alto',
-  riesgo_muy_alto: 'Riesgo Muy Alto'
+  riesgo_muy_alto: 'Riesgo Muy Alto',
+  no_calculable: 'No Calculable'
 };
 
 // ============================================================

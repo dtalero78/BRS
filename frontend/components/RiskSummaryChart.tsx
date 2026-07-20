@@ -6,6 +6,7 @@ interface RiskSummaryData {
   riesgo_medio: number;
   riesgo_alto: number;
   riesgo_muy_alto: number;
+  no_calculable?: number;
 }
 
 interface RiskSummaryChartProps {
@@ -19,20 +20,24 @@ const RiskSummaryChart: React.FC<RiskSummaryChartProps> = ({
   title = "Distribución de Riesgo",
   showPercentages = true 
 }) => {
-  const total = Object.values(data).reduce((sum, val) => sum + val, 0);
-  
-  const riskLevels = [
+  const total = Object.values(data).reduce((sum, val) => sum + (val || 0), 0);
+
+  const baseRiskLevels = [
     { key: 'sin_riesgo', label: 'Sin Riesgo', color: 'bg-green-500', borderColor: 'border-green-600' },
     { key: 'riesgo_bajo', label: 'Riesgo Bajo', color: 'bg-blue-500', borderColor: 'border-blue-600' },
     { key: 'riesgo_medio', label: 'Riesgo Medio', color: 'bg-yellow-500', borderColor: 'border-yellow-600' },
     { key: 'riesgo_alto', label: 'Riesgo Alto', color: 'bg-orange-500', borderColor: 'border-orange-600' },
     { key: 'riesgo_muy_alto', label: 'Riesgo Muy Alto', color: 'bg-red-500', borderColor: 'border-red-600' }
   ];
-  
+  // 'no_calculable' solo aparece (gris) si viene en los datos; no rompe si no viene
+  const riskLevels = data.no_calculable != null
+    ? [...baseRiskLevels, { key: 'no_calculable', label: 'No calculable', color: 'bg-gray-400', borderColor: 'border-gray-500' }]
+    : baseRiskLevels;
+
   // Calculate percentages for the circular chart simulation
   let cumulativePercentage = 0;
   const segments = riskLevels.map(level => {
-    const value = data[level.key as keyof RiskSummaryData];
+    const value = data[level.key as keyof RiskSummaryData] || 0;
     const percentage = total > 0 ? (value / total) * 100 : 0;
     const segment = {
       ...level,
@@ -44,7 +49,27 @@ const RiskSummaryChart: React.FC<RiskSummaryChartProps> = ({
     cumulativePercentage += percentage;
     return segment;
   });
-  
+
+  // Riesgo promedio ponderado — EXCLUYE no_calculable para no sesgar el promedio (R4)
+  const scoredSegments = segments.filter(s => s.key !== 'no_calculable');
+  const scoredTotal = scoredSegments.reduce((sum, s) => sum + s.value, 0);
+  const weightedRiskIndex = scoredTotal > 0
+    ? scoredSegments.reduce((acc, s) => acc + s.value * baseRiskLevels.findIndex(l => l.key === s.key), 0) / scoredTotal
+    : null;
+  const averageRiskLabel = weightedRiskIndex == null ? 'N/C'
+    : weightedRiskIndex < 1 ? 'Sin riesgo'
+    : weightedRiskIndex < 2 ? 'Bajo'
+    : weightedRiskIndex < 3 ? 'Medio'
+    : weightedRiskIndex < 4 ? 'Alto' : 'Muy Alto';
+
+  // Mayor concentración de participantes
+  const topConcentrationKey = riskLevels.reduce((max, level) => {
+    const v = data[level.key as keyof RiskSummaryData] || 0;
+    const maxV = data[max as keyof RiskSummaryData] || 0;
+    return v > maxV ? level.key : max;
+  }, 'sin_riesgo');
+  const topConcentrationLabel = riskLevels.find(l => l.key === topConcentrationKey)?.label || 'N/A';
+
   return (
     <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
       <h3 className="text-lg font-semibold text-gray-900 mb-4">{title}</h3>
@@ -91,7 +116,7 @@ const RiskSummaryChart: React.FC<RiskSummaryChartProps> = ({
         <div className="flex-1">
           <div className="space-y-3">
             {riskLevels.map(level => {
-              const value = data[level.key as keyof RiskSummaryData];
+              const value = data[level.key as keyof RiskSummaryData] || 0;
               const percentage = total > 0 ? ((value / total) * 100).toFixed(1) : '0';
               
               return (
@@ -116,29 +141,13 @@ const RiskSummaryChart: React.FC<RiskSummaryChartProps> = ({
             <div>
               <span className="text-gray-500">Riesgo promedio:</span>
               <p className="font-semibold text-gray-700">
-                {segments.reduce((acc, seg) => {
-                  const riskValue = riskLevels.findIndex(l => l.key === seg.key);
-                  return acc + (seg.value * riskValue);
-                }, 0) / (total || 1) < 1 ? 'Sin riesgo' :
-                 segments.reduce((acc, seg) => {
-                  const riskValue = riskLevels.findIndex(l => l.key === seg.key);
-                  return acc + (seg.value * riskValue);
-                }, 0) / (total || 1) < 2 ? 'Bajo' :
-                 segments.reduce((acc, seg) => {
-                  const riskValue = riskLevels.findIndex(l => l.key === seg.key);
-                  return acc + (seg.value * riskValue);
-                }, 0) / (total || 1) < 3 ? 'Medio' :
-                 segments.reduce((acc, seg) => {
-                  const riskValue = riskLevels.findIndex(l => l.key === seg.key);
-                  return acc + (seg.value * riskValue);
-                }, 0) / (total || 1) < 4 ? 'Alto' : 'Muy Alto'}
+                {averageRiskLabel}
               </p>
             </div>
             <div>
               <span className="text-gray-500">Mayor concentración:</span>
               <p className="font-semibold text-gray-700">
-                {riskLevels.find(l => l.key === Object.entries(data).reduce((max, [key, val]) => 
-                  val > data[max as keyof RiskSummaryData] ? key : max, 'sin_riesgo'))?.label || 'N/A'}
+                {topConcentrationLabel}
               </p>
             </div>
           </div>

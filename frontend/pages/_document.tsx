@@ -10,11 +10,9 @@ export default function Document() {
         <link rel="apple-touch-icon" href="/logo.png" />
         <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
-        {/* Google Analytics - inline in head for static export compatibility */}
-        <script async src="https://www.googletagmanager.com/gtag/js?id=G-KT5D58PW0N" />
-        <script dangerouslySetInnerHTML={{ __html: `window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}gtag('js',new Date());gtag('config','G-KT5D58PW0N');` }} />
-        {/* Microsoft Clarity */}
-        <script dangerouslySetInnerHTML={{ __html: `(function(c,l,a,r,i,t,y){c[a]=c[a]||function(){(c[a].q=c[a].q||[]).push(arguments)};t=l.createElement(r);t.async=1;t.src="https://www.clarity.ms/tag/"+i;y=l.getElementsByTagName(r)[0];y.parentNode.insertBefore(t,y);})(window,document,"clarity","script","w7iw3jubtg");` }} />
+        {/* Google Analytics y Microsoft Clarity NO se cargan aqui (era global y
+            filtraba el access_token de las URLs /participant/... a terceros).
+            Se cargan condicionalmente por ruta desde _app.tsx. */}
       </Head>
       <body>
         <Main />

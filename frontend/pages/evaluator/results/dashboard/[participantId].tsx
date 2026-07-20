@@ -17,16 +17,16 @@ interface Participant {
 
 interface Result {
   dimension: string;
-  rawScore: number;
-  transformedScore: number;
-  percentile: number;
+  rawScore: number | null;
+  transformedScore: number | null;
+  percentile: number | null;
   riskLevel: string;
   calculatedAt: string;
 }
 
 interface DomainResult {
   domain: string;
-  averageScore: number;
+  averageScore: number | null;
   riskLevel: string;
   dimensionCount: number;
 }
@@ -117,15 +117,22 @@ const calculateDomains = (results: Result[], questionnaireType: string): DomainR
     const domainResults = results.filter(r => dimensions.includes(r.dimension));
     
     if (domainResults.length > 0) {
-      const averageScore = domainResults.reduce((sum, r) => sum + r.transformedScore, 0) / domainResults.length;
-      
+      // Excluir dimensiones sin puntaje (no_calculable) del promedio (R4)
+      const scored = domainResults.filter(r => r.transformedScore != null);
+      const averageScore = scored.length > 0
+        ? scored.reduce((sum, r) => sum + (r.transformedScore as number), 0) / scored.length
+        : null;
+
       // Classify domain risk level
-      let riskLevel = 'sin_riesgo';
-      if (averageScore > 80) riskLevel = 'riesgo_muy_alto';
-      else if (averageScore > 60) riskLevel = 'riesgo_alto';
-      else if (averageScore > 40) riskLevel = 'riesgo_medio';
-      else if (averageScore > 20) riskLevel = 'riesgo_bajo';
-      
+      let riskLevel = 'no_calculable';
+      if (averageScore != null) {
+        riskLevel = 'sin_riesgo';
+        if (averageScore > 80) riskLevel = 'riesgo_muy_alto';
+        else if (averageScore > 60) riskLevel = 'riesgo_alto';
+        else if (averageScore > 40) riskLevel = 'riesgo_medio';
+        else if (averageScore > 20) riskLevel = 'riesgo_bajo';
+      }
+
       domains.push({
         domain: domainName,
         averageScore,
@@ -382,13 +389,13 @@ export default function ResultsDashboard() {
                             {result.dimension.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-center text-gray-500">
-                            {result.rawScore}
+                            {result.rawScore != null ? result.rawScore : 'N/C'}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-center text-gray-900 font-semibold">
-                            {result.transformedScore.toFixed(2)}
+                            {result.transformedScore != null ? result.transformedScore.toFixed(2) : 'N/C'}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-center text-gray-500">
-                            P{result.percentile}
+                            {result.percentile != null ? `P${result.percentile}` : 'N/C'}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-center">
                             <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
@@ -396,9 +403,12 @@ export default function ResultsDashboard() {
                               result.riskLevel === 'riesgo_bajo' ? 'bg-blue-100 text-blue-800' :
                               result.riskLevel === 'riesgo_medio' ? 'bg-yellow-100 text-yellow-800' :
                               result.riskLevel === 'riesgo_alto' ? 'bg-orange-100 text-orange-800' :
-                              'bg-red-100 text-red-800'
+                              result.riskLevel === 'riesgo_muy_alto' ? 'bg-red-100 text-red-800' :
+                              'bg-gray-100 text-gray-800'
                             }`}>
-                              {result.riskLevel.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                              {result.riskLevel === 'no_calculable'
+                                ? 'No calculable'
+                                : result.riskLevel.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
                             </span>
                           </td>
                         </tr>

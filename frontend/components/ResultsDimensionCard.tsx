@@ -2,9 +2,9 @@ import React from 'react';
 
 interface DimensionResult {
   dimension: string;
-  rawScore: number;
-  transformedScore: number;
-  percentile: number;
+  rawScore: number | null;
+  transformedScore: number | null;
+  percentile: number | null;
   riskLevel: string;
 }
 
@@ -20,7 +20,8 @@ const getRiskLevelColor = (riskLevel: string) => {
     case 'riesgo_medio': return { bg: 'bg-yellow-50', border: 'border-yellow-200', text: 'text-yellow-800', bar: 'bg-yellow-500' };
     case 'riesgo_alto': return { bg: 'bg-orange-50', border: 'border-orange-200', text: 'text-orange-800', bar: 'bg-orange-500' };
     case 'riesgo_muy_alto': return { bg: 'bg-red-50', border: 'border-red-200', text: 'text-red-800', bar: 'bg-red-500' };
-    default: return { bg: 'bg-gray-50', border: 'border-gray-200', text: 'text-gray-800', bar: 'bg-gray-500' };
+    case 'no_calculable': return { bg: 'bg-gray-100', border: 'border-gray-200', text: 'text-gray-800', bar: 'bg-gray-400' };
+    default: return { bg: 'bg-gray-50', border: 'border-gray-200', text: 'text-gray-800', bar: 'bg-gray-400' };
   }
 };
 
@@ -30,7 +31,8 @@ const getRiskLevelLabel = (riskLevel: string) => {
     'riesgo_bajo': 'Riesgo Bajo',
     'riesgo_medio': 'Riesgo Medio',
     'riesgo_alto': 'Riesgo Alto',
-    'riesgo_muy_alto': 'Riesgo Muy Alto'
+    'riesgo_muy_alto': 'Riesgo Muy Alto',
+    'no_calculable': 'No calculable'
   };
   return labels[riskLevel] || riskLevel;
 };
@@ -60,29 +62,31 @@ const ResultsDimensionCard: React.FC<ResultsDimensionCardProps> = ({ dimension, 
       <div className="mb-3">
         <div className="flex justify-between text-xs text-gray-500 mb-1">
           <span>Puntaje</span>
-          <span className="font-semibold text-gray-700">{dimension.transformedScore.toFixed(1)}%</span>
+          <span className="font-semibold text-gray-700">
+            {dimension.transformedScore != null ? `${dimension.transformedScore.toFixed(1)}%` : 'N/C'}
+          </span>
         </div>
         <div className="w-full bg-gray-200 rounded-full h-2">
           <div
             className={`h-2 rounded-full transition-all ${colors.bar}`}
-            style={{ width: `${Math.min(dimension.transformedScore, 100)}%` }}
+            style={{ width: dimension.transformedScore != null ? `${Math.min(dimension.transformedScore, 100)}%` : '0%' }}
           />
         </div>
       </div>
-      
+
       {showDetails && (
         <div className="grid grid-cols-3 gap-2 text-xs">
           <div>
             <span className="text-gray-500">Bruto:</span>
-            <p className="font-semibold text-gray-700">{dimension.rawScore}</p>
+            <p className="font-semibold text-gray-700">{dimension.rawScore != null ? dimension.rawScore : 'N/C'}</p>
           </div>
           <div>
             <span className="text-gray-500">Transform:</span>
-            <p className="font-semibold text-gray-700">{dimension.transformedScore.toFixed(1)}</p>
+            <p className="font-semibold text-gray-700">{dimension.transformedScore != null ? dimension.transformedScore.toFixed(1) : 'N/C'}</p>
           </div>
           <div>
             <span className="text-gray-500">Percentil:</span>
-            <p className="font-semibold text-gray-700">P{dimension.percentile}</p>
+            <p className="font-semibold text-gray-700">{dimension.percentile != null ? `P${dimension.percentile}` : 'N/C'}</p>
           </div>
         </div>
       )}
