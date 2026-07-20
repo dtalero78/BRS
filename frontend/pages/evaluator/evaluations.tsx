@@ -67,6 +67,9 @@ export default function EvaluatorEvaluations() {
   const [importStep, setImportStep] = useState<'select' | 'preview' | 'result'>('select');
   const [previewing, setPreviewing] = useState(false);
   const [previewData, setPreviewData] = useState<any>(null);
+  // Dirección de la escala numérica del Excel (A10). 'inverted' = formato oficial
+  // del Ministerio (Siempre=0); 'direct' = Excel ya en escala BRS (Siempre=4).
+  const [numericScale, setNumericScale] = useState<'inverted' | 'direct'>('inverted');
 
   // Photo import (Claude Vision) state
   const [photoEvaluationId, setPhotoEvaluationId] = useState<number | null>(null);
@@ -237,6 +240,7 @@ export default function EvaluatorEvaluations() {
       const token = localStorage.getItem('token');
       const formData = new FormData();
       formData.append('file', importFile);
+      formData.append('numericScale', numericScale);
 
       const response = await fetch(`/api/evaluations/${importEvaluationId}/import-excel`, {
         method: 'POST',
@@ -277,6 +281,7 @@ export default function EvaluatorEvaluations() {
     setImportResult(null);
     setPreviewData(null);
     setImportStep('select');
+    setNumericScale('inverted');
   };
 
   const openImportModal = (evaluationId: number) => {
@@ -879,6 +884,31 @@ export default function EvaluatorEvaluations() {
                       </div>
                     </div>
                   ))}
+
+                  <div className="mt-2 p-3 bg-amber-50 border border-amber-200 rounded-md text-sm">
+                    <p className="font-medium text-amber-900 mb-2">Escala de las respuestas numéricas</p>
+                    <label className="flex items-start gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="numericScale"
+                        className="mt-1"
+                        checked={numericScale === 'inverted'}
+                        onChange={() => setNumericScale('inverted')}
+                      />
+                      <span className="text-gray-700"><b>Formato oficial (recomendado)</b> — el Excel usa Siempre=0 … Nunca=4.</span>
+                    </label>
+                    <label className="flex items-start gap-2 cursor-pointer mt-1">
+                      <input
+                        type="radio"
+                        name="numericScale"
+                        className="mt-1"
+                        checked={numericScale === 'direct'}
+                        onChange={() => setNumericScale('direct')}
+                      />
+                      <span className="text-gray-700"><b>Escala directa</b> — el Excel ya usa Siempre=4 … Nunca=0 (escala BRS).</span>
+                    </label>
+                    <p className="text-xs text-amber-700 mt-2">Si eliges la escala equivocada, los resultados se importan al revés. Las respuestas en texto ("Siempre", "Nunca") no se ven afectadas.</p>
+                  </div>
 
                   <div className="flex justify-between items-center pt-2 border-t border-gray-200">
                     <button
