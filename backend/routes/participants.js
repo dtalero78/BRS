@@ -379,7 +379,7 @@ router.get('/evaluation/:evaluationId', auth, async (req, res) => {
       return res.status(400).json({ error: 'ID de evaluación inválido' });
     }
     const { status } = req.query;
-    const { limit, offset } = parsePagination(req.query, 1000, 1000);
+    const { page, limit, offset } = parsePagination(req.query, 1000, 1000);
 
     // Check if evaluation belongs to evaluator's companies
     const companyIds = await getOwnedCompanyIds(req.user.userId);
