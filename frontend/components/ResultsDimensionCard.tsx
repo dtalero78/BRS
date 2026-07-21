@@ -1,4 +1,5 @@
 import React from 'react';
+import { dimensionName } from '../config/dimensionNames';
 
 interface DimensionResult {
   dimension: string;
@@ -37,12 +38,8 @@ const getRiskLevelLabel = (riskLevel: string) => {
   return labels[riskLevel] || riskLevel;
 };
 
-const formatDimensionName = (dimension: string) => {
-  return dimension
-    .split('_')
-    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(' ');
-};
+// Nombres canónicos (alineados con el PDF), fuente única en config/dimensionNames.
+const formatDimensionName = (dimension: string) => dimensionName(dimension);
 
 const ResultsDimensionCard: React.FC<ResultsDimensionCardProps> = ({ dimension, showDetails = false }) => {
   const colors = getRiskLevelColor(dimension.riskLevel);

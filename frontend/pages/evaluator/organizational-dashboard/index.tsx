@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import axios from 'axios';
 import FlowLayout from '../../../components/FlowLayout';
+import { dimensionName } from '../../../config/dimensionNames';
 import { 
   Building2, 
   Users, 
@@ -288,46 +289,12 @@ export default function OrganizationalDashboard() {
         riesgo_muy_alto: 0
       };
 
-      // Display names for dimensions
-      const DIMENSION_NAMES: Record<string, string> = {
-        'caracteristicas_liderazgo': 'Características del Liderazgo',
-        'relaciones_sociales_trabajo': 'Relaciones Sociales en el Trabajo',
-        'retroalimentacion_desempeño': 'Retroalimentación del Desempeño',
-        'relacion_colaboradores': 'Relación con Colaboradores',
-        'claridad_rol': 'Claridad del Rol',
-        'capacitacion': 'Capacitación',
-        'participacion_manejo_cambio': 'Participación y Manejo del Cambio',
-        'oportunidades_desarrollo': 'Oportunidades de Desarrollo',
-        'control_autonomia': 'Control y Autonomía',
-        'demandas_cuantitativas': 'Demandas Cuantitativas',
-        'demandas_carga_mental': 'Demandas de Carga Mental',
-        'demandas_emocionales': 'Demandas Emocionales',
-        'exigencias_responsabilidad': 'Exigencias de Responsabilidad',
-        'demandas_ambientales': 'Demandas Ambientales',
-        'demandas_jornada': 'Demandas de la Jornada',
-        'consistencia_rol': 'Consistencia del Rol',
-        'influencia_trabajo_entorno': 'Influencia del Trabajo sobre el Entorno',
-        'reconocimiento_compensacion': 'Reconocimiento y Compensación',
-        'recompensas_pertenencia': 'Recompensas y Pertenencia',
-        'tiempo_fuera_trabajo': 'Tiempo Fuera del Trabajo',
-        'relaciones_familiares': 'Relaciones Familiares',
-        'comunicacion_relaciones': 'Comunicación y Relaciones',
-        'comunicacion_relaciones_interpersonales': 'Comunicación y Relaciones Interpersonales',
-        'situacion_economica': 'Situación Económica',
-        'caracteristicas_vivienda': 'Características de la Vivienda',
-        'influencia_entorno_extralaboral': 'Influencia del Entorno Extralaboral',
-        'influencia_entorno_trabajo': 'Influencia del Entorno sobre el Trabajo',
-        'desplazamiento_vivienda_trabajo': 'Desplazamiento Vivienda-Trabajo',
-        'capacitacion': 'Capacitación',
-        'relacion_colaboradores': 'Relación con Colaboradores',
-        'retroalimentacion_desempeño': 'Retroalimentación del Desempeño',
-      };
-
       const dimensionScores: Array<{
         dimension: string;
         averageScore: number;
         riskLevel: string;
         affectedParticipants: number;
+        riskCounts: RiskCounts;
       }> = [];
 
       let totalParticipants = 0;
@@ -358,7 +325,7 @@ export default function OrganizationalDashboard() {
         const riskCounts: RiskCounts = stat.riskLevels || {};
         const riskLevel = riskLevelFromDistribution(riskCounts);
 
-        const displayName = DIMENSION_NAMES[dim] || dim.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+        const displayName = dimensionName(dim);
 
         const affected = (riskCounts.riesgo_alto || 0) + (riskCounts.riesgo_muy_alto || 0);
 

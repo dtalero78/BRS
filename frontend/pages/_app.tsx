@@ -39,8 +39,58 @@ function loadAnalytics() {
   })(window, document, 'clarity', 'script', 'w7iw3jubtg');
 }
 
+// Manejo global de sesión expirada: los ~75 fetch sueltos del frontend no pasan
+// por el helper apiCall (config/api.ts), así que sus respuestas 401 quedaban sin
+// manejar y el usuario se quedaba atrapado en un error genérico. Este wrapper
+// intercepta CUALQUIER fetch a /api/: ante un 401 intenta un refresh del token una
+// vez y reintenta; si el refresh falla, limpia la sesión y manda al login.
+// No afecta a participantes (usan token de URL, no sesión JWT) ni a rutas de auth.
+function installAuthExpiryHandler() {
+  if (typeof window === 'undefined') return;
+  if ((window as any).__brsFetchPatched) return;
+  (window as any).__brsFetchPatched = true;
+  const originalFetch = window.fetch.bind(window);
+
+  window.fetch = async (input: any, init?: any) => {
+    const res = await originalFetch(input, init);
+    try {
+      if (res.status !== 401) return res;
+      const url = typeof input === 'string' ? input : (input && input.url) || '';
+      if (!url.includes('/api/') || url.includes('/api/auth/')) return res;
+      const path = window.location.pathname;
+      if (path.startsWith('/auth/') || path.startsWith('/participant/')) return res;
+      const token = localStorage.getItem('token');
+      if (!token) return res; // no es una sesión de evaluador/admin
+
+      // Intentar refrescar el token una vez y reintentar la petición original.
+      if (typeof input === 'string') {
+        const refresh = await originalFetch('/api/auth/refresh', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        });
+        if (refresh.ok) {
+          const data = await refresh.json().catch(() => ({}));
+          if (data && data.token) {
+            localStorage.setItem('token', data.token);
+            const retryInit = { ...(init || {}), headers: { ...((init && init.headers) || {}), 'Authorization': `Bearer ${data.token}` } };
+            return await originalFetch(input, retryInit);
+          }
+        }
+      }
+
+      // Refresh falló o no aplicable → sesión terminada.
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+      window.location.href = '/auth/login';
+    } catch (e) {
+      // No romper la respuesta por un fallo del handler.
+    }
+    return res;
+  };
+}
+
 export default function App({ Component, pageProps }: AppProps) {
-  useEffect(() => { loadAnalytics(); }, []);
+  useEffect(() => { loadAnalytics(); installAuthExpiryHandler(); }, []);
   return (
     <QueryClientProvider client={queryClient}>
       <Component {...pageProps} />

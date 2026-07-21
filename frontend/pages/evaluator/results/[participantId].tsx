@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import FlowLayout from '../../../components/FlowLayout';
 import { API_URL } from '../../../config/api';
+import { dimensionName } from '../../../config/dimensionNames';
 
 interface Participant {
   firstName: string;
@@ -60,13 +61,8 @@ const getRiskLevelLabel = (riskLevel: string) => {
   }
 };
 
-const formatDimensionName = (dimension: string) => {
-  if (COPING_DIMENSION_NAMES[dimension]) return COPING_DIMENSION_NAMES[dimension];
-  return dimension
-    .split('_')
-    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(' ');
-};
+// Nombres canónicos (alineados con el PDF), fuente única en config/dimensionNames.
+const formatDimensionName = (dimension: string) => dimensionName(dimension);
 
 const getQuestionnaireLabel = (type: string) => {
   switch (type) {
@@ -79,27 +75,6 @@ const getQuestionnaireLabel = (type: string) => {
     case 'coping': return 'Brief COPE - Afrontamiento';
     default: return type;
   }
-};
-
-const COPING_DIMENSION_NAMES: { [key: string]: string } = {
-  afrontamiento_activo: 'Afrontamiento activo',
-  planificacion: 'Planificación',
-  apoyo_instrumental: 'Apoyo instrumental',
-  reinterpretacion_positiva: 'Reinterpretación positiva',
-  apoyo_emocional: 'Apoyo emocional',
-  desahogo: 'Desahogo',
-  aceptacion: 'Aceptación',
-  humor: 'Humor',
-  religion: 'Religión',
-  autoinculpacion: 'Auto-inculpación',
-  autodistraccion: 'Auto-distracción',
-  negacion: 'Negación',
-  desconexion_conductual: 'Desconexión conductual',
-  uso_sustancias: 'Uso de sustancias',
-  problem_focused_total: 'Afrontamiento centrado en el problema',
-  emotion_focused_total: 'Afrontamiento centrado en la emoción',
-  avoidant_total: 'Afrontamiento evitativo',
-  puntaje_total_coping: 'Puntaje Total Coping'
 };
 
 export default function ParticipantResults() {
