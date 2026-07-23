@@ -1394,7 +1394,11 @@ export default function EvaluatorParticipants() {
           evaluationId={Number(photoTarget.evaluationId)}
           participantId={photoTarget.id}
           participantLabel={`${photoTarget.firstName} ${photoTarget.lastName} (${photoTarget.documentNumber})`}
-          defaultQuestionnaireType={photoTarget.formType === 'B' ? 'intralaboral_b' : 'intralaboral_a'}
+          // Auto-detectar: los PDFs escaneados traen la batería completa (ficha +
+          // intralaboral + extralaboral + estrés). Preseleccionar la forma del
+          // participante hacía que solo se digitalizara ese cuestionario.
+          // El evaluador puede forzar un tipo concreto desde el selector del modal.
+          defaultQuestionnaireType="auto"
           onSuccess={() => fetchParticipants()}
         />
       )}
