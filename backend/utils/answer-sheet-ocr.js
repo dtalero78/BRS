@@ -8,6 +8,19 @@ const QUESTIONNAIRE_META = {
   estres:         { label: 'Estrés',                                                  count: 31,  scale: 'stress' },
 };
 
+// Orden canónico en el que se devuelven los cuestionarios detectados.
+const LIKERT_TYPES = ['intralaboral_a', 'intralaboral_b', 'extralaboral', 'estres'];
+
+// Títulos con los que cada sección aparece impresa en las hojas oficiales.
+// Se usan tanto en el pase de índice como en los pases de extracción.
+const SECTION_TITLES = {
+  intralaboral_a: '"CUESTIONARIO DE FACTORES DE RIESGO PSICOSOCIAL INTRALABORAL" con encabezado "FORMA A" (Jefes/Profesionales/Técnicos)',
+  intralaboral_b: '"CUESTIONARIO DE FACTORES DE RIESGO PSICOSOCIAL INTRALABORAL" con encabezado "FORMA B" (Auxiliares/Operarios)',
+  extralaboral:   '"CUESTIONARIO DE FACTORES PSICOSOCIALES EXTRALABORALES"',
+  estres:         '"CUESTIONARIO PARA LA EVALUACIÓN DEL ESTRÉS - TERCERA VERSIÓN"',
+  ficha_datos:    '"FICHA DE DATOS GENERALES" (o "DATOS GENERALES" / "SOCIODEMOGRÁFICOS")',
+};
+
 const FICHA_FIELDS = [
   { key: 1,  name: 'fecha',            label: 'Fecha de aplicación' },
   { key: 2,  name: 'sexo',             label: 'Sexo (Masculino, Femenino u Otro)' },
@@ -59,33 +72,161 @@ function detectFileKind(buffer) {
   return { type: 'image', mediaType: 'image/jpeg' };
 }
 
-function buildSystemPrompt(questionnaireType, expectedCount, scale, expectParticipantInfo) {
+function getClient() {
+  if (!process.env.ANTHROPIC_API_KEY) {
+    throw new Error('ANTHROPIC_API_KEY no está configurada en el servidor.');
+  }
+  return new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+}
+
+function ocrModel() {
+  return process.env.OCR_MODEL || 'claude-sonnet-4-6';
+}
+
+// La API de Anthropic rechaza requests de más de 32 MB, y base64 infla ~33%.
+// Se valida una sola vez antes de gastar llamadas.
+const MAX_PAYLOAD_BYTES = 22 * 1024 * 1024;
+
+function assertPayloadSize(imageBuffers) {
+  const total = imageBuffers.reduce((sum, b) => sum + (b ? b.length : 0), 0);
+  if (total > MAX_PAYLOAD_BYTES) {
+    throw new Error(
+      `Los archivos pesan ${Math.round(total / (1024 * 1024))} MB en total; el máximo procesable es ${MAX_PAYLOAD_BYTES / (1024 * 1024)} MB. ` +
+      'Reduce la resolución del escaneo o divide el PDF.',
+    );
+  }
+}
+
+function buildFileBlocks(imageBuffers) {
+  return imageBuffers.map(buf => {
+    const kind = detectFileKind(buf);
+    return {
+      type: kind.type,
+      source: {
+        type: 'base64',
+        media_type: kind.mediaType,
+        data: buf.toString('base64'),
+      },
+    };
+  });
+}
+
+/**
+ * Una sola llamada al modelo, forzada a devolver `tool`.
+ * Devuelve { input, usage }.
+ */
+async function callModel({ client, imageBuffers, systemPrompt, tool, userText, maxTokens = 16000 }) {
+  const response = await client.messages.create({
+    model: ocrModel(),
+    max_tokens: maxTokens,
+    system: [
+      { type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } },
+    ],
+    tools: [tool],
+    tool_choice: { type: 'tool', name: tool.name },
+    messages: [
+      {
+        role: 'user',
+        content: [
+          ...buildFileBlocks(imageBuffers),
+          { type: 'text', text: userText },
+        ],
+      },
+    ],
+  });
+
+  const toolBlock = response.content.find(b => b.type === 'tool_use' && b.name === tool.name);
+  if (!toolBlock) {
+    const textBlock = response.content.find(b => b.type === 'text');
+    throw new Error(
+      'El modelo no devolvió el resultado estructurado. ' +
+      (textBlock ? `Texto recibido: ${String(textBlock.text).slice(0, 200)}` : ''),
+    );
+  }
+
+  return { input: toolBlock.input || {}, usage: response.usage || {} };
+}
+
+function emptyUsage() {
+  return { inputTokens: 0, outputTokens: 0, cacheReadInputTokens: 0, cacheCreationInputTokens: 0, calls: 0 };
+}
+
+function addUsage(acc, usage) {
+  acc.calls += 1;
+  acc.inputTokens += usage.input_tokens || 0;
+  acc.outputTokens += usage.output_tokens || 0;
+  acc.cacheReadInputTokens += usage.cache_read_input_tokens || 0;
+  acc.cacheCreationInputTokens += usage.cache_creation_input_tokens || 0;
+  return acc;
+}
+
+/**
+ * Ejecuta `fn` sobre cada item con concurrencia limitada.
+ * Los PDFs escaneados pesan mucho en tokens de entrada; lanzar 4 pases en
+ * paralelo puede reventar el límite de tokens/minuto de la cuenta.
+ */
+async function mapWithConcurrency(items, limit, fn) {
+  const results = new Array(items.length);
+  let cursor = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (cursor < items.length) {
+      const index = cursor++;
+      results[index] = await fn(items[index], index);
+    }
+  });
+  await Promise.all(workers);
+  return results;
+}
+
+// ---------------------------------------------------------------------------
+// Extracción de un cuestionario Likert
+// ---------------------------------------------------------------------------
+
+function buildSystemPrompt(questionnaireType, expectedCount, scale, expectParticipantInfo, opts = {}) {
   const meta = QUESTIONNAIRE_META[questionnaireType];
   const scaleDesc = SCALE_DESCRIPTIONS[scale];
   const maxValue = scale === 'stress' ? 3 : 4;
+  const { multiDocument = false, locationHint = '' } = opts;
 
-  return [
+  const lines = [
     'Eres un asistente experto en leer hojas físicas de respuestas de la Batería de Riesgo Psicosocial del Ministerio de Protección Social de Colombia (Resolución 2646 de 2008).',
     '',
-    `Cuestionario: ${meta.label}`,
+    `Cuestionario objetivo: ${meta.label}`,
+    `Se identifica por el título ${SECTION_TITLES[questionnaireType]}.`,
     `Número de preguntas esperadas: ${expectedCount} (numeradas de 1 a ${expectedCount}).`,
-    `Escala Likert de este cuestionario (devuelve el valor numérico, NO el texto):`,
+    'Escala Likert de este cuestionario (devuelve el valor numérico, NO el texto):',
     scaleDesc,
     '',
+  ];
+
+  if (multiDocument) {
+    lines.push(
+      'IMPORTANTE: el archivo adjunto contiene VARIOS cuestionarios distintos (ficha de datos, intralaboral, extralaboral, estrés).',
+      'Cada cuestionario tiene su propia numeración que empieza en 1. Extrae ÚNICAMENTE el cuestionario objetivo indicado arriba',
+      'e ignora por completo las páginas de los demás cuestionarios. NO mezcles preguntas de otras secciones.',
+    );
+    if (locationHint) lines.push(`Ubicación aproximada del cuestionario objetivo en el archivo: ${locationHint}.`);
+    lines.push('');
+  }
+
+  lines.push(
     'Reglas estrictas:',
     '1. Cada pregunta tiene UNA sola marca (X, círculo o similar) en la columna correspondiente a una opción Likert.',
     `2. Devuelve responseValue como entero entre 0 y ${maxValue}, según la escala de arriba.`,
     '3. Si una pregunta no tiene ninguna marca, o tiene múltiples marcas ambiguas, OMÍTELA del array "responses". NO inventes una respuesta.',
     '4. Si la marca existe pero es dudosa (borrosa, tachada, parcial), inclúyela con confidence = "low".',
     '5. Si la marca es clara e inequívoca, confidence = "high". Si es legible pero no perfecta, "medium".',
-    '6. Los números de pregunta deben ser enteros 1..N, sin saltos. Si reconoces "15" pero no sabes la respuesta, NO lo incluyas.',
-    '7. Reporta en "warnings" cualquier observación general (hoja rota, mancha, columna cortada, preguntas faltantes, idioma distinto, etc).',
+    `6. Los números de pregunta deben ser enteros 1..${expectedCount}. Si reconoces el número pero no la respuesta, NO lo incluyas.`,
+    '7. Recorre TODAS las páginas del cuestionario objetivo de principio a fin. No te detengas antes de llegar a la última pregunta.',
+    '8. Reporta en "warnings" cualquier observación general (hoja rota, mancha, columna cortada, preguntas sin marcar, etc).',
     expectParticipantInfo
-      ? '8. Además extrae los datos del encabezado: número de documento (solo dígitos), primer nombre y primer apellido si están escritos. Usa confidence apropiada. Si no hay encabezado visible, devuelve participantInfo con cadenas vacías y confidence = "low".'
-      : '8. NO devuelvas participantInfo — el participante ya fue seleccionado en el sistema.',
+      ? '9. Además extrae los datos del encabezado: número de documento (solo dígitos), primer nombre y primer apellido si están escritos. Usa confidence apropiada. Si no hay encabezado visible, devuelve participantInfo con cadenas vacías y confidence = "low".'
+      : '9. NO devuelvas participantInfo — el participante ya fue seleccionado en el sistema.',
     '',
     'Devuelve SIEMPRE tu respuesta usando la herramienta save_extracted_answers con el esquema exacto. No escribas prosa fuera de la llamada a la herramienta.',
-  ].join('\n');
+  );
+
+  return lines.join('\n');
 }
 
 function buildTool(expectParticipantInfo) {
@@ -140,16 +281,13 @@ function buildTool(expectParticipantInfo) {
   };
 }
 
-function summarize(rawResult, expectedCount) {
-  const responses = Array.isArray(rawResult.responses) ? rawResult.responses : [];
-
-  const seen = new Set();
+function cleanResponses(rawResponses, expectedCount, maxValue, seen = new Set()) {
   const cleaned = [];
-  for (const r of responses) {
+  for (const r of Array.isArray(rawResponses) ? rawResponses : []) {
     const qn = Number(r.questionNumber);
     const rv = Number(r.responseValue);
     if (!Number.isInteger(qn) || qn < 1 || qn > expectedCount) continue;
-    if (!Number.isInteger(rv) || rv < 0 || rv > 4) continue;
+    if (!Number.isInteger(rv) || rv < 0 || rv > maxValue) continue;
     if (seen.has(qn)) continue;
     seen.add(qn);
     cleaned.push({
@@ -158,21 +296,26 @@ function summarize(rawResult, expectedCount) {
       confidence: ['high', 'medium', 'low'].includes(r.confidence) ? r.confidence : 'medium',
     });
   }
-  cleaned.sort((a, b) => a.questionNumber - b.questionNumber);
+  return cleaned;
+}
+
+function summarizeResponses(responses, expectedCount, warnings) {
+  const sorted = [...responses].sort((a, b) => a.questionNumber - b.questionNumber);
+  const seen = new Set(sorted.map(r => r.questionNumber));
 
   const missing = [];
   for (let i = 1; i <= expectedCount; i++) {
     if (!seen.has(i)) missing.push(i);
   }
 
-  const lowConfidenceCount = cleaned.filter(r => r.confidence === 'low').length;
+  const lowConfidenceCount = sorted.filter(r => r.confidence === 'low').length;
 
   return {
-    responses: cleaned,
+    responses: sorted,
     missing,
-    warnings: Array.isArray(rawResult.warnings) ? rawResult.warnings.filter(w => typeof w === 'string') : [],
+    warnings: (warnings || []).filter(w => typeof w === 'string'),
     summary: {
-      totalDetected: cleaned.length,
+      totalDetected: sorted.length,
       totalExpected: expectedCount,
       lowConfidenceCount,
       missingCount: missing.length,
@@ -180,72 +323,77 @@ function summarize(rawResult, expectedCount) {
   };
 }
 
-async function extractAnswersFromSheet(imageBuffers, options) {
-  const {
-    questionnaireType,
-    expectParticipantInfo = false,
-  } = options || {};
-
+/**
+ * Extrae un cuestionario Likert completo, con un reintento dirigido a las
+ * preguntas que quedaron sin detectar en el primer pase.
+ */
+async function extractOneQuestionnaire({
+  client,
+  imageBuffers,
+  questionnaireType,
+  expectParticipantInfo = false,
+  multiDocument = false,
+  locationHint = '',
+  usageAcc,
+}) {
   const meta = QUESTIONNAIRE_META[questionnaireType];
-  if (!meta) {
-    throw new Error(`Tipo de cuestionario no soportado: ${questionnaireType}`);
-  }
-  if (!Array.isArray(imageBuffers) || imageBuffers.length === 0) {
-    throw new Error('Debe enviar al menos una imagen.');
-  }
-  if (!process.env.ANTHROPIC_API_KEY) {
-    throw new Error('ANTHROPIC_API_KEY no está configurada en el servidor.');
-  }
-
-  const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-
-  const systemPrompt = buildSystemPrompt(questionnaireType, meta.count, meta.scale, expectParticipantInfo);
+  const maxValue = meta.scale === 'stress' ? 3 : 4;
+  const systemPrompt = buildSystemPrompt(
+    questionnaireType, meta.count, meta.scale, expectParticipantInfo, { multiDocument, locationHint },
+  );
   const tool = buildTool(expectParticipantInfo);
 
-  const content = [
-    ...imageBuffers.map(buf => {
-      const kind = detectFileKind(buf);
-      return {
-        type: kind.type,
-        source: {
-          type: 'base64',
-          media_type: kind.mediaType,
-          data: buf.toString('base64'),
-        },
-      };
-    }),
-    {
-      type: 'text',
-      text: expectParticipantInfo
-        ? `Lee el/los archivo(s) adjunto(s) (imagen o PDF) de la hoja física y extrae: (1) los datos del encabezado (documento y nombre) y (2) todas las marcas de respuesta con su número de pregunta. Esperas ${meta.count} preguntas numeradas. Si el PDF tiene varias páginas, recorre todas.`
-        : `Lee el/los archivo(s) adjunto(s) (imagen o PDF) de la hoja física y extrae todas las marcas de respuesta con su número de pregunta. Esperas ${meta.count} preguntas numeradas. Si el PDF tiene varias páginas, recorre todas.`,
-    },
-  ];
+  const firstText = expectParticipantInfo
+    ? `Lee el/los archivo(s) adjunto(s) y extrae: (1) los datos del encabezado (documento y nombre) y (2) todas las marcas de respuesta del cuestionario ${meta.label}, con su número de pregunta. Esperas ${meta.count} preguntas numeradas. Si el PDF tiene varias páginas, recórrelas todas.`
+    : `Lee el/los archivo(s) adjunto(s) y extrae todas las marcas de respuesta del cuestionario ${meta.label}, con su número de pregunta. Esperas ${meta.count} preguntas numeradas. Si el PDF tiene varias páginas, recórrelas todas.`;
 
-  const response = await client.messages.create({
-    model: process.env.OCR_MODEL || 'claude-sonnet-4-6',
-    max_tokens: 16000,
-    system: [
-      { type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } },
-    ],
-    tools: [tool],
-    tool_choice: { type: 'tool', name: 'save_extracted_answers' },
-    messages: [{ role: 'user', content }],
-  });
+  const first = await callModel({ client, imageBuffers, systemPrompt, tool, userText: firstText });
+  if (usageAcc) addUsage(usageAcc, first.usage);
 
-  const toolBlock = response.content.find(b => b.type === 'tool_use' && b.name === 'save_extracted_answers');
-  if (!toolBlock) {
-    const textBlock = response.content.find(b => b.type === 'text');
-    throw new Error(
-      'El modelo no devolvió el resultado estructurado. ' +
-      (textBlock ? `Texto recibido: ${String(textBlock.text).slice(0, 200)}` : ''),
-    );
+  const seen = new Set();
+  const responses = cleanResponses(first.input.responses, meta.count, maxValue, seen);
+  const warnings = Array.isArray(first.input.warnings) ? first.input.warnings.slice() : [];
+
+  // Reintento dirigido: si quedaron huecos, se le pide al modelo únicamente
+  // esas preguntas. Cubre el caso típico de un pase que "se cansa" a mitad de
+  // un cuestionario largo (Forma A tiene 123 ítems).
+  const missing = [];
+  for (let i = 1; i <= meta.count; i++) if (!seen.has(i)) missing.push(i);
+
+  if (missing.length >= 3) {
+    try {
+      const retryTool = buildTool(false);
+      const retryText = [
+        `En una lectura previa del cuestionario ${meta.label} quedaron sin extraer las siguientes preguntas:`,
+        missing.join(', '),
+        '',
+        'Vuelve a revisar el archivo y devuelve ÚNICAMENTE esas preguntas con su marca.',
+        'Si alguna realmente no tiene marca (por ejemplo una sección que el participante no debía responder), omítela y explícalo en "warnings".',
+      ].join('\n');
+
+      const retry = await callModel({
+        client,
+        imageBuffers,
+        systemPrompt: buildSystemPrompt(
+          questionnaireType, meta.count, meta.scale, false, { multiDocument, locationHint },
+        ),
+        tool: retryTool,
+        userText: retryText,
+      });
+      if (usageAcc) addUsage(usageAcc, retry.usage);
+
+      responses.push(...cleanResponses(retry.input.responses, meta.count, maxValue, seen));
+      if (Array.isArray(retry.input.warnings)) warnings.push(...retry.input.warnings);
+    } catch (err) {
+      console.error(`Retry OCR ${questionnaireType} falló:`, err.message);
+      warnings.push('No se pudo completar el segundo intento de lectura de las preguntas faltantes.');
+    }
   }
 
-  const summarized = summarize(toolBlock.input || {}, meta.count);
+  const summarized = summarizeResponses(responses, meta.count, warnings);
 
-  if (expectParticipantInfo && toolBlock.input && toolBlock.input.participantInfo) {
-    const p = toolBlock.input.participantInfo;
+  if (expectParticipantInfo && first.input.participantInfo) {
+    const p = first.input.participantInfo;
     summarized.participantInfo = {
       documentNumber: (p.documentNumber || '').toString().replace(/\D+/g, ''),
       firstName: (p.firstName || '').toString().trim(),
@@ -254,60 +402,80 @@ async function extractAnswersFromSheet(imageBuffers, options) {
     };
   }
 
-  summarized.usage = {
-    inputTokens: response.usage?.input_tokens ?? null,
-    outputTokens: response.usage?.output_tokens ?? null,
-    cacheReadInputTokens: response.usage?.cache_read_input_tokens ?? null,
-    cacheCreationInputTokens: response.usage?.cache_creation_input_tokens ?? null,
-  };
-
   return summarized;
 }
 
-function buildAutoSystemPrompt(expectParticipantInfo) {
+/**
+ * Modo "un solo cuestionario": el evaluador ya eligió el tipo en la UI.
+ */
+async function extractAnswersFromSheet(imageBuffers, options) {
+  const { questionnaireType, expectParticipantInfo = false } = options || {};
+
+  const meta = QUESTIONNAIRE_META[questionnaireType];
+  if (!meta) throw new Error(`Tipo de cuestionario no soportado: ${questionnaireType}`);
+  if (!Array.isArray(imageBuffers) || imageBuffers.length === 0) {
+    throw new Error('Debe enviar al menos una imagen.');
+  }
+  assertPayloadSize(imageBuffers);
+
+  const client = getClient();
+  const usageAcc = emptyUsage();
+
+  const result = await extractOneQuestionnaire({
+    client,
+    imageBuffers,
+    questionnaireType,
+    expectParticipantInfo,
+    // Aunque el evaluador eligió un tipo, el PDF puede traer la batería
+    // completa: hay que decirle al modelo que ignore las demás secciones.
+    multiDocument: true,
+    usageAcc,
+  });
+
+  result.usage = usageAcc;
+  return result;
+}
+
+// ---------------------------------------------------------------------------
+// Pase de índice: qué secciones trae el archivo + ficha + encabezado
+// ---------------------------------------------------------------------------
+
+function buildIndexSystemPrompt(expectParticipantInfo) {
   const fichaBullets = FICHA_FIELDS.map(f => `     - ${f.name}: ${f.label}`).join('\n');
   return [
-    'Eres un asistente experto en leer PDFs o imágenes que contengan uno o varios cuestionarios de la Batería de Riesgo Psicosocial del Ministerio de Protección Social de Colombia (Resolución 2646 de 2008).',
+    'Eres un asistente experto en clasificar PDFs o imágenes que contienen cuestionarios de la Batería de Riesgo Psicosocial del Ministerio de Protección Social de Colombia (Resolución 2646 de 2008).',
     '',
-    'El archivo puede contener cualquier combinación de estos tipos:',
+    'Un mismo archivo suele traer VARIOS cuestionarios encuadernados uno detrás de otro. Tu trabajo en este paso NO es extraer las respuestas Likert,',
+    'sino (1) inventariar qué secciones están presentes y en qué páginas, y (2) transcribir la Ficha de Datos Generales.',
     '',
-    'Cuestionarios Likert (van en el array "questionnaires"):',
-    '1. intralaboral_a — encabezado "FORMA A" (Jefes/Profesionales/Técnicos). 123 preguntas. Escala Likert 0..4.',
-    '2. intralaboral_b — encabezado "FORMA B" (Auxiliares/Operarios). 97 preguntas. Escala Likert 0..4.',
-    '3. extralaboral   — título "FACTORES EXTRALABORALES" o similar. 31 preguntas. Escala Likert 0..4.',
-    '4. estres         — "CUESTIONARIO PARA LA EVALUACIÓN DEL ESTRÉS — TERCERA VERSIÓN". 31 preguntas. Escala Likert 0..3.',
-    '',
-    'Ficha de Datos Generales (va en el objeto "fichaDatos", NO en "questionnaires"):',
-    '   Títulos típicos: "FICHA DE DATOS GENERALES", "DATOS GENERALES", "SOCIODEMOGRÁFICOS".',
-    '   Tiene campos estructurados (texto, número, categoría seleccionada con X):',
+    'Secciones posibles:',
+    `1. intralaboral_a — ${SECTION_TITLES.intralaboral_a}. 123 preguntas Likert.`,
+    `2. intralaboral_b — ${SECTION_TITLES.intralaboral_b}. 97 preguntas Likert.`,
+    `3. extralaboral   — ${SECTION_TITLES.extralaboral}. 31 preguntas Likert.`,
+    `4. estres         — ${SECTION_TITLES.estres}. 31 preguntas Likert.`,
+    `5. ficha_datos    — ${SECTION_TITLES.ficha_datos}. Campos estructurados, sin escala Likert:`,
     fichaBullets,
     '',
-    'Escalas Likert (devuelve el valor numérico, NO el texto):',
-    '  Para intralaboral_a, intralaboral_b, extralaboral:',
-    '    Siempre=4, Casi siempre=3, Algunas veces=2, Casi nunca=1, Nunca=0',
-    '  Para estres:',
-    '    Siempre=3, Casi siempre=2, A veces=1, Nunca=0',
-    '',
     'Reglas estrictas:',
-    '1. Identifica qué secciones ESTÁN PRESENTES Y RESPONDIDAS. Si ves un título pero no hay marcas/datos, NO lo incluyas.',
-    '2. Forma A y Forma B son mutuamente excluyentes — nunca ambas en el mismo archivo.',
-    '3. Por cada cuestionario Likert detectado, agrega UN elemento al array "questionnaires".',
-    '4. Si detectas la Ficha de Datos Generales, llena "fichaDatos.detected" = true y transcribe cada campo en "fichaDatos.fields". Si un campo está vacío, devuelve cadena vacía. NO inventes valores.',
-    '5. Para campos categóricos con X (sexo, estado civil, estudios, estrato, tipo vivienda, tipo cargo, tipo contrato, tipo salario), escribe EL LITERAL EXACTO de la opción marcada (por ejemplo "Masculino", "Unión libre", "Bachillerato completo", "Operario, operador, ayudante, servicios generales", "Término indefinido"). Si no hay marca visible, cadena vacía.',
-    '6. Para campos de texto manuscrito, transcribe tal cual lo veas. Para campos numéricos (dependientes, horas), devuelve solo el número como string.',
-    '7. Para campos de ciudad/residencia/trabajo que tienen dos subcampos (ciudad y departamento), concaténalos como "Ciudad, Departamento".',
-    '8. Cada pregunta Likert tiene UNA sola marca. Si ves múltiples marcas ambiguas o ninguna, OMITE esa pregunta. NO inventes respuestas.',
-    '9. Usa confidence="high" para marcas claras, "medium" para legibles pero no perfectas, "low" para dudosas.',
-    '10. En "warnings" del cuestionario reporta observaciones específicas. En "fichaDatos.warnings" reporta observaciones de la ficha. En "warnings" del top-level las generales.',
+    '1. Recorre TODAS las páginas del archivo antes de responder. Las secciones pueden aparecer en cualquier orden.',
+    '2. Incluye en "sections" una entrada por CADA sección que aparezca en el archivo, aunque solo veas su portada.',
+    '3. En "location" describe dónde está (por ejemplo "páginas 6 a 11" o "última mitad del documento"). Si no puedes precisarlo, cadena vacía.',
+    '4. Forma A y Forma B son mutuamente excluyentes: un mismo participante responde una u otra, nunca ambas. Elige la que realmente aparece impresa.',
+    '5. Si ves el título de una sección pero está completamente en blanco (sin ninguna marca ni dato), NO la incluyas.',
+    '6. Si detectas la Ficha de Datos Generales, pon "fichaDatos.detected" = true y transcribe cada campo en "fichaDatos.fields". Campo sin dato = cadena vacía. NO inventes valores.',
+    '7. Para campos categóricos marcados con X (sexo, estado civil, estudios, estrato, tipo vivienda, tipo cargo, tipo contrato), escribe EL LITERAL EXACTO de la opción marcada (por ejemplo "Masculino", "Unión libre", "Bachillerato completo", "Operario, operador, ayudante, servicios generales", "Término indefinido").',
+    '8. Para campos de texto manuscrito, transcribe tal cual. Para campos numéricos (dependientes, horas), devuelve solo el número como string.',
+    '9. Para campos de ciudad/residencia/trabajo con dos subcampos, concaténalos como "Ciudad, Departamento".',
+    '10. NO extraigas respuestas Likert en este paso — eso se hace después en otra llamada.',
     expectParticipantInfo
-      ? '11. Además extrae datos del encabezado del archivo: documento (solo dígitos), primer nombre, primer apellido. Si la Ficha de Datos Generales tiene "Nombre completo", úsalo como primer nombre + apellido. Si no, usa el encabezado. Si nada está visible, cadenas vacías y confidence="low".'
+      ? '11. Extrae además los datos de identificación del participante: documento (solo dígitos), primer nombre y primer apellido. Usa el "Nombre completo" de la Ficha si existe; si no, el encabezado ("Número de identificación del respondiente"). Si nada es legible, cadenas vacías y confidence="low".'
       : '11. NO devuelvas participantInfo — el participante ya fue seleccionado en el sistema.',
     '',
-    'Devuelve SIEMPRE el resultado llamando la herramienta save_all_questionnaires. No escribas prosa fuera de la llamada.',
+    'Devuelve SIEMPRE el resultado llamando la herramienta save_document_index. No escribas prosa fuera de la llamada.',
   ].join('\n');
 }
 
-function buildAutoTool(expectParticipantInfo) {
+function buildIndexTool(expectParticipantInfo) {
   const fichaFieldsSchema = {
     type: 'object',
     additionalProperties: false,
@@ -324,36 +492,21 @@ function buildAutoTool(expectParticipantInfo) {
     type: 'object',
     additionalProperties: false,
     properties: {
-      questionnaires: {
+      sections: {
         type: 'array',
-        description: 'Un elemento por cuestionario Likert detectado. No incluyas la Ficha de Datos aquí — esa va en "fichaDatos".',
+        description: 'Una entrada por cada sección presente en el archivo.',
         items: {
           type: 'object',
           additionalProperties: false,
           properties: {
             type: {
               type: 'string',
-              enum: ['intralaboral_a', 'intralaboral_b', 'extralaboral', 'estres'],
+              enum: ['intralaboral_a', 'intralaboral_b', 'extralaboral', 'estres', 'ficha_datos'],
             },
-            responses: {
-              type: 'array',
-              items: {
-                type: 'object',
-                additionalProperties: false,
-                properties: {
-                  questionNumber: { type: 'integer' },
-                  responseValue:  { type: 'integer' },
-                  confidence:     { type: 'string', enum: ['high', 'medium', 'low'] },
-                },
-                required: ['questionNumber', 'responseValue', 'confidence'],
-              },
-            },
-            warnings: {
-              type: 'array',
-              items: { type: 'string' },
-            },
+            location: { type: 'string', description: 'Dónde está la sección (páginas). Vacío si no se puede precisar.' },
+            confidence: { type: 'string', enum: ['high', 'medium', 'low'] },
           },
-          required: ['type', 'responses', 'warnings'],
+          required: ['type', 'location', 'confidence'],
         },
       },
       fichaDatos: {
@@ -372,7 +525,7 @@ function buildAutoTool(expectParticipantInfo) {
         items: { type: 'string' },
       },
     },
-    required: ['questionnaires', 'fichaDatos', 'warnings'],
+    required: ['sections', 'fichaDatos', 'warnings'],
   };
 
   if (expectParticipantInfo) {
@@ -391,88 +544,112 @@ function buildAutoTool(expectParticipantInfo) {
   }
 
   return {
-    name: 'save_all_questionnaires',
-    description: 'Guarda TODOS los cuestionarios y la ficha de datos detectados en el archivo. Úsala exactamente una vez.',
+    name: 'save_document_index',
+    description: 'Guarda el inventario de secciones del archivo y la ficha de datos. Úsala exactamente una vez.',
     strict: true,
     input_schema: schema,
   };
 }
 
+/**
+ * Modo "auto": el archivo puede traer la batería completa.
+ *
+ * Estrategia multi-pase — un solo prompt pidiéndole al modelo los ~280 ítems
+ * de la batería completa hacía que se limitara a un cuestionario y reportara
+ * "solo se extrajo la Forma B". Ahora:
+ *   1. Un pase de índice barato: qué secciones hay, dónde, + ficha + encabezado.
+ *   2. Un pase de extracción por cada cuestionario Likert detectado (con
+ *      reintento dirigido a las preguntas que falten).
+ *
+ * La forma del objeto devuelto es la misma de antes, así que el frontend
+ * (pestañas por cuestionario) no cambia.
+ */
 async function extractAllQuestionnairesFromSheet(imageBuffers, options) {
   const { expectParticipantInfo = false } = options || {};
 
   if (!Array.isArray(imageBuffers) || imageBuffers.length === 0) {
     throw new Error('Debe enviar al menos una imagen o PDF.');
   }
-  if (!process.env.ANTHROPIC_API_KEY) {
-    throw new Error('ANTHROPIC_API_KEY no está configurada en el servidor.');
+  assertPayloadSize(imageBuffers);
+
+  const client = getClient();
+  const usageAcc = emptyUsage();
+
+  // --- Pase 1: índice + ficha + encabezado ---------------------------------
+  const index = await callModel({
+    client,
+    imageBuffers,
+    systemPrompt: buildIndexSystemPrompt(expectParticipantInfo),
+    tool: buildIndexTool(expectParticipantInfo),
+    userText: expectParticipantInfo
+      ? 'Revisa TODAS las páginas del/los archivo(s) adjunto(s) e inventaría qué cuestionarios de la batería contienen, transcribe la Ficha de Datos Generales y extrae los datos de identificación del participante.'
+      : 'Revisa TODAS las páginas del/los archivo(s) adjunto(s) e inventaría qué cuestionarios de la batería contienen y transcribe la Ficha de Datos Generales.',
+  });
+  addUsage(usageAcc, index.usage);
+
+  const rawIndex = index.input;
+  const warnings = Array.isArray(rawIndex.warnings) ? rawIndex.warnings.filter(w => typeof w === 'string') : [];
+
+  const locationByType = {};
+  const detectedLikert = [];
+  for (const s of (rawIndex.sections || [])) {
+    if (!LIKERT_TYPES.includes(s.type)) continue;
+    if (detectedLikert.includes(s.type)) continue;
+    detectedLikert.push(s.type);
+    locationByType[s.type] = typeof s.location === 'string' ? s.location : '';
   }
+  // Orden canónico, no el que devolvió el modelo.
+  const targets = LIKERT_TYPES.filter(t => detectedLikert.includes(t));
 
-  const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-
-  const systemPrompt = buildAutoSystemPrompt(expectParticipantInfo);
-  const tool = buildAutoTool(expectParticipantInfo);
-
-  const content = [
-    ...imageBuffers.map(buf => {
-      const kind = detectFileKind(buf);
+  // --- Pase 2..N: un cuestionario por llamada ------------------------------
+  const extracted = await mapWithConcurrency(targets, 2, async (type) => {
+    try {
+      const meta = QUESTIONNAIRE_META[type];
+      const data = await extractOneQuestionnaire({
+        client,
+        imageBuffers,
+        questionnaireType: type,
+        expectParticipantInfo: false,
+        multiDocument: true,
+        locationHint: locationByType[type] || '',
+        usageAcc,
+      });
       return {
-        type: kind.type,
-        source: {
-          type: 'base64',
-          media_type: kind.mediaType,
-          data: buf.toString('base64'),
-        },
+        type,
+        label: meta.label,
+        expectedCount: meta.count,
+        scale: meta.scale,
+        ...data,
       };
-    }),
-    {
-      type: 'text',
-      text: expectParticipantInfo
-        ? 'Lee el/los archivo(s) adjunto(s) (imagen o PDF) y: (1) extrae los datos del encabezado (documento y nombre). (2) Identifica TODOS los cuestionarios presentes y extrae sus respuestas. El archivo puede contener una batería completa.'
-        : 'Lee el/los archivo(s) adjunto(s) (imagen o PDF) y: identifica TODOS los cuestionarios presentes y extrae sus respuestas. El archivo puede contener una batería completa.',
-    },
-  ];
-
-  const response = await client.messages.create({
-    model: process.env.OCR_MODEL || 'claude-sonnet-4-6',
-    max_tokens: 20000,
-    system: [
-      { type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } },
-    ],
-    tools: [tool],
-    tool_choice: { type: 'tool', name: 'save_all_questionnaires' },
-    messages: [{ role: 'user', content }],
+    } catch (err) {
+      console.error(`Extracción OCR de ${type} falló:`, err.message);
+      warnings.push(`No se pudo leer el cuestionario ${QUESTIONNAIRE_META[type].label}: ${err.message}`);
+      return null;
+    }
   });
 
-  const toolBlock = response.content.find(b => b.type === 'tool_use' && b.name === 'save_all_questionnaires');
-  if (!toolBlock) {
-    const textBlock = response.content.find(b => b.type === 'text');
-    throw new Error(
-      'El modelo no devolvió el resultado estructurado. ' +
-      (textBlock ? `Texto recibido: ${String(textBlock.text).slice(0, 200)}` : ''),
-    );
-  }
-
-  const raw = toolBlock.input || {};
-  const seenTypes = new Set();
   const byType = {};
-  for (const q of (raw.questionnaires || [])) {
-    if (!QUESTIONNAIRE_META[q.type] || seenTypes.has(q.type)) continue;
-    seenTypes.add(q.type);
-    const meta = QUESTIONNAIRE_META[q.type];
-    const summary = summarize({ responses: q.responses, warnings: q.warnings }, meta.count);
-    byType[q.type] = {
-      type: q.type,
-      label: meta.label,
-      expectedCount: meta.count,
-      scale: meta.scale,
-      ...summary,
-    };
+  for (const item of extracted) {
+    if (item) byType[item.type] = item;
   }
 
+  // Forma A y Forma B son excluyentes: si el índice reportó ambas, se queda la
+  // que tenga mayor proporción de respuestas realmente detectadas.
+  if (byType.intralaboral_a && byType.intralaboral_b) {
+    const ratio = t => byType[t].summary.totalDetected / byType[t].expectedCount;
+    const loser = ratio('intralaboral_a') >= ratio('intralaboral_b') ? 'intralaboral_b' : 'intralaboral_a';
+    warnings.push(
+      `Se detectaron Forma A y Forma B en el mismo archivo (son excluyentes). Se descartó ${QUESTIONNAIRE_META[loser].label} por tener menos respuestas legibles.`,
+    );
+    delete byType[loser];
+  }
+
+  const detectedTypes = LIKERT_TYPES.filter(t => byType[t]);
+
+  // --- Ficha de datos ------------------------------------------------------
   let fichaDatos = null;
-  if (raw.fichaDatos && raw.fichaDatos.detected === true) {
-    const rawFields = raw.fichaDatos.fields || {};
+  if (rawIndex.fichaDatos && rawIndex.fichaDatos.detected === true) {
+    const rawFields = rawIndex.fichaDatos.fields || {};
     const fields = {};
     let filled = 0;
     for (const f of FICHA_FIELDS) {
@@ -485,25 +662,22 @@ async function extractAllQuestionnairesFromSheet(imageBuffers, options) {
       fields,
       filledCount: filled,
       totalCount: FICHA_FIELDS.length,
-      warnings: Array.isArray(raw.fichaDatos.warnings) ? raw.fichaDatos.warnings.filter(w => typeof w === 'string') : [],
+      warnings: Array.isArray(rawIndex.fichaDatos.warnings)
+        ? rawIndex.fichaDatos.warnings.filter(w => typeof w === 'string')
+        : [],
     };
   }
 
   const result = {
-    detectedTypes: Array.from(seenTypes),
+    detectedTypes,
     byType,
     fichaDatos,
-    warnings: Array.isArray(raw.warnings) ? raw.warnings.filter(w => typeof w === 'string') : [],
-    usage: {
-      inputTokens: response.usage?.input_tokens ?? null,
-      outputTokens: response.usage?.output_tokens ?? null,
-      cacheReadInputTokens: response.usage?.cache_read_input_tokens ?? null,
-      cacheCreationInputTokens: response.usage?.cache_creation_input_tokens ?? null,
-    },
+    warnings,
+    usage: usageAcc,
   };
 
-  if (expectParticipantInfo && raw.participantInfo) {
-    const p = raw.participantInfo;
+  if (expectParticipantInfo && rawIndex.participantInfo) {
+    const p = rawIndex.participantInfo;
     result.participantInfo = {
       documentNumber: (p.documentNumber || '').toString().replace(/\D+/g, ''),
       firstName: (p.firstName || '').toString().trim(),

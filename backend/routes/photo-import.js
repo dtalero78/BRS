@@ -260,7 +260,10 @@ router.post(
       });
     } catch (error) {
       console.error('Photo preview error:', error);
-      return res.status(500).json({ error: 'Error interno del servidor' });
+      // El OCR falla por causas que el evaluador sí puede corregir (archivo
+      // demasiado pesado, PDF ilegible, API sin configurar): devolver el
+      // mensaje real en vez de un 500 opaco.
+      return res.status(502).json({ error: error.message || 'Error al analizar el archivo.' });
     }
   }
 );
