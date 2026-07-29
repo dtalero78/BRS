@@ -37,6 +37,13 @@ export interface Brand {
   surfaceData: string;
   /** WhatsApp de soporte en formato internacional, sin '+' */
   supportWhatsApp: string;
+  /**
+   * Si la marca tiene sitio comercial propio (landing, blog, legales).
+   * En `false`, la raíz `/` no muestra landing: manda directo al login.
+   * El valor se resuelve en build, así que el HTML exportado de esa
+   * instancia ni siquiera contiene el markup de la landing.
+   */
+  hasMarketingSite: boolean;
 }
 
 const BRANDS: Record<string, Brand> = {
@@ -54,6 +61,7 @@ const BRANDS: Record<string, Brand> = {
     surfaceHub: '#e6f4fd',
     surfaceData: '#f0f8ff',
     supportWhatsApp: '573008021701',
+    hasMarketingSite: true,
   },
   shaddai: {
     key: 'shaddai',
@@ -71,6 +79,8 @@ const BRANDS: Record<string, Brand> = {
     surfaceHub: '#C9E0F2',
     surfaceData: '#EEF3FC',
     supportWhatsApp: '573008021701',
+    // Shaddai no tiene landing: la raíz entra directo al login.
+    hasMarketingSite: false,
   },
 };
 
