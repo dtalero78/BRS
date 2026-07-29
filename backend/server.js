@@ -328,6 +328,18 @@ try {
 // Serve static files (uploads, reports)
 app.use('/uploads', express.static('uploads'));
 
+// Instancias sin sitio comercial (licenciatarios) no deben servir el
+// robots.txt ni el sitemap.xml del repo: apuntan al dominio de BRS e invitan
+// a indexar una app privada. Va ANTES de express.static para ganarle al
+// archivo de public/.
+const { HAS_MARKETING_SITE } = require('./config/brand');
+if (!HAS_MARKETING_SITE) {
+  app.get('/robots.txt', (req, res) => {
+    res.type('text/plain').send('User-agent: *\nDisallow: /\n');
+  });
+  app.get('/sitemap.xml', (req, res) => res.status(404).end());
+}
+
 // Serve frontend static files (built by Next.js export)
 const frontendPath = path.join(__dirname, '..', 'frontend', 'out');
 app.use(express.static(frontendPath, {

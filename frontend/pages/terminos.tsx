@@ -1,8 +1,9 @@
 import Head from 'next/head';
 import Link from 'next/link';
 import Image from 'next/image';
+import { marketingOnly } from '../components/MarketingGate';
 
-export default function Terminos() {
+function Terminos() {
   const siteUrl = 'https://bateriariesgopsicosocial.com';
   const pageTitle = 'Terminos y Condiciones | BRS Digital';
   const pageDescription = 'Terminos y condiciones de uso de BRS Digital, plataforma SaaS para la evaluacion de riesgo psicosocial en Colombia. Descripcion del servicio, cuentas, uso aceptable y responsabilidades.';
@@ -200,3 +201,5 @@ export default function Terminos() {
     </div>
   );
 }
+
+export default marketingOnly(Terminos);

@@ -1,8 +1,9 @@
 import Head from 'next/head';
 import Link from 'next/link';
 import Image from 'next/image';
+import { marketingOnly } from '../components/MarketingGate';
 
-export default function Contacto() {
+function Contacto() {
   const siteUrl = 'https://bateriariesgopsicosocial.com';
   const pageTitle = 'Contacto | BRS Digital';
   const pageDescription = 'Contacta al equipo de BRS Digital. Escribenos por WhatsApp o correo electronico para resolver tus dudas sobre la plataforma de evaluacion de riesgo psicosocial.';
@@ -155,3 +156,5 @@ export default function Contacto() {
     </div>
   );
 }
+
+export default marketingOnly(Contacto);

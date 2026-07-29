@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import Head from 'next/head';
 import Link from 'next/link';
 import Image from 'next/image';
+import { marketingOnly } from './MarketingGate';
 
 const allArticles = [
   { slug: 'baremos-oficiales-bateria-riesgo-psicosocial', title: 'Baremos oficiales de la Bateria de Riesgo Psicosocial: Tablas 29 a 34', date: '2026-03-30', readTime: '8 min' },
@@ -26,7 +27,7 @@ interface BlogLayoutProps {
   children: React.ReactNode;
 }
 
-export default function BlogLayout({ title, description, slug, date, readTime, keywords, children }: BlogLayoutProps) {
+function BlogLayout({ title, description, slug, date, readTime, keywords, children }: BlogLayoutProps) {
   useEffect(() => {
     if (typeof window === 'undefined') return;
     if (sessionStorage.getItem('v_notified')) return;
@@ -200,3 +201,6 @@ export default function BlogLayout({ title, description, slug, date, readTime, k
     </div>
   );
 }
+
+// Envuelve a los 10 posts de una sola vez: todos usan BlogLayout como raiz.
+export default marketingOnly(BlogLayout);

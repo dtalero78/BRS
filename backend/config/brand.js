@@ -10,4 +10,12 @@
  */
 const BRAND_NAME = (process.env.BRAND_NAME || 'BRS Digital').trim();
 
-module.exports = { BRAND_NAME };
+/**
+ * Si la instancia tiene sitio comercial propio (landing, blog, legales).
+ * Espejo de `hasMarketingSite` en `frontend/config/brand.ts`. En `false`,
+ * `robots.txt` y `sitemap.xml` no deben invitar a indexar: la instancia es
+ * una app privada y el sitemap del repo apunta al dominio de BRS.
+ */
+const HAS_MARKETING_SITE = process.env.BRAND_HAS_MARKETING_SITE !== 'false';
+
+module.exports = { BRAND_NAME, HAS_MARKETING_SITE };

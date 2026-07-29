@@ -3,7 +3,7 @@ import { useRouter } from 'next/router';
 import Link from 'next/link';
 import Image from 'next/image';
 import Head from 'next/head';
-import { BRAND, logoBox } from '../config/brand';
+import { marketingOnly } from '../components/MarketingGate';
 
 /** Landing comercial. Solo se monta en marcas con `hasMarketingSite`. */
 function MarketingHome() {
@@ -901,48 +901,5 @@ function MarketingHome() {
   );
 }
 
-/**
- * Raíz de una instancia sin sitio comercial: entra directo al login.
- *
- * El `meta refresh` cubre el caso sin JS y evita el parpadeo; el efecto
- * respeta la sesión existente y manda a cada rol a su dashboard, igual que
- * hacía la landing.
- */
-function LoginRedirect() {
-  const router = useRouter();
 
-  useEffect(() => {
-    const token = localStorage.getItem('token');
-    const userData = localStorage.getItem('user');
-
-    if (token && userData) {
-      try {
-        const parsed = JSON.parse(userData);
-        if (parsed.role === 'admin') return void router.replace('/admin/dashboard');
-        if (parsed.role === 'evaluator') return void router.replace('/evaluator/dashboard');
-        if (parsed.role === 'participant') return void router.replace('/participant/questionnaires');
-      } catch (e) {
-        // Sesión corrupta: cae al login.
-      }
-    }
-
-    router.replace('/auth/login');
-  }, [router]);
-
-  return (
-    <>
-      <Head>
-        <title>{BRAND.name}</title>
-        <meta httpEquiv="refresh" content="0; url=/auth/login/" />
-        <meta name="robots" content="noindex, nofollow" />
-      </Head>
-      <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: BRAND.surfaceHub }}>
-        <Image src={BRAND.logo} alt={BRAND.name} {...logoBox(64)} priority className="h-16 w-auto animate-pulse" />
-      </div>
-    </>
-  );
-}
-
-export default function HomePage() {
-  return BRAND.hasMarketingSite ? <MarketingHome /> : <LoginRedirect />;
-}
+export default marketingOnly(MarketingHome);

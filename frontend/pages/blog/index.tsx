@@ -1,6 +1,7 @@
 import Head from 'next/head';
 import Link from 'next/link';
 import Image from 'next/image';
+import { marketingOnly } from '../../components/MarketingGate';
 
 const articles = [
   {
@@ -77,7 +78,7 @@ const articles = [
 
 const siteUrl = 'https://bateriariesgopsicosocial.com';
 
-export default function BlogIndex() {
+function BlogIndex() {
   const jsonLd = {
     '@context': 'https://schema.org',
     '@type': 'Blog',
@@ -198,3 +199,5 @@ export default function BlogIndex() {
     </div>
   );
 }
+
+export default marketingOnly(BlogIndex);

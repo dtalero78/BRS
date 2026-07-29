@@ -1,8 +1,9 @@
 import Head from 'next/head';
 import Link from 'next/link';
 import Image from 'next/image';
+import { marketingOnly } from '../components/MarketingGate';
 
-export default function Privacidad() {
+function Privacidad() {
   const siteUrl = 'https://bateriariesgopsicosocial.com';
   const pageTitle = 'Politica de Privacidad | BRS Digital';
   const pageDescription = 'Politica de privacidad de BRS Digital. Conoce como recopilamos, usamos y protegemos tus datos en nuestra plataforma de evaluacion de riesgo psicosocial en Colombia.';
@@ -191,3 +192,5 @@ export default function Privacidad() {
     </div>
   );
 }
+
+export default marketingOnly(Privacidad);
