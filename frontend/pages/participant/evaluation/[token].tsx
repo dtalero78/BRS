@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, ReactNode } from 'react';
 import { useRouter } from 'next/router';
 import toast from 'react-hot-toast';
 import { ClipboardList, Briefcase, HardHat, Home, Brain, Shield, FileText, CheckCircle2, LucideIcon } from 'lucide-react';
+import { BRAND } from '../../../config/brand';
 
 // Simple wrapper for participant pages (no auth required)
 function ParticipantLayout({ children }: { children: ReactNode }) {
@@ -9,7 +10,7 @@ function ParticipantLayout({ children }: { children: ReactNode }) {
     <div className="min-h-screen bg-gray-50">
       <header className="bg-white shadow-sm border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 py-3 flex items-center">
-          <img src="/logo.png" alt="BRS Digital" className="h-8 w-auto" />
+          <img src={BRAND.logo} alt={BRAND.name} className="h-8 w-auto" />
         </div>
       </header>
       <main>{children}</main>

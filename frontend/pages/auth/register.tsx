@@ -8,6 +8,7 @@ import { yupResolver } from '@hookform/resolvers/yup';
 import * as yup from 'yup';
 import toast from 'react-hot-toast';
 import { EyeIcon, EyeSlashIcon } from '@heroicons/react/24/outline';
+import { BRAND, logoBox } from '../../config/brand';
 
 const schema = yup.object({
   firstName: yup.string().required('Nombre es requerido'),
@@ -94,6 +95,7 @@ export default function RegisterPage() {
   return (
     <>
     <Head>
+      <title>{`Crear cuenta | ${BRAND.name}`}</title>
       <meta name="robots" content="noindex, nofollow" />
     </Head>
     <div className="min-h-screen flex">
@@ -102,7 +104,7 @@ export default function RegisterPage() {
       <div className="w-full lg:w-2/5 bg-white flex flex-col px-10 lg:px-14 py-10">
         {/* Logo */}
         <Link href="/" className="mb-10">
-          <Image src="/logo.png" alt="BRS Digital" width={210} height={60} className="h-[60px] w-auto" />
+          <Image src={BRAND.logo} alt={BRAND.name} {...logoBox(60)} className="h-[60px] w-auto" />
         </Link>
 
         {/* Form */}
@@ -163,14 +165,14 @@ export default function RegisterPage() {
               type="submit"
               disabled={isLoading}
               className="w-full rounded-full py-3 text-sm font-semibold text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed mt-2"
-              style={{ backgroundColor: '#0a2d4e' }}
+              style={{ backgroundColor: BRAND.accent }}
             >
               {isLoading ? 'Creando cuenta...' : 'Crear cuenta'}
             </button>
 
             <p className="text-center text-sm text-gray-500">
               ¿Ya tienes cuenta?{' '}
-              <Link href="/auth/login" className="font-semibold hover:underline" style={{ color: '#0a2d4e' }}>
+              <Link href="/auth/login" className="font-semibold hover:underline" style={{ color: BRAND.accent }}>
                 Iniciar sesión
               </Link>
             </p>
@@ -184,7 +186,7 @@ export default function RegisterPage() {
       </div>
 
       {/* Right: Visual panel with floating cards */}
-      <div className="hidden lg:flex lg:w-3/5 relative overflow-hidden" style={{ backgroundColor: '#e6f4fd' }}>
+      <div className="hidden lg:flex lg:w-3/5 relative overflow-hidden" style={{ backgroundColor: BRAND.surfaceHub }}>
 
         {/* Center: Psychologist photo */}
         <div className="absolute inset-0 flex items-end justify-center pointer-events-none" style={{ zIndex: 5 }}>

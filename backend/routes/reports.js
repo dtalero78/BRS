@@ -6,6 +6,7 @@ const { auth, getOwnedCompanyIds, isSuperAdmin } = require('../middleware/auth')
 const { drawPieChart, drawBarChart, drawHorizontalBarChart, drawGroupedBarChart, drawTable, createRiskSeries, drawDonutChart, drawSemicircleGauge, drawSimpleRiskBars, drawColorCodedRiskTable, drawRiskPrioritizationMatrix, drawSectionBanner, RISK_COLORS, RISK_ORDER, RISK_LABELS } = require('../utils/pdf-charts');
 const { aggregateDemographics, aggregateExtendedDemographics, aggregateResultsByForm, getAtRiskDimensions, aggregateStressTypology, buildRiskPrioritizationMatrix, aggregateResultsByArea, aggregateResultsByCargo, buildDemandasPorCargo, resolveFicha, sumCounts } = require('../utils/report-data-aggregator');
 const templates = require('../utils/report-templates');
+const { BRAND_NAME } = require('../config/brand');
 
 // ============================================================
 // INDIVIDUAL REPORT - PDF for a single participant
@@ -92,7 +93,7 @@ router.post('/individual', auth, async (req, res) => {
       .first();
     const evaluator = {
       email: evaluatorRow?.email || '',
-      fullName: evaluatorRow?.full_name || evaluatorRow?.email || 'Evaluador BRS Digital',
+      fullName: evaluatorRow?.full_name || evaluatorRow?.email || `Evaluador ${BRAND_NAME}`,
       title: evaluatorRow?.professional_title || 'Especialista en Psicología Ocupacional y Organizacional',
       license: evaluatorRow?.license_number || null,
       signatureImage: evaluatorRow?.signature_image || null,
@@ -268,7 +269,7 @@ router.post('/organizational', auth, async (req, res) => {
 
     const evaluatorObj = {
       email: evaluator?.email || '',
-      fullName: evaluator?.full_name || evaluator?.email || 'Evaluador BRS Digital',
+      fullName: evaluator?.full_name || evaluator?.email || `Evaluador ${BRAND_NAME}`,
       title: evaluator?.professional_title || 'Especialista en Psicología Ocupacional y Organizacional',
       license: evaluator?.license_number || null,
       signatureImage: evaluator?.signature_image || null,

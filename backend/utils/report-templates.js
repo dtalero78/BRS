@@ -2,6 +2,7 @@
  * Report Templates - Static content, dimension mappings, and intervention recommendations
  * for the organizational BRS report.
  */
+const { BRAND_NAME } = require('../config/brand');
 
 // ============================================================
 // DIMENSION & DOMAIN DISPLAY NAMES
@@ -674,7 +675,7 @@ function writeProcedimiento(doc, pageW) {
     doc.moveDown(0.5);
   };
 
-  p('El cuestionario utilizado fue La Batería de Riesgo Psicosocial, avalada por el Ministerio del Trabajo y la Universidad Javeriana para poder determinar el nivel de riesgo psicosocial a los que se encuentran expuestos los trabajadores. Esta herramienta fue aplicada de forma digital a través de la plataforma BRS Digital, garantizando la confidencialidad de las respuestas individuales.');
+  p(`El cuestionario utilizado fue La Batería de Riesgo Psicosocial, avalada por el Ministerio del Trabajo y la Universidad Javeriana para poder determinar el nivel de riesgo psicosocial a los que se encuentran expuestos los trabajadores. Esta herramienta fue aplicada de forma digital a través de la plataforma ${BRAND_NAME}, garantizando la confidencialidad de las respuestas individuales.`);
 
   p('Los resultados obtenidos se presentan organizados de la siguiente forma: Primero, un análisis general de los factores de riesgo intralaboral. Segundo, los resultados por dominio y dimensión, separados por tipo de formulario aplicado (Forma A y Forma B). Tercero, el análisis de los factores extralaborales. Cuarto, el análisis del nivel de estrés. Finalmente, se presenta el plan de acción sugerido con las recomendaciones de intervención.');
 }
@@ -796,7 +797,7 @@ function buildDefaultOrgTexts({ companyName = 'la organización', totalEvaluated
     metodologiaInstrumento: 'Para la medición de la percepción de riesgos psicosociales y de acuerdo con la Resolución 2764/2022, se utilizó la fase I de la batería de instrumentos diseñados por el Ministerio de la Protección Social, denominados Batería de Instrumentos para la Evaluación de Factores de Riesgo Psicosocial, (2010).',
     procedimiento: [
       'Para llevar a cabo la presente medición, se realizó una sensibilización a todos los colaboradores donde se especificó ampliamente el proceso a seguir, los instrumentos a emplear, la importancia de los resultados obtenidos y la confidencialidad de la información. Seguido a ello, se aplicó el consentimiento informado, donde los colaboradores autorizaron su participación voluntaria en el estudio y se clarificó desde el marco legal las condiciones éticas de la medición.',
-      'Luego de haberse realizado el proceso descrito, se aplicó la Batería para la Evaluación de Riesgo Psicosocial de la Universidad Javeriana - Ministerio de la Protección Social (2010), a través de la plataforma BRS Digital. Una vez consolidada la información se procede a la realización del informe general de la percepción de riesgo psicosocial.'
+      `Luego de haberse realizado el proceso descrito, se aplicó la Batería para la Evaluación de Riesgo Psicosocial de la Universidad Javeriana - Ministerio de la Protección Social (2010), a través de la plataforma ${BRAND_NAME}. Una vez consolidada la información se procede a la realización del informe general de la percepción de riesgo psicosocial.`
     ],
     criteriosInclusionExclusion: 'Para la medición de riesgo psicosocial se tuvieron en cuenta criterios de inclusión tales como: Que el trabajador se encontrara en la nómina de la empresa, que estuviera ejerciendo sus labores y que su vinculación laboral no fuera menor a 3 meses. Como criterios de exclusión, no se tuvieron en cuenta los trabajadores que se encontraran en licencia de maternidad, licencia por luto e incapacitados el día de la medición.',
     recomendaciones: [

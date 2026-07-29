@@ -8,6 +8,7 @@ import { yupResolver } from '@hookform/resolvers/yup';
 import * as yup from 'yup';
 import toast from 'react-hot-toast';
 import { EyeIcon, EyeSlashIcon } from '@heroicons/react/24/outline';
+import { BRAND, logoBox } from '../../config/brand';
 
 const schema = yup.object({
   email: yup.string().email('Email inválido').required('Email es requerido'),
@@ -65,6 +66,7 @@ export default function LoginPage() {
   return (
     <>
     <Head>
+      <title>{`Iniciar sesión | ${BRAND.name}`}</title>
       <meta name="robots" content="noindex, nofollow" />
     </Head>
     <div className="min-h-screen flex">
@@ -73,13 +75,13 @@ export default function LoginPage() {
       <div className="w-full lg:w-2/5 bg-white flex flex-col px-10 lg:px-14 py-10">
         {/* Logo */}
         <Link href="/" className="mb-12">
-          <Image src="/logo.png" alt="BRS Digital" width={210} height={60} className="h-[60px] w-auto" />
+          <Image src={BRAND.logo} alt={BRAND.name} {...logoBox(60)} className="h-[60px] w-auto" />
         </Link>
 
         {/* Form */}
         <div className="flex-1 flex flex-col justify-center max-w-sm">
           <h2 className="text-2xl font-bold text-gray-900 mb-1">Iniciar sesión</h2>
-          <p className="text-sm text-gray-500 mb-8">Accede a tu cuenta de BRS Digital</p>
+          <p className="text-sm text-gray-500 mb-8">Accede a tu cuenta de {BRAND.name}</p>
 
           <form className="space-y-5" onSubmit={handleSubmit(onSubmit)}>
             <div>
@@ -121,14 +123,14 @@ export default function LoginPage() {
               type="submit"
               disabled={isLoading}
               className="w-full rounded-full py-3 text-sm font-semibold text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              style={{ backgroundColor: '#0a2d4e' }}
+              style={{ backgroundColor: BRAND.accent }}
             >
               {isLoading ? 'Iniciando sesión...' : 'Iniciar sesión'}
             </button>
 
             <p className="text-center text-sm text-gray-500">
               ¿No tienes cuenta?{' '}
-              <Link href="/auth/register" className="font-semibold hover:underline" style={{ color: '#0a2d4e' }}>
+              <Link href="/auth/register" className="font-semibold hover:underline" style={{ color: BRAND.accent }}>
                 Registrarse gratis
               </Link>
             </p>
@@ -142,7 +144,7 @@ export default function LoginPage() {
       </div>
 
       {/* Right: Visual panel with floating cards */}
-      <div className="hidden lg:flex lg:w-3/5 relative overflow-hidden" style={{ backgroundColor: '#e6f4fd' }}>
+      <div className="hidden lg:flex lg:w-3/5 relative overflow-hidden" style={{ backgroundColor: BRAND.surfaceHub }}>
 
         {/* Center: Psychologist photo */}
         <div className="absolute inset-0 flex items-end justify-center pointer-events-none" style={{ zIndex: 5 }}>

@@ -1,13 +1,14 @@
 import { Html, Head, Main, NextScript } from 'next/document';
+import { BRAND } from '../config/brand';
 
 export default function Document() {
   return (
     <Html lang="es-CO">
       <Head>
         <meta charSet="utf-8" />
-        <meta name="theme-color" content="#0a2d4e" />
-        <link rel="icon" href="/favicon.ico" />
-        <link rel="apple-touch-icon" href="/logo.png" />
+        <meta name="theme-color" content={BRAND.accent} />
+        <link rel="icon" href={BRAND.favicon} />
+        <link rel="apple-touch-icon" href={BRAND.icon} />
         <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         {/* Google Analytics y Microsoft Clarity NO se cargan aqui (era global y

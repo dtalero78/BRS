@@ -1,6 +1,7 @@
 import { ReactNode, useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
+import { BRAND } from '../config/brand';
 import {
   HomeIcon,
   UserGroupIcon,
@@ -114,7 +115,7 @@ export default function Layout({ children, title }: LayoutProps) {
       }`}>
         <div className="flex items-center justify-between h-16 px-6 border-b border-gray-200">
           <a href="/" className="flex items-center">
-            <img src="/logo.png" alt="BRS Digital" className="h-8 w-auto" />
+            <img src={BRAND.logo} alt={BRAND.name} className="h-8 w-auto" />
           </a>
           <button
             className="lg:hidden"

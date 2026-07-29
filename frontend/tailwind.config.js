@@ -1,3 +1,33 @@
+/**
+ * Paletas por marca (white-label).
+ *
+ * La app usa ~400 clases `blue-*` de la paleta por defecto de Tailwind. En vez
+ * de reescribirlas una por una, cada marca sobreescribe la escala `blue`
+ * completa. `NEXT_PUBLIC_BRAND` se resuelve en build, y cada app de
+ * DigitalOcean compila por separado.
+ *
+ * Ojo: si la marca no está aquí, NO se toca `blue` y queda el azul por defecto
+ * de Tailwind — que es exactamente lo que ve producción (BRS) hoy.
+ */
+const BRAND_PALETTES = {
+  // Manual de Marca Shaddai: índigo #1334F1, medianoche #010D27, polvo #C9E0F2
+  shaddai: {
+    50: '#f0f5fd',
+    100: '#c9e0f2', // azul polvo (marca)
+    200: '#a9c4ee',
+    300: '#8aa5f8',
+    400: '#5876f6',
+    500: '#2e4ef3',
+    600: '#1334f1', // azul índigo (marca) — color de acción principal
+    700: '#0f27c2',
+    800: '#0c1d8e',
+    900: '#08145a',
+    950: '#010d27', // azul medianoche (marca)
+  },
+};
+
+const brandPalette = BRAND_PALETTES[process.env.NEXT_PUBLIC_BRAND];
+
 /** @type {import('tailwindcss').Config} */
 module.exports = {
   content: [
@@ -7,6 +37,7 @@ module.exports = {
   theme: {
     extend: {
       colors: {
+        ...(brandPalette ? { blue: brandPalette } : {}),
         primary: {
           50: '#eff6ff',
           100: '#dbeafe',

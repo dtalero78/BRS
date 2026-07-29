@@ -6,6 +6,7 @@ import {
   ArrowLeftIcon,
   ArrowRightOnRectangleIcon,
 } from '@heroicons/react/24/outline';
+import { BRAND, logoBox } from '../config/brand';
 
 interface User {
   id: number;
@@ -84,13 +85,13 @@ export default function FlowLayout({
   const paddingClass = isFullWidth ? 'px-6 lg:px-10' : 'px-4 sm:px-6';
 
   return (
-    <div className="min-h-screen" style={{ backgroundColor: isFullWidth ? '#f0f8ff' : '#e6f4fd' }}>
+    <div className="min-h-screen" style={{ backgroundColor: isFullWidth ? BRAND.surfaceData : BRAND.surfaceHub }}>
       {/* Top bar */}
       <header className={`flex items-center justify-between py-4 bg-white border-b border-gray-100 shadow-sm ${paddingClass}`}>
         {/* Left: Logo + optional Back */}
         <div className="flex items-center gap-5">
           <Link href="/" className="flex items-center">
-            <Image src="/logo.png" alt="BRS Digital" width={210} height={60} className="h-[60px] w-auto" />
+            <Image src={BRAND.logo} alt={BRAND.name} {...logoBox(60)} className="h-[60px] w-auto" />
           </Link>
           {showBack && (
             <Link
@@ -106,12 +107,12 @@ export default function FlowLayout({
         {/* Right: WhatsApp Help + User + Logout */}
         <div className="flex items-center gap-3">
           <div className="hidden sm:flex items-center gap-2">
-            <div className="h-8 w-8 rounded-full flex items-center justify-center text-sm font-semibold text-white" style={{ backgroundColor: '#0a2d4e' }}>
+            <div className="h-8 w-8 rounded-full flex items-center justify-center text-sm font-semibold text-white" style={{ backgroundColor: BRAND.accent }}>
               {user.email.charAt(0).toUpperCase()}
             </div>
           </div>
           <a
-            href="https://wa.me/573008021701"
+            href={`https://wa.me/${BRAND.supportWhatsApp}`}
             target="_blank"
             rel="noopener noreferrer"
             title="Ayuda por WhatsApp"
