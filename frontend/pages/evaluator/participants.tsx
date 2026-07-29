@@ -75,6 +75,11 @@ export default function EvaluatorParticipants() {
   const [editingParticipant, setEditingParticipant] = useState<Participant | null>(null);
   const [photoTarget, setPhotoTarget] = useState<Participant | null>(null);
   const [manualTarget, setManualTarget] = useState<Participant | null>(null);
+  // Alta de participante: 'form' = llenar el formulario a mano; 'photo' = subir
+  // la prueba escaneada y dejar que la IA cree la persona desde el encabezado.
+  const [newMode, setNewMode] = useState<'form' | 'photo'>('form');
+  // Evaluación elegida para el alta por foto/PDF (participante aún inexistente).
+  const [photoCreateEvaluationId, setPhotoCreateEvaluationId] = useState<number | null>(null);
 
   // WhatsApp selection state
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
@@ -616,6 +621,7 @@ export default function EvaluatorParticipants() {
               onClick={() => {
                 setEditingParticipant(null);
                 resetForm();
+                setNewMode('form');
                 setShowModal(true);
               }}
               className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
@@ -997,7 +1003,80 @@ export default function EvaluatorParticipants() {
               <h3 className="text-lg font-medium text-gray-900 text-center mb-4">
                 {editingParticipant ? 'Editar Participante' : 'Nuevo Participante'}
               </h3>
-              
+
+              {!editingParticipant && (
+                <div className="flex rounded-md border border-gray-200 p-1 bg-gray-50 mb-4">
+                  <button
+                    type="button"
+                    onClick={() => setNewMode('form')}
+                    className={`flex-1 px-3 py-1.5 text-sm font-medium rounded ${
+                      newMode === 'form' ? 'bg-white shadow text-blue-700' : 'text-gray-600 hover:text-gray-900'
+                    }`}
+                  >
+                    Llenar formulario
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setNewMode('photo')}
+                    className={`flex-1 px-3 py-1.5 text-sm font-medium rounded flex items-center justify-center gap-1 ${
+                      newMode === 'photo' ? 'bg-white shadow text-blue-700' : 'text-gray-600 hover:text-gray-900'
+                    }`}
+                  >
+                    <CameraIcon className="h-4 w-4" />
+                    Subir foto / PDF
+                  </button>
+                </div>
+              )}
+
+              {!editingParticipant && newMode === 'photo' ? (
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">
+                      Evaluación *
+                    </label>
+                    <select
+                      value={formData.evaluationId}
+                      onChange={(e) => setFormData({ ...formData, evaluationId: e.target.value })}
+                      className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                    >
+                      <option value="">Seleccionar evaluación</option>
+                      {evaluations.filter(e => e.status === 'active').map(evaluation => (
+                        <option key={evaluation.id} value={evaluation.id}>
+                          {evaluation.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="bg-blue-50 border border-blue-200 rounded-md p-3 text-sm text-blue-900">
+                    La IA leerá el documento y el nombre del encabezado del formulario y creará
+                    el participante automáticamente. Podrás revisar y corregir los datos antes de guardar.
+                    Ideal para baterías completas escaneadas (ficha + intralaboral + extralaboral + estrés).
+                  </div>
+                  <div className="flex justify-end gap-2 pt-2 border-t">
+                    <button
+                      type="button"
+                      onClick={() => setShowModal(false)}
+                      className="px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!formData.evaluationId}
+                      onClick={() => {
+                        const evalId = Number(formData.evaluationId);
+                        if (!evalId) return;
+                        setShowModal(false);
+                        setPhotoCreateEvaluationId(evalId);
+                      }}
+                      className="inline-flex items-center gap-2 px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50"
+                    >
+                      <CameraIcon className="h-4 w-4" />
+                      Continuar a subir archivo
+                    </button>
+                  </div>
+                </div>
+              ) : (
               <form onSubmit={handleSubmit} className="space-y-4 max-h-96 overflow-y-auto">
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div>
@@ -1182,6 +1261,7 @@ export default function EvaluatorParticipants() {
                   </button>
                 </div>
               </form>
+              )}
             </div>
           </div>
         </div>
@@ -1398,6 +1478,18 @@ export default function EvaluatorParticipants() {
           // intralaboral + extralaboral + estrés). Preseleccionar la forma del
           // participante hacía que solo se digitalizara ese cuestionario.
           // El evaluador puede forzar un tipo concreto desde el selector del modal.
+          defaultQuestionnaireType="auto"
+          onSuccess={() => fetchParticipants()}
+        />
+      )}
+
+      {/* Alta de participante por foto/PDF: sin participantId, la IA crea la
+          persona desde el documento/nombre detectados en el encabezado. */}
+      {photoCreateEvaluationId !== null && (
+        <PhotoImportModal
+          open={photoCreateEvaluationId !== null}
+          onClose={() => setPhotoCreateEvaluationId(null)}
+          evaluationId={photoCreateEvaluationId}
           defaultQuestionnaireType="auto"
           onSuccess={() => fetchParticipants()}
         />
