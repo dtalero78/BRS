@@ -65,6 +65,8 @@ interface Evaluation {
 
 export default function EvaluatorParticipants() {
   const [participants, setParticipants] = useState<Participant[]>([]);
+  // Total real segun el backend, no el tamano del lote cargado.
+  const [totalParticipants, setTotalParticipants] = useState(0);
   const [evaluations, setEvaluations] = useState<Evaluation[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -128,31 +130,53 @@ export default function EvaluatorParticipants() {
       const token = localStorage.getItem('token');
       
       // Construir parámetros de query
-      const queryParams = new URLSearchParams();
-      queryParams.append('limit', '200');
+      // El backend topa en 200 por pagina (parsePagination en routes/participants.js).
+      // Con una sola peticion quedaban invisibles los participantes por encima de
+      // 200, y las 4 tarjetas de estadistica —que se calculan sobre este array—
+      // mostraban el tamano de la pagina en vez del total.
+      //
+      // Se pide la pagina 1 para conocer el total y el resto en paralelo, en vez
+      // de en cadena: con 703 participantes son 4 peticiones, y secuenciales
+      // sumaban varios segundos de espera al abrir la pantalla.
+      const PAGE_SIZE = 200;
+      const MAX_PAGINAS = 50; // tope de seguridad: 10.000 participantes
 
-      if (statusFilter !== 'all') {
-        queryParams.append('status', statusFilter);
+      const construirUrl = (pagina: number) => {
+        const qp = new URLSearchParams();
+        qp.append('limit', String(PAGE_SIZE));
+        qp.append('page', String(pagina));
+        if (statusFilter !== 'all') qp.append('status', statusFilter);
+        if (evaluationFilter !== 'all') qp.append('evaluationId', evaluationFilter);
+        return `/api/participants?${qp.toString()}`;
+      };
+
+      const pedir = async (pagina: number) => {
+        const res = await fetch(construirUrl(pagina), {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.json();
+      };
+
+      const primera = await pedir(1);
+      // El total autoritativo lo da el backend; no se infiere del array.
+      const total: number = primera.pagination?.total ?? (primera.participants || []).length;
+      const acumulados: Participant[] = [...(primera.participants || [])];
+
+      const paginasRestantes = Math.min(
+        Math.ceil(total / PAGE_SIZE) - 1,
+        MAX_PAGINAS - 1
+      );
+
+      if (paginasRestantes > 0) {
+        const lotes = await Promise.all(
+          Array.from({ length: paginasRestantes }, (_, i) => pedir(i + 2))
+        );
+        lotes.forEach(lote => acumulados.push(...(lote.participants || [])));
       }
 
-      if (evaluationFilter !== 'all') {
-        queryParams.append('evaluationId', evaluationFilter);
-      }
-
-      const url = `/api/participants?${queryParams.toString()}`;
-      
-      const response = await fetch(url, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        setParticipants(data.participants || []);
-      } else {
-        toast.error('Error al cargar participantes');
-      }
+      setParticipants(acumulados);
+      setTotalParticipants(total);
     } catch (error) {
       console.error('Error:', error);
       toast.error('Error de conexión');
@@ -646,7 +670,7 @@ export default function EvaluatorParticipants() {
                       Total Participantes
                     </dt>
                     <dd className="text-lg font-medium text-gray-900">
-                      {participants?.length || 0}
+                      {totalParticipants || participants?.length || 0}
                     </dd>
                   </dl>
                 </div>
