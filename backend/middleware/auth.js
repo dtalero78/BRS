@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
 const db = require('../config/database');
+const { SHARED_WORKSPACE } = require('../config/brand');
 
 const auth = async (req, res, next) => {
   try {
@@ -59,10 +60,27 @@ const authorize = (...roles) => {
   };
 };
 
-// Helper: get company IDs owned by an evaluator
+// Helper: get company IDs owned by an evaluator.
+//
+// En instancias con SHARED_WORKSPACE (un solo equipo, ej. un licenciatario)
+// el aislamiento por creador no aplica: se devuelven todas las empresas. Es
+// el unico punto por el que pasan los ~40 filtros de ownership de las rutas,
+// asi que basta con relajarlo aqui.
 async function getOwnedCompanyIds(userId) {
-  const rows = await db('companies').where('created_by', userId).select('id');
+  const query = db('companies').select('id');
+  if (!SHARED_WORKSPACE) query.where('created_by', userId);
+  const rows = await query;
   return rows.map(r => r.id);
+}
+
+// Helper: si un evaluador puede administrar (editar/borrar) una empresa.
+// El admin pasa siempre; el evaluador solo si la creo, salvo en modo
+// compartido.
+function canManageCompany(user, company) {
+  if (!user || !company) return false;
+  if (user.role === 'admin') return true;
+  if (SHARED_WORKSPACE) return true;
+  return company.created_by === user.userId;
 }
 
 // Super-admin: role='admin' O email en la allowlist configurada por entorno.
@@ -88,4 +106,4 @@ const requireSuperAdmin = (req, res, next) => {
   next();
 };
 
-module.exports = { auth, authorize, getOwnedCompanyIds, isSuperAdmin, requireSuperAdmin, SUPER_ADMIN_EMAILS };
+module.exports = { auth, authorize, getOwnedCompanyIds, canManageCompany, isSuperAdmin, requireSuperAdmin, SUPER_ADMIN_EMAILS, SHARED_WORKSPACE };

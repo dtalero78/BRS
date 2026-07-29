@@ -17,6 +17,7 @@ const crypto = require('crypto');
 const db = require('../config/database');
 const apiKeyAuth = require('../middleware/api-key');
 const { isSafeWebhookUrl } = require('../services/webhook-emitter');
+const { SHARED_WORKSPACE } = require('../config/brand');
 
 const TOKEN_TTL_DAYS = 90;
 
@@ -96,10 +97,19 @@ router.post('/participant', apiKeyAuth, async (req, res) => {
     // El nombre NO es unico: sin el filtro de ownership, un name repetido podia
     // colocar al participante en la empresa de OTRO evaluador (fuga cross-tenant).
     // No la auto-creamos para evitar typos del caller.
-    const company = await db('companies')
-      .where('created_by', evaluator.id)
-      .whereRaw('LOWER(name) = ?', [resolvedCompanyName.toLowerCase()])
-      .first();
+    //
+    // En modo compartido no hay cross-tenant que proteger (toda la instancia es
+    // una sola organizacion), pero el nombre sigue sin ser unico: si empata con
+    // mas de una empresa se rechaza en vez de elegir una al azar.
+    const companyQuery = db('companies')
+      .whereRaw('LOWER(name) = ?', [resolvedCompanyName.toLowerCase()]);
+    if (!SHARED_WORKSPACE) companyQuery.where('created_by', evaluator.id);
+    const matches = await companyQuery.limit(2);
+
+    if (matches.length > 1) {
+      return res.status(409).json({ error: `Ambiguous company name: ${resolvedCompanyName}` });
+    }
+    const company = matches[0];
     if (!company) {
       return res.status(404).json({ error: `Company not found for evaluator ${resolvedEvaluatorEmail}: ${resolvedCompanyName}` });
     }

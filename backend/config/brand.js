@@ -18,4 +18,21 @@ const BRAND_NAME = (process.env.BRAND_NAME || 'BRS Digital').trim();
  */
 const HAS_MARKETING_SITE = process.env.BRAND_HAS_MARKETING_SITE !== 'false';
 
-module.exports = { BRAND_NAME, HAS_MARKETING_SITE };
+/**
+ * Espacio de trabajo compartido.
+ *
+ * BRS es un SaaS multi-evaluador: cada psicólogo solo ve las empresas que él
+ * creó (`companies.created_by`). Una instancia licenciataria es lo contrario
+ * —un solo equipo de una sola consultora— y ahí ese aislamiento estorba: los
+ * usuarios necesitan ver todas las empresas y evaluaciones de la instancia.
+ *
+ * En `true`, el ownership deja de filtrar. Sigue guardándose `created_by`
+ * como rastro de quién creó cada cosa; simplemente no restringe.
+ *
+ * OJO: activarlo solo tiene sentido si TODOS los usuarios de la instancia
+ * pertenecen a la misma organización. En una instancia con evaluadores de
+ * empresas distintas, esto los deja verse entre sí.
+ */
+const SHARED_WORKSPACE = process.env.BRAND_SHARED_WORKSPACE === 'true';
+
+module.exports = { BRAND_NAME, HAS_MARKETING_SITE, SHARED_WORKSPACE };

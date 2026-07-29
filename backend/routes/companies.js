@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { auth, authorize, getOwnedCompanyIds } = require('../middleware/auth');
+const { auth, authorize, getOwnedCompanyIds, canManageCompany, SHARED_WORKSPACE } = require('../middleware/auth');
 const db = require('../config/database');
 
 // ============================================================
@@ -10,9 +10,9 @@ const db = require('../config/database');
 // Get evaluator's companies
 router.get('/mine', auth, authorize('evaluator'), async (req, res) => {
   try {
-    const companies = await db('companies')
-      .where('created_by', req.user.userId)
-      .orderBy('created_at', 'desc')
+    const companiesQuery = db('companies').orderBy('created_at', 'desc');
+    if (!SHARED_WORKSPACE) companiesQuery.where('created_by', req.user.userId);
+    const companies = await companiesQuery
       .select('id', 'name', 'nit', 'contact_email', 'contact_phone', 'active', 'created_at', 'updated_at');
 
     res.json({
@@ -76,7 +76,7 @@ router.put('/:id', auth, authorize('admin', 'evaluator'), async (req, res) => {
       return res.status(404).json({ error: 'Empresa no encontrada' });
     }
 
-    if (req.user.role === 'evaluator' && existingCompany.created_by !== req.user.userId) {
+    if (!canManageCompany(req.user, existingCompany)) {
       return res.status(403).json({ error: 'No autorizado' });
     }
 
@@ -123,7 +123,7 @@ router.delete('/:id', auth, authorize('admin', 'evaluator'), async (req, res) =>
       return res.status(404).json({ error: 'Empresa no encontrada' });
     }
 
-    if (req.user.role === 'evaluator' && existingCompany.created_by !== req.user.userId) {
+    if (!canManageCompany(req.user, existingCompany)) {
       return res.status(403).json({ error: 'No autorizado' });
     }
 

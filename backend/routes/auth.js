@@ -4,7 +4,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const Joi = require('joi');
 const db = require('../config/database');
-const { auth } = require('../middleware/auth');
+const { auth, SHARED_WORKSPACE } = require('../middleware/auth');
 
 // Validation schemas
 const registerSchema = Joi.object({
@@ -123,10 +123,10 @@ router.post('/login', async (req, res) => {
     // Get evaluator's companies
     let companies = [];
     if (user.role === 'evaluator') {
-      companies = await db('companies')
-        .where('created_by', user.id)
-        .select('id', 'name', 'nit')
-        .orderBy('name');
+      const companiesQuery = db('companies').select('id', 'name', 'nit').orderBy('name');
+      // En modo compartido el evaluador ve todas las empresas de la instancia.
+      if (!SHARED_WORKSPACE) companiesQuery.where('created_by', user.id);
+      companies = await companiesQuery;
     }
 
     // Generate JWT (no companyId - evaluators manage multiple companies)
@@ -168,10 +168,9 @@ router.get('/profile', auth, async (req, res) => {
     }
 
     // Get owned companies
-    const companies = await db('companies')
-      .where('created_by', user.id)
-      .select('id', 'name', 'nit')
-      .orderBy('name');
+    const companiesQuery = db('companies').select('id', 'name', 'nit').orderBy('name');
+    if (!SHARED_WORKSPACE) companiesQuery.where('created_by', user.id);
+    const companies = await companiesQuery;
 
     res.json({
       id: user.id,
