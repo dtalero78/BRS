@@ -157,13 +157,17 @@ export default function PhotoImportModal({
     return edits;
   };
 
-  const handlePreview = async () => {
+  const handlePreview = async (modeOverride?: SelectMode) => {
     if (files.length === 0) return toast.error('Selecciona al menos un archivo.');
+    // Permite re-analizar en otro modo (p. ej. el boton "detectar toda la
+    // bateria" desde el preview) sin depender del setState asincrono.
+    const mode = modeOverride ?? selectedMode;
+    if (modeOverride && modeOverride !== selectedMode) setSelectedMode(modeOverride);
     setPreviewing(true);
     try {
       const token = localStorage.getItem('token');
       const fd = new FormData();
-      fd.append('questionnaireType', selectedMode);
+      fd.append('questionnaireType', mode);
       if (participantId) fd.append('participantId', String(participantId));
       files.forEach(f => fd.append('images', f));
 
@@ -419,7 +423,7 @@ export default function PhotoImportModal({
                 Cancelar
               </button>
               <button
-                onClick={handlePreview}
+                onClick={() => handlePreview()}
                 disabled={previewing || files.length === 0}
                 className="px-4 py-2 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
               >
@@ -488,6 +492,30 @@ export default function PhotoImportModal({
                 </>
               )}
             </div>
+
+            {/* Red de seguridad: en modo de un solo cuestionario, el archivo casi
+                siempre trae la bateria completa (ficha + intra + extra + estres).
+                Se ofrece detectar todo con un clic para evitar el error tipico de
+                importar solo un cuestionario. */}
+            {preview.mode !== 'auto' && (
+              <div className="px-5 py-3 bg-blue-50 border-b flex items-start gap-3">
+                <SparklesIcon className="h-5 w-5 text-blue-600 flex-shrink-0 mt-0.5" />
+                <div className="flex-1 text-sm text-blue-900">
+                  <b>Estás leyendo un solo cuestionario ({SHORT_LABELS[activeTab as TabKey] || activeTab}).</b>{' '}
+                  Solo se importará ese cuestionario; la ficha de datos y los demás
+                  cuestionarios del archivo se ignoran. Si este PDF trae la batería completa,
+                  detéctala toda de una vez.
+                </div>
+                <button
+                  onClick={() => handlePreview('auto')}
+                  disabled={previewing}
+                  className="flex-shrink-0 inline-flex items-center gap-1 px-3 py-1.5 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
+                >
+                  <SparklesIcon className="h-4 w-4" />
+                  {previewing ? 'Detectando…' : 'Detectar toda la batería'}
+                </button>
+              </div>
+            )}
 
             {((activeTypeData?.warnings?.length || 0) > 0 || (preview.warnings?.length || 0) > 0) && (
               <div className="px-5 py-2 bg-amber-50 border-b text-sm text-amber-900">
