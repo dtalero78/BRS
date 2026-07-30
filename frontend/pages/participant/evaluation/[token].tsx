@@ -61,6 +61,18 @@ interface ParticipantData {
   formType: 'A' | 'B';
 }
 
+// IDs del frontend → questionnaire_type de la base. Se usa tanto al guardar
+// respuestas como al verificar el rostro: la verificación facial es POR
+// cuestionario y el backend la registra con este nombre.
+const QUESTIONNAIRE_TYPE_MAP: { [key: string]: string } = {
+  'ficha-datos': 'ficha_datos',
+  'forma-a': 'intralaboral_a',
+  'forma-b': 'intralaboral_b',
+  'extralaboral': 'extralaboral',
+  'estres': 'estres',
+  'coping': 'coping',
+};
+
 interface EvaluationData {
   id: string;
   name: string;
@@ -92,15 +104,25 @@ const ParticipantEvaluationPage = () => {
 
   // Verificación facial (opt-in por instancia: FACE_VERIFICATION_ENABLED en el
   // backend). Si `faceRequired` es false todo este bloque es inerte y el flujo
-  // es el de siempre. Es BLOQUEANTE: sin `faceVerified` no se llega a los
-  // cuestionarios, y el backend rechaza los POST de respuestas igualmente.
+  // es el de siempre. Es BLOQUEANTE y va POR CUESTIONARIO: se pide la cara al
+  // entrar a cada formulario que aún no esté verificado, y el backend rechaza
+  // los POST de respuestas de un cuestionario sin su verificación.
   const [faceRequired, setFaceRequired] = useState(false);
   const [faceAvailable, setFaceAvailable] = useState(true);
   const [faceEnrolled, setFaceEnrolled] = useState(false);
-  const [faceVerified, setFaceVerified] = useState(false);
+  // Cuestionarios verificados EN ESTA SESIÓN. Arranca vacío en cada carga de
+  // página a propósito: si se sembrara con las verificaciones viejas del
+  // servidor, quien abandona un cuestionario a medias y vuelve más tarde
+  // entraría sin mostrar la cara.
+  const [verifiedQuestionnaires, setVerifiedQuestionnaires] = useState<string[]>([]);
+  // Cuestionario que el participante quiere abrir y que está esperando su selfie.
+  const [pendingQuestionnaireId, setPendingQuestionnaireId] = useState<string | null>(null);
   const [faceBusy, setFaceBusy] = useState(false);
   const [faceIssues, setFaceIssues] = useState<string[]>([]);
   const [faceFailed, setFaceFailed] = useState(false);
+
+  const isFaceVerifiedFor = (questionnaireId: string) =>
+    verifiedQuestionnaires.includes(QUESTIONNAIRE_TYPE_MAP[questionnaireId]);
 
   // Auto-save timeout ref for debouncing
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -197,7 +219,6 @@ const ParticipantEvaluationPage = () => {
           setFaceRequired(!!faceData.required);
           setFaceAvailable(faceData.available !== false);
           setFaceEnrolled(!!faceData.enrolled);
-          setFaceVerified(!!faceData.verified);
         }
       } catch (faceErr) {
         // Un fallo consultando el estado no debe tumbar la carga de la batería.
@@ -226,11 +247,28 @@ const ParticipantEvaluationPage = () => {
   };
 
   /**
-   * Envía la selfie al backend. El backend decide solo si es enrolamiento
-   * (primer ingreso) o verificación contra la referencia ya guardada.
+   * Punto de entrada a un cuestionario desde el hub. Si la instancia exige
+   * verificación facial y este formulario todavía no la tiene, primero se pide
+   * la selfie; el cuestionario se carga recién cuando la cara coincide.
+   */
+  const startQuestionnaire = (questionnaireId: string) => {
+    if (faceRequired && !isFaceVerifiedFor(questionnaireId)) {
+      setFaceIssues([]);
+      setFaceFailed(false);
+      setPendingQuestionnaireId(questionnaireId);
+      return;
+    }
+    loadQuestionnaire(questionnaireId);
+  };
+
+  /**
+   * Envía la selfie al backend, atada al cuestionario que se va a abrir. El
+   * backend decide solo si es enrolamiento (primera vez, sin referencia) o
+   * verificación contra la referencia ya guardada.
    */
   const submitFacePhoto = async (photo: string) => {
-    if (!token) return;
+    if (!token || !pendingQuestionnaireId) return;
+    const questionnaireId = pendingQuestionnaireId;
     setFaceBusy(true);
     setFaceIssues([]);
     setFaceFailed(false);
@@ -239,7 +277,7 @@ const ParticipantEvaluationPage = () => {
       const response = await fetch(`/api/participant-access/${token}/face`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ photo })
+        body: JSON.stringify({ photo, questionnaireType: QUESTIONNAIRE_TYPE_MAP[questionnaireId] })
       });
       const data = await response.json();
 
@@ -253,16 +291,20 @@ const ParticipantEvaluationPage = () => {
 
       if (data.verified) {
         setFaceEnrolled(true);
-        setFaceVerified(true);
+        setVerifiedQuestionnaires(prev => [...prev, QUESTIONNAIRE_TYPE_MAP[questionnaireId]]);
+        setPendingQuestionnaireId(null);
         toast.success(
           data.mode === 'enroll'
             ? 'Identidad registrada. Ya puedes continuar.'
             : 'Identidad verificada.'
         );
-        // Si un guardado se cayó por verificación vencida, se reintenta ahora.
+        // Si un guardado se cayó porque faltaba la verificación, se reintenta
+        // ahora; si no, se abre el cuestionario que el participante pidió.
         if (pendingSaveRef.current) {
           pendingSaveRef.current = false;
           saveResponsesWithRetry();
+        } else {
+          loadQuestionnaire(questionnaireId);
         }
         return;
       }
@@ -544,14 +586,18 @@ const ParticipantEvaluationPage = () => {
     try {
       await saveResponses(responsesToSave);
     } catch (error: any) {
-      // Verificación facial vencida a mitad del cuestionario: no es un fallo
-      // transitorio, reintentar solo gastaría los 3 intentos para terminar
-      // culpando a la conexión. Se devuelve al participante a la pantalla de
-      // selfie; sus respuestas siguen en memoria y se reguardan al verificar.
+      // El backend rechazó el guardado por falta de verificación de ESTE
+      // cuestionario (p. ej. el evaluador reinició el registro facial a mitad
+      // de camino). No es un fallo transitorio: reintentar solo gastaría los 3
+      // intentos para terminar culpando a la conexión. Se devuelve al
+      // participante a la pantalla de selfie; sus respuestas siguen en memoria
+      // y se reguardan al verificar.
       if (error?.faceVerificationRequired) {
+        const tipo = QUESTIONNAIRE_TYPE_MAP[currentQuestionnaire?.type || ''];
         pendingSaveRef.current = true;
         setFaceRequired(true);
-        setFaceVerified(false);
+        setVerifiedQuestionnaires(prev => prev.filter(t => t !== tipo));
+        if (currentQuestionnaire) setPendingQuestionnaireId(currentQuestionnaire.type);
         setSaveState('idle');
         toast('Por seguridad debemos verificar tu identidad otra vez.', { icon: '🔒' });
         return;
@@ -594,14 +640,7 @@ const ParticipantEvaluationPage = () => {
     setSaveState('saving');
 
     try {
-      const questionnaireTypeMap: {[key: string]: string} = {
-        'ficha-datos': 'ficha_datos',
-        'forma-a': 'intralaboral_a',
-        'forma-b': 'intralaboral_b',
-        'extralaboral': 'extralaboral',
-        'estres': 'estres',
-        'coping': 'coping'
-      };
+      const questionnaireTypeMap = QUESTIONNAIRE_TYPE_MAP;
 
       const questionsData = getAllQuestions();
       const formattedResponses = Object.entries(responsesToSave).map(([key, value]) => {
@@ -979,12 +1018,15 @@ const ParticipantEvaluationPage = () => {
   }
 
   // ---------------------------------------------------------------------------
-  // Gate de verificación facial (bloqueante).
-  // Va ANTES de la vista de cuestionario y del hub: sin verificar no se llega a
-  // ninguna de las dos. El backend aplica el mismo bloqueo en POST /responses,
-  // así que esto es la cara visible de la regla, no la regla misma.
+  // Gate de verificación facial (bloqueante), UNA POR CUESTIONARIO.
+  // Se interpone entre el hub y el cuestionario que el participante acaba de
+  // elegir: no se carga hasta que la cara coincide. El backend aplica el mismo
+  // bloqueo en POST /responses contra el questionnaire_type, así que esto es la
+  // cara visible de la regla, no la regla misma.
   // ---------------------------------------------------------------------------
-  if (faceRequired && !faceVerified) {
+  if (faceRequired && pendingQuestionnaireId) {
+    const nombreCuestionario =
+      availableQuestionnaires.find(q => q.id === pendingQuestionnaireId)?.name || 'este cuestionario';
     // Módulo prendido pero mal configurado (sin credenciales de AWS). Se falla
     // cerrado a propósito: dejar pasar sin verificar anularía en silencio el
     // control que la empresa contrató.
@@ -1011,14 +1053,22 @@ const ParticipantEvaluationPage = () => {
       <ParticipantLayout>
         <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 py-8">
           <div className="max-w-md mx-auto px-4">
+            <button
+              onClick={() => setPendingQuestionnaireId(null)}
+              className="mb-4 flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700"
+            >
+              <ChevronLeft className="w-4 h-4" />
+              Volver
+            </button>
+
             <div className="mb-6">
               <h1 className="text-2xl font-bold text-gray-900 mb-1">
-                Hola, {participant.firstName}
+                {esEnrolamiento ? `Hola, ${participant.firstName}` : 'Verifica tu identidad'}
               </h1>
+              {/* Se nombra el cuestionario: la cara se pide en cada uno, y sin
+                  decir para cuál el participante cree que es un error repetido. */}
               <p className="text-gray-500">
-                {esEnrolamiento
-                  ? 'Antes de empezar, registra tu rostro'
-                  : 'Verifica tu identidad para continuar'}
+                Para continuar con <span className="font-medium text-gray-700">{nombreCuestionario}</span>
               </p>
             </div>
 
@@ -1026,14 +1076,14 @@ const ParticipantEvaluationPage = () => {
               <div className="mb-4 flex items-center gap-2 text-gray-700">
                 <ScanFace size={20} className="text-blue-600" />
                 <h2 className="text-base font-semibold">
-                  {esEnrolamiento ? 'Registra tu rostro' : 'Verifica tu identidad'}
+                  {esEnrolamiento ? 'Registra tu rostro' : 'Confirma que eres tú'}
                 </h2>
               </div>
 
               <p className="mb-5 text-sm text-gray-500">
                 {esEnrolamiento
-                  ? 'Mira a la cámara y toma una foto de tu rostro. La usaremos para confirmar que eres tú quien responde la batería. Busca buena luz y quítate gafas oscuras o gorra.'
-                  : 'Mira a la cámara y toma una foto. Confirmaremos que eres la misma persona que registró el rostro al inicio.'}
+                  ? 'Mira a la cámara y toma una foto de tu rostro. La usaremos para confirmar que eres tú quien responde cada cuestionario de la batería. Busca buena luz y quítate gafas oscuras o gorra.'
+                  : 'Mira a la cámara y toma una foto. Te la pedimos al empezar cada cuestionario para confirmar que sigues siendo tú quien responde.'}
               </p>
 
               {/* Problemas de calidad de la foto: son accionables, se listan tal cual */}
@@ -1524,7 +1574,7 @@ const ParticipantEvaluationPage = () => {
                     return (
                       <button
                         key={q.id}
-                        onClick={() => !isDone && loadQuestionnaire(q.id)}
+                        onClick={() => !isDone && startQuestionnaire(q.id)}
                         disabled={isDone}
                         aria-disabled={isDone}
                         className={`group w-full flex items-center text-left border-2 rounded-2xl p-4 sm:p-5 transition-all duration-200 ${

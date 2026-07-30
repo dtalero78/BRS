@@ -12,7 +12,6 @@ const {
   validateFaceImage,
   compareFaces,
   FACE_MATCH_THRESHOLD,
-  FACE_SESSION_MINUTES,
 } = require('../utils/rekognition');
 
 // ---------------------------------------------------------------------------
@@ -38,10 +37,11 @@ async function findPeByToken(token) {
     .first();
 }
 
-async function logFaceVerification({ peId, mode, verified, score, issues, capturedPhoto, ip }) {
+async function logFaceVerification({ peId, questionnaireType, mode, verified, score, issues, capturedPhoto, ip }) {
   try {
     await db('face_verifications').insert({
       participant_evaluation_id: peId,
+      questionnaire_type: questionnaireType || null,
       mode,
       verified,
       score: score == null ? null : Math.round(score * 100) / 100,
@@ -56,23 +56,27 @@ async function logFaceVerification({ peId, mode, verified, score, issues, captur
 }
 
 /**
- * ¿Este PE tiene una verificación exitosa vigente?
+ * ¿El participante ya mostró la cara para ESTE cuestionario?
  *
- * El participante se verifica una vez por sesión y responde varios
- * cuestionarios seguidos; se le vuelve a pedir selfie pasada la ventana
- * (FACE_SESSION_MINUTES). Esto es lo que hace cumplible el bloqueo en el
- * backend sin inventar un segundo token de sesión.
+ * Una verificación por formulario, sin ventana de tiempo. La regla anterior era
+ * temporal (una cada 4h) y resultó inútil: la batería completa toma 20-40 min,
+ * o sea que cabía entera en una sola ventana y la cara se pedía una única vez
+ * al principio. Atarla al cuestionario da 5 comprobaciones por batería, siempre
+ * en el mismo punto y sin interrumpir a mitad de una pregunta.
+ *
+ * Es lo que hace cumplible el bloqueo desde el backend: sin el questionnaire_type
+ * en la bitácora, un POST directo a /responses reusaría la verificación de otro
+ * cuestionario.
  */
-async function hasValidFaceVerification(peId) {
-  const since = new Date(Date.now() - FACE_SESSION_MINUTES * 60 * 1000);
+async function hasVerifiedFaceFor(peId, questionnaireType) {
   const row = await db('face_verifications')
     .where('participant_evaluation_id', peId)
+    .where('questionnaire_type', questionnaireType)
     .where('verified', true)
-    .where('created_at', '>', since)
-    .orderBy('created_at', 'desc')
     .first();
   return !!row;
 }
+
 
 /**
  * GET /:token/face-status → qué debe mostrar el frontend antes de dejar responder.
@@ -98,11 +102,16 @@ router.get('/:token/face-status', async (req, res) => {
       return res.json({ required: true, available: false, enrolled: false, verified: false });
     }
 
+    // No se devuelve qué cuestionarios ya están verificados a propósito: el
+    // frontend pide la cara al entrar a CADA cuestionario en cada sesión. Si
+    // recordara las verificaciones viejas, quien abandona un cuestionario a
+    // medias y vuelve después entraría sin mostrar la cara. El guard del
+    // backend (una verificación por questionnaire_type) es la red de seguridad
+    // contra POST directos, no el criterio de cuándo preguntar.
     res.json({
       required: true,
       available: true,
       enrolled: !!pe.face_reference_photo,
-      verified: await hasValidFaceVerification(pe.id),
     });
   } catch (error) {
     console.error('Face status error:', error);
@@ -119,7 +128,10 @@ router.get('/:token/face-status', async (req, res) => {
  */
 const faceLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 12, // suficiente para reintentos legítimos por luz/encuadre
+  // 5 cuestionarios = 5 verificaciones legítimas por batería, más reintentos
+  // por luz/encuadre. Con el límite viejo (12, pensado para 1 sola verificación)
+  // un participante rápido con un par de reintentos se bloqueaba a sí mismo.
+  max: 25,
   keyGenerator: (req) => req.params.token,
   message: { error: 'Demasiados intentos de verificación. Espera unos minutos e intenta de nuevo.' },
   // `ip: false` porque la clave es el token, no una IP: sin esto la librería
@@ -143,9 +155,14 @@ router.post('/:token/face', faceLimiter, async (req, res) => {
       return res.status(404).json({ error: 'Verificación facial no habilitada' });
     }
 
-    const { photo } = req.body || {};
+    const { photo, questionnaireType } = req.body || {};
     if (typeof photo !== 'string' || photo.length < 100) {
       return res.status(400).json({ error: 'Foto inválida' });
+    }
+    // La verificación es POR cuestionario: sin saber cuál, no se puede registrar
+    // ni exigir después en el guard.
+    if (!VALID_QUESTIONNAIRE_TYPES.includes(questionnaireType)) {
+      return res.status(400).json({ error: 'questionnaireType inválido' });
     }
 
     const pe = await findPeByToken(req.params.token);
@@ -169,7 +186,7 @@ router.post('/:token/face', faceLimiter, async (req, res) => {
         // No guardamos una referencia mala: con bloqueo, una referencia borrosa
         // haría fallar todas las verificaciones posteriores.
         await logFaceVerification({
-          peId: pe.id, mode: 'enroll', verified: false,
+          peId: pe.id, questionnaireType, mode: 'enroll', verified: false,
           score: validation.confidence, issues: validation.issues, capturedPhoto: photo, ip,
         });
         return res.json({ mode: 'enroll', verified: false, issues: validation.issues });
@@ -179,7 +196,7 @@ router.post('/:token/face', faceLimiter, async (req, res) => {
         .where('id', pe.id)
         .update({ face_reference_photo: photo, face_reference_at: new Date() });
       await logFaceVerification({
-        peId: pe.id, mode: 'enroll', verified: true,
+        peId: pe.id, questionnaireType, mode: 'enroll', verified: true,
         score: validation.confidence, capturedPhoto: photo, ip,
       });
       return res.json({ mode: 'enroll', verified: true, score: validation.confidence });
@@ -189,7 +206,7 @@ router.post('/:token/face', faceLimiter, async (req, res) => {
     const cmp = await compareFaces(pe.face_reference_photo, photo, FACE_MATCH_THRESHOLD);
     const score = Math.round(cmp.similarityScore * 100) / 100;
     await logFaceVerification({
-      peId: pe.id, mode: 'verify', verified: cmp.isMatch, score,
+      peId: pe.id, questionnaireType, mode: 'verify', verified: cmp.isMatch, score,
       issues: cmp.error ? [cmp.error] : null,
       // Solo se archiva la selfie que NO pasó: es la evidencia del intento.
       capturedPhoto: cmp.isMatch ? null : photo,
@@ -649,9 +666,9 @@ router.post('/:token/responses', async (req, res) => {
           code: 'FACE_UNAVAILABLE'
         });
       }
-      if (!(await hasValidFaceVerification(participantEvaluation.pe_id))) {
+      if (!(await hasVerifiedFaceFor(participantEvaluation.pe_id, questionnaireType))) {
         return res.status(403).json({
-          error: 'Debes verificar tu identidad antes de responder.',
+          error: 'Debes verificar tu identidad antes de responder este cuestionario.',
           code: 'FACE_VERIFICATION_REQUIRED'
         });
       }

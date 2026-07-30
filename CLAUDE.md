@@ -61,7 +61,9 @@ BRS/
 │   │   ├── 20250903*.js      # access_token + ficha_datos questionnaire_type
 │   │   ├── 20260420000001_scope_participants_email_per_company.js
 │   │   ├── 20260526000001_add_integration_metadata_to_participant_evaluations.js
-│   │   └── 20260730000001_add_face_verification.js  # foto de referencia + bitácora de intentos
+│   │   ├── 20260730000001_add_face_verification.js  # foto de referencia + bitácora de intentos
+│   │   ├── 20260731000001_add_questionnaire_type_to_face_verifications.js  # verificación por cuestionario
+│   │   └── 20260731000002_allow_coping_questionnaire_type.js  # deriva: coping faltaba en las CHECK
 │   ├── routes/
 │   │   ├── auth.js           # Login, register (self-service evaluador), refresh, logout
 │   │   ├── companies.js      # CRUD empresas (admin + evaluador con ownership)
@@ -342,15 +344,21 @@ Anti-suplantación en el link público del participante: confirma que quien resp
 
 **Está apagado por defecto.** Solo se activa donde se ponga `FACE_VERIFICATION_ENABLED=true` (hoy: app `brs-shaddai`). Sin esa env var nada de esto se ve ni se ejecuta, y el flujo del participante es el de siempre.
 
-### Flujo (auto-enrolamiento)
-1. **Primer ingreso** — el participante toma una selfie. Pasa por `DetectFaces` (gate de calidad: un solo rostro, de frente, nítido, ojos abiertos, sin oclusión). Si pasa, se guarda como referencia en `participant_evaluations.face_reference_photo`. Si no pasa, **no se guarda** y se le devuelven los problemas concretos ("foto muy borrosa", "quítate las gafas oscuras") — una referencia mala condenaría a fallar todas las verificaciones siguientes.
-2. **Ingresos siguientes** — selfie → `CompareFaces` contra la referencia. Umbral 90% (`FACE_MATCH_THRESHOLD`).
-3. Una verificación exitosa vale por **4 horas** (`FACE_SESSION_MINUTES`), para responder varios cuestionarios seguidos sin repetir la selfie.
+### Flujo: UNA VERIFICACIÓN POR CUESTIONARIO
+La cara se pide al **entrar a cada formulario** (5 por batería), no cada N minutos.
 
-Esto prueba **continuidad** (la misma persona respondió toda la batería), no identidad contra un documento: nadie valida quién es esa cara en el primer ingreso.
+1. **Primer cuestionario** — el participante toma una selfie. Pasa por `DetectFaces` (gate de calidad: un solo rostro, de frente, nítido, ojos abiertos, sin oclusión). Si pasa, se guarda como referencia en `participant_evaluations.face_reference_photo`. Si no pasa, **no se guarda** y se le devuelven los problemas concretos ("foto muy borrosa", "quítate las gafas oscuras") — con bloqueo, una referencia mala condenaría a fallar todas las verificaciones siguientes.
+2. **Cuestionarios siguientes** — selfie → `CompareFaces` contra la referencia. Umbral 90% (`FACE_MATCH_THRESHOLD`).
+3. Cada verificación queda atada a su `questionnaire_type` en `face_verifications`: la de un cuestionario **no** sirve para otro.
+
+> **Por qué no por tiempo.** La primera versión usaba una ventana de 4h (`FACE_SESSION_MINUTES`, ya eliminada). La batería completa toma 20-40 min, o sea que cabía entera dentro de una sola ventana: se pedía la cara una vez al principio y nunca más, y no se comprobaba continuidad alguna. Atarla al cuestionario da 5 comprobaciones, siempre en el mismo punto y sin interrumpir a mitad de una pregunta.
+
+Esto prueba **continuidad** (la misma persona respondió toda la batería), no identidad contra un documento: nadie valida quién es esa cara en el primer cuestionario.
 
 ### El bloqueo se aplica en el backend, no en la UI
-`POST /:token/responses` exige una verificación exitosa vigente y responde `403 FACE_VERIFICATION_REQUIRED` si no la hay. La pantalla del participante es la cara visible de la regla, no la regla: el endpoint es público y sin el guard bastaría un POST directo para saltársela.
+`POST /:token/responses` exige una verificación exitosa **para ese `questionnaireType`** y responde `403 FACE_VERIFICATION_REQUIRED` si no la hay. La pantalla del participante es la cara visible de la regla, no la regla: el endpoint es público y sin el guard bastaría un POST directo para saltársela.
+
+**La UI es más estricta que el guard, a propósito.** `GET /:token/face-status` no devuelve qué cuestionarios ya están verificados: el frontend arranca con la lista vacía en cada carga de página y pide la cara al entrar a cada cuestionario de esa sesión. Si se sembrara con las verificaciones históricas, quien abandona un cuestionario a medias y vuelve más tarde entraría sin mostrar la cara. El guard (una verificación por `questionnaire_type`, sin caducidad) es la red contra POST directos, no el criterio de cuándo preguntar.
 
 Si la instancia tiene el flag prendido pero **sin credenciales de AWS**, se **falla cerrado** (`503 FACE_UNAVAILABLE`) con mensaje legible. Dejar pasar anularía en silencio el control contratado.
 
@@ -367,13 +375,13 @@ Un falso negativo (mala luz, cámara de gama baja) deja al trabajador varado. En
 
 ### Notas
 - **Solo se archiva la selfie de los intentos fallidos** (y la del enrolamiento). Guardar todas las exitosas engordaría la tabla sin aportar evidencia.
-- **Rate limit por token, no por IP** (12 intentos / 15 min): una empresa entera responde desde una sola IP pública de oficina y limitar por IP dejaría fuera a los compañeros del que reintenta. Además acota el gasto — cada intento es una llamada facturada a AWS.
+- **Rate limit por token, no por IP** (25 intentos / 15 min): una empresa entera responde desde una sola IP pública de oficina y limitar por IP dejaría fuera a los compañeros del que reintenta. Además acota el gasto — cada intento es una llamada facturada a AWS. El tope contempla 5 verificaciones legítimas por batería más reintentos.
 - **El flag es una sola env var, resuelta en el backend.** El frontend pregunta por `GET /api/participants/face-verification-status` en vez de usar una `NEXT_PUBLIC_` paralela: con dos variables la UI podría mentir sobre lo que el backend realmente exige.
 - Baterías ya completadas no vuelven a pedir selfie (no hay nada que escribir).
 - `GET /face-verification-status` va **antes** de `/:id` en `participants.js` — mismo gotcha que `/whatsapp-status` (nota 11).
 
 ### Env vars
-`FACE_VERIFICATION_ENABLED` (`'true'` para activar), `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` (SECRET), `FACE_MATCH_THRESHOLD` (default 90), `FACE_SESSION_MINUTES` (default 240). Requiere permisos IAM `rekognition:DetectFaces` y `rekognition:CompareFaces`.
+`FACE_VERIFICATION_ENABLED` (`'true'` para activar), `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` (SECRET), `FACE_MATCH_THRESHOLD` (default 90). Requiere permisos IAM `rekognition:DetectFaces` y `rekognition:CompareFaces`.
 
 ## GENERACIÓN DE REPORTES PDF
 
@@ -545,7 +553,8 @@ git push origin main
 9. **FlowLayout maxWidth**: Hub pages usan `"3xl"` (gradiente), data pages usan `"full"` (bg-gray-50 neutro). No mezclar — las cards blancas se ven mal sobre gradiente en full-width.
 10. **Font ibrand**: Cargada via `@font-face` en `globals.css` desde `frontend/public/fonts/ibrand.otf`. Clase Tailwind: `font-ibrand` (configurada en `tailwind.config.js`).
 11. **audit_logs columnas**: La tabla en producción usa `table_name`, `record_id`, `old_values`, `new_values` (NO `entity_type`/`entity_id`/`details`). Hay endpoints viejos con los nombres equivocados que fallan el insert silenciosamente y devuelven 500 al usuario aunque la operación principal sí completó. Buscar en logs por `column "details"` para detectarlos.
-12. **Tablas con scroll fijo**: Para tablas largas, usar `<div className="overflow-auto h-[calc(100vh-260px)] min-h-[300px]">` con `<thead className="sticky top-0 z-10 bg-gray-50 shadow-sm">`. `max-h-[Nvh]` permite que la página crezca y deja el scrollbar fuera del viewport.
+12. **Deriva de esquema: `coping` en las CHECK constraints**. El Brief COPE se añadió a la app pero la constraint de `responses`/`results` solo se amplió A MANO en la base de BRS principal. Toda base creada desde migraciones (shaddai y cualquier licenciatario nuevo) se quedó sin `coping`, así que el participante perdía sus 28 respuestas con un 500 al guardar. Corregido en la migración `20260731000002`. **Antes de entregar una instancia nueva, diffear el esquema real contra el que producen las migraciones** — este no tiene por qué ser el único caso.
+13. **Tablas con scroll fijo**: Para tablas largas, usar `<div className="overflow-auto h-[calc(100vh-260px)] min-h-[300px]">` con `<thead className="sticky top-0 z-10 bg-gray-50 shadow-sm">`. `max-h-[Nvh]` permite que la página crezca y deja el scrollbar fuera del viewport.
 
 ## ESTADO DEL PROYECTO
 

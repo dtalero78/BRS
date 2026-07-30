@@ -32,13 +32,6 @@ const AWS_SECRET_ACCESS_KEY = process.env.AWS_SECRET_ACCESS_KEY || '';
 /** Umbral de similitud (CompareFaces). Configurable para calibrar sin redeploy de código. */
 const FACE_MATCH_THRESHOLD = Number(process.env.FACE_MATCH_THRESHOLD || 90);
 
-/**
- * Ventana de validez de una verificación, en minutos. El participante se
- * verifica una vez por sesión y puede responder varios cuestionarios seguidos;
- * pasada la ventana, el backend vuelve a exigir selfie.
- */
-const FACE_SESSION_MINUTES = Number(process.env.FACE_SESSION_MINUTES || 240);
-
 let client = null;
 function getClient() {
   if (!client) {
@@ -177,5 +170,4 @@ module.exports = {
   validateFaceImage,
   compareFaces,
   FACE_MATCH_THRESHOLD,
-  FACE_SESSION_MINUTES,
 };
