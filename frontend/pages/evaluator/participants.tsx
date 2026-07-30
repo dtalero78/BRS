@@ -585,6 +585,12 @@ export default function EvaluatorParticipants() {
 
   const selectedParticipants = filteredParticipants.filter(p => selectedIds.has(p.id));
 
+  // El envio automatico requiere que la marca lo habilite Y que el backend
+  // tenga credenciales de Twilio; si no, el modal cae al flujo manual.
+  const puedeEnviarAuto = BRAND.bulkWhatsApp && waBulkEnabled;
+  const listosParaEnviar = selectedParticipants.filter(p => p.evaluationUrl);
+  const sinLink = selectedParticipants.filter(p => !p.evaluationUrl);
+
   // Twilio solo se ofrece si la marca lo habilita Y el backend tiene las
   // credenciales; se consulta una vez al montar.
   useEffect(() => {
@@ -690,26 +696,16 @@ export default function EvaluatorParticipants() {
             {selectedIds.size > 0 && (
               <button
                 onClick={() => setShowWaModal(true)}
-                className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
+                disabled={sendingBulk}
+                className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 disabled:opacity-60 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
               >
                 <svg className="h-4 w-4 mr-2" viewBox="0 0 24 24" fill="currentColor">
                   <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/>
                   <path d="M12 0C5.373 0 0 5.373 0 12c0 2.127.559 4.122 1.534 5.854L.046 23.953a.5.5 0 0 0 .612.612l6.1-1.488A11.945 11.945 0 0 0 12 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.9a9.878 9.878 0 0 1-5.031-1.374l-.36-.214-3.732.91.936-3.63-.235-.374A9.867 9.867 0 0 1 2.1 12C2.1 6.534 6.534 2.1 12 2.1S21.9 6.534 21.9 12 17.466 21.9 12 21.9z"/>
                 </svg>
-                WhatsApp ({selectedIds.size})
-              </button>
-            )}
-            {selectedIds.size > 0 && BRAND.bulkWhatsApp && waBulkEnabled && (
-              <button
-                onClick={enviarWhatsAppMasivo}
-                disabled={sendingBulk}
-                title="Envia la invitacion por Twilio, sin abrir WhatsApp"
-                className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-              >
-                <PaperAirplaneIcon className="h-4 w-4 mr-2" />
                 {sendingBulk
                   ? `Enviando ${bulkProgress.hechos}/${bulkProgress.total}...`
-                  : `Enviar automatico (${selectedIds.size})`}
+                  : `Enviar por WhatsApp (${selectedIds.size})`}
               </button>
             )}
             <button
@@ -1427,16 +1423,72 @@ export default function EvaluatorParticipants() {
           <div className="relative top-10 mx-auto p-6 border w-full max-w-2xl shadow-lg rounded-md bg-white">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-medium text-gray-900">
-                Enviar links por WhatsApp — {selectedParticipants.length} participante(s)
+                {puedeEnviarAuto
+                  ? `Enviar invitaciones — ${selectedParticipants.length} participante(s)`
+                  : `Enviar links por WhatsApp — ${selectedParticipants.length} participante(s)`}
               </h3>
               <button onClick={() => setShowWaModal(false)} className="text-gray-400 hover:text-gray-600 text-xl leading-none">&times;</button>
             </div>
 
-            <p className="text-sm text-gray-500 mb-4">
-              Haz clic en el ícono de WhatsApp de cada participante para abrir la conversación con el mensaje pre-cargado. O copia el link individualmente.
-            </p>
+            {puedeEnviarAuto ? (
+              <div className="mb-4">
+                <div className="rounded-lg bg-gray-50 border border-gray-200 p-4 text-sm">
+                  <div className="flex justify-between py-1">
+                    <span className="text-gray-500">Se envian ahora</span>
+                    <span className="font-medium text-gray-900">{listosParaEnviar.length}</span>
+                  </div>
+                  {sinLink.length > 0 && (
+                    <div className="flex justify-between py-1">
+                      <span className="text-gray-500">Se omiten (sin link)</span>
+                      <span className="font-medium text-red-600">{sinLink.length}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between py-1 border-t border-gray-200 mt-2 pt-2">
+                    <span className="text-gray-500">Remitente</span>
+                    <span className="font-medium text-gray-900">{BRAND.name}</span>
+                  </div>
+                </div>
 
-            <div className="space-y-2 max-h-[60vh] overflow-y-auto pr-1">
+                <p className="mt-3 text-xs text-gray-500">
+                  Cada persona recibe su propio link, en un mensaje con la plantilla aprobada
+                  por WhatsApp. No se abre ninguna conversacion: el envio es automatico.
+                </p>
+
+                {bulkProgress.total > 0 && (
+                  <div className="mt-4">
+                    <div className="h-2 w-full rounded-full bg-gray-200">
+                      <div
+                        className="h-2 rounded-full bg-green-600 transition-all"
+                        style={{ width: `${(bulkProgress.hechos / bulkProgress.total) * 100}%` }}
+                      />
+                    </div>
+                    <p className="mt-2 text-sm text-gray-700">
+                      {sendingBulk
+                        ? `Enviando ${bulkProgress.hechos} de ${bulkProgress.total}...`
+                        : `${bulkProgress.ok} enviadas, ${bulkProgress.fallidos} con error`}
+                    </p>
+                    {bulkErrors.length > 0 && !sendingBulk && (
+                      <details className="mt-2">
+                        <summary className="cursor-pointer text-xs text-blue-600">
+                          Ver {bulkErrors.length} con error
+                        </summary>
+                        <ul className="mt-2 max-h-40 space-y-1 overflow-y-auto text-xs text-gray-700">
+                          {bulkErrors.map((e, i) => (
+                            <li key={i}><span className="font-medium">{e.nombre}:</span> {e.error}</li>
+                          ))}
+                        </ul>
+                      </details>
+                    )}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <p className="text-sm text-gray-500 mb-4">
+                Haz clic en el ícono de WhatsApp de cada participante para abrir la conversación con el mensaje pre-cargado. O copia el link individualmente.
+              </p>
+            )}
+
+            <div className={`space-y-2 max-h-[60vh] overflow-y-auto pr-1 ${puedeEnviarAuto ? 'hidden' : ''}`}>
               {selectedParticipants.map(p => (
                 <div key={p.id} className="flex items-center gap-3 p-3 rounded-lg border border-gray-200 hover:bg-gray-50">
                   <div className="flex-1 min-w-0">
@@ -1480,6 +1532,7 @@ export default function EvaluatorParticipants() {
 
             <div className="flex justify-between items-center pt-4 border-t mt-4">
               <button
+                className={puedeEnviarAuto ? 'hidden' : 'text-sm text-blue-600 hover:underline'}
                 onClick={() => {
                   const text = selectedParticipants
                     .filter(p => p.evaluationUrl)
@@ -1488,16 +1541,30 @@ export default function EvaluatorParticipants() {
                   navigator.clipboard.writeText(text);
                   toast.success('Todos los mensajes copiados');
                 }}
-                className="text-sm text-blue-600 hover:underline"
               >
                 Copiar todos los mensajes
               </button>
-              <button
-                onClick={() => setShowWaModal(false)}
-                className="px-4 py-2 text-sm font-medium text-white bg-gray-600 rounded-md hover:bg-gray-700"
-              >
-                Cerrar
-              </button>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setShowWaModal(false)}
+                  disabled={sendingBulk}
+                  className="px-4 py-2 text-sm font-medium text-white bg-gray-600 rounded-md hover:bg-gray-700 disabled:opacity-60"
+                >
+                  {puedeEnviarAuto && bulkProgress.total > 0 && !sendingBulk ? 'Cerrar' : 'Cancelar'}
+                </button>
+                {puedeEnviarAuto && (
+                  <button
+                    onClick={enviarWhatsAppMasivo}
+                    disabled={sendingBulk || listosParaEnviar.length === 0}
+                    className="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-green-600 rounded-md hover:bg-green-700 disabled:opacity-60 disabled:cursor-not-allowed"
+                  >
+                    <PaperAirplaneIcon className="h-4 w-4 mr-2" />
+                    {sendingBulk
+                      ? `Enviando ${bulkProgress.hechos}/${bulkProgress.total}...`
+                      : `Enviar ${listosParaEnviar.length} invitacion(es)`}
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </div>
