@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef, ReactNode } from 'react';
 import { useRouter } from 'next/router';
 import toast from 'react-hot-toast';
-import { ClipboardList, Briefcase, HardHat, Home, Brain, Shield, FileText, CheckCircle2, ArrowLeft, ChevronLeft, ChevronDown, Check, LucideIcon } from 'lucide-react';
+import { ClipboardList, Briefcase, HardHat, Home, Brain, Shield, FileText, CheckCircle2, ArrowLeft, ChevronLeft, ChevronDown, Check, ScanFace, ShieldAlert, LucideIcon } from 'lucide-react';
 import { BRAND } from '../../../config/brand';
+import FaceCapture from '../../../components/FaceCapture';
 
 // Simple wrapper for participant pages (no auth required)
 function ParticipantLayout({ children }: { children: ReactNode }) {
@@ -89,8 +90,23 @@ const ParticipantEvaluationPage = () => {
   // que el participante sepa que su avance está a salvo sin generar layout shift.
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
 
+  // Verificación facial (opt-in por instancia: FACE_VERIFICATION_ENABLED en el
+  // backend). Si `faceRequired` es false todo este bloque es inerte y el flujo
+  // es el de siempre. Es BLOQUEANTE: sin `faceVerified` no se llega a los
+  // cuestionarios, y el backend rechaza los POST de respuestas igualmente.
+  const [faceRequired, setFaceRequired] = useState(false);
+  const [faceAvailable, setFaceAvailable] = useState(true);
+  const [faceEnrolled, setFaceEnrolled] = useState(false);
+  const [faceVerified, setFaceVerified] = useState(false);
+  const [faceBusy, setFaceBusy] = useState(false);
+  const [faceIssues, setFaceIssues] = useState<string[]>([]);
+  const [faceFailed, setFaceFailed] = useState(false);
+
   // Auto-save timeout ref for debouncing
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  // Marca que un guardado se cayó por verificación vencida: al re-verificar se
+  // reintenta solo, sin que el participante tenga que volver a responder nada.
+  const pendingSaveRef = useRef(false);
   // El scroll de la pregunta vive dentro de <main>, no en la página: `globals.css`
   // pone `overflow-x: hidden` en html/body y eso rompe `position: sticky`, así que
   // header y footer se fijan como hermanos flex de un contenedor sin scroll.
@@ -172,6 +188,22 @@ const ParticipantEvaluationPage = () => {
       setParticipant(validationData.participant);
       setEvaluation(validationData.evaluation);
 
+      // Estado de la verificación facial. Si la instancia no la tiene prendida
+      // el endpoint devuelve `{ required: false }` y no cambia nada del flujo.
+      try {
+        const faceResponse = await fetch(`/api/participant-access/${accessToken}/face-status`);
+        if (faceResponse.ok) {
+          const faceData = await faceResponse.json();
+          setFaceRequired(!!faceData.required);
+          setFaceAvailable(faceData.available !== false);
+          setFaceEnrolled(!!faceData.enrolled);
+          setFaceVerified(!!faceData.verified);
+        }
+      } catch (faceErr) {
+        // Un fallo consultando el estado no debe tumbar la carga de la batería.
+        console.error('Face status error:', faceErr);
+      }
+
       // Load available questionnaires
       const questionnairesResponse = await fetch(`/api/participant-access/${accessToken}/questionnaires`);
       
@@ -190,6 +222,59 @@ const ParticipantEvaluationPage = () => {
       setError(err instanceof Error ? err.message : 'Error al cargar datos');
     } finally {
       setLoading(false);
+    }
+  };
+
+  /**
+   * Envía la selfie al backend. El backend decide solo si es enrolamiento
+   * (primer ingreso) o verificación contra la referencia ya guardada.
+   */
+  const submitFacePhoto = async (photo: string) => {
+    if (!token) return;
+    setFaceBusy(true);
+    setFaceIssues([]);
+    setFaceFailed(false);
+
+    try {
+      const response = await fetch(`/api/participant-access/${token}/face`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ photo })
+      });
+      const data = await response.json();
+
+      if (response.status === 503) {
+        setFaceAvailable(false);
+        return;
+      }
+      if (!response.ok) {
+        throw new Error(data.error || 'No se pudo verificar tu identidad');
+      }
+
+      if (data.verified) {
+        setFaceEnrolled(true);
+        setFaceVerified(true);
+        toast.success(
+          data.mode === 'enroll'
+            ? 'Identidad registrada. Ya puedes continuar.'
+            : 'Identidad verificada.'
+        );
+        // Si un guardado se cayó por verificación vencida, se reintenta ahora.
+        if (pendingSaveRef.current) {
+          pendingSaveRef.current = false;
+          saveResponsesWithRetry();
+        }
+        return;
+      }
+
+      // No pasó: en enrolamiento suele ser calidad de la foto (issues legibles);
+      // en verificación es que la cara no coincide con la referencia.
+      setFaceIssues(data.issues || []);
+      setFaceFailed(true);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'No se pudo verificar tu identidad');
+    } finally {
+      setFaceBusy(false);
     }
   };
 
@@ -452,6 +537,19 @@ const ParticipantEvaluationPage = () => {
     try {
       await saveResponses(responsesToSave);
     } catch (error: any) {
+      // Verificación facial vencida a mitad del cuestionario: no es un fallo
+      // transitorio, reintentar solo gastaría los 3 intentos para terminar
+      // culpando a la conexión. Se devuelve al participante a la pantalla de
+      // selfie; sus respuestas siguen en memoria y se reguardan al verificar.
+      if (error?.faceVerificationRequired) {
+        pendingSaveRef.current = true;
+        setFaceRequired(true);
+        setFaceVerified(false);
+        setSaveState('idle');
+        toast('Por seguridad debemos verificar tu identidad otra vez.', { icon: '🔒' });
+        return;
+      }
+
       const isRateLimit = error.message?.includes('429') || error.message?.includes('Too Many Requests');
 
       // Reintenta CUALQUIER fallo transitorio (rate limit, red, 5xx) con backoff exponencial.
@@ -525,6 +623,17 @@ const ParticipantEvaluationPage = () => {
       if (!response.ok) {
         if (response.status === 429) {
           throw new Error('429: Too Many Requests');
+        }
+        // 403/503 de verificación facial: se marca para que la capa de
+        // reintentos no lo trate como fallo de red.
+        if (response.status === 403 || response.status === 503) {
+          const body = await response.json().catch(() => ({}));
+          if (body.code === 'FACE_VERIFICATION_REQUIRED' || body.code === 'FACE_UNAVAILABLE') {
+            const faceError: any = new Error(body.error || 'Verificación de identidad requerida');
+            faceError.faceVerificationRequired = true;
+            if (body.code === 'FACE_UNAVAILABLE') setFaceAvailable(false);
+            throw faceError;
+          }
         }
         throw new Error(`Error al guardar respuestas: ${response.status}`);
       }
@@ -856,6 +965,101 @@ const ParticipantEvaluationPage = () => {
           <div className="bg-red-50 border border-red-200 rounded-lg p-6">
             <h2 className="text-lg font-medium text-red-800 mb-2">Error</h2>
             <p className="text-red-600">No se encontraron datos del participante.</p>
+          </div>
+        </div>
+      </ParticipantLayout>
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Gate de verificación facial (bloqueante).
+  // Va ANTES de la vista de cuestionario y del hub: sin verificar no se llega a
+  // ninguna de las dos. El backend aplica el mismo bloqueo en POST /responses,
+  // así que esto es la cara visible de la regla, no la regla misma.
+  // ---------------------------------------------------------------------------
+  if (faceRequired && !faceVerified) {
+    // Módulo prendido pero mal configurado (sin credenciales de AWS). Se falla
+    // cerrado a propósito: dejar pasar sin verificar anularía en silencio el
+    // control que la empresa contrató.
+    if (!faceAvailable) {
+      return (
+        <ParticipantLayout>
+          <div className="max-w-md mx-auto px-4 py-10">
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-6 text-center">
+              <ShieldAlert className="mx-auto mb-3 text-amber-500" size={44} />
+              <h2 className="text-lg font-semibold text-amber-900">Verificación no disponible</h2>
+              <p className="mt-2 text-sm text-amber-800">
+                No podemos verificar tu identidad en este momento. Contacta a tu evaluador
+                para que habilite el acceso.
+              </p>
+            </div>
+          </div>
+        </ParticipantLayout>
+      );
+    }
+
+    const esEnrolamiento = !faceEnrolled;
+
+    return (
+      <ParticipantLayout>
+        <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 py-8">
+          <div className="max-w-md mx-auto px-4">
+            <div className="mb-6">
+              <h1 className="text-2xl font-bold text-gray-900 mb-1">
+                Hola, {participant.firstName}
+              </h1>
+              <p className="text-gray-500">
+                {esEnrolamiento
+                  ? 'Antes de empezar, registra tu rostro'
+                  : 'Verifica tu identidad para continuar'}
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+              <div className="mb-4 flex items-center gap-2 text-gray-700">
+                <ScanFace size={20} className="text-blue-600" />
+                <h2 className="text-base font-semibold">
+                  {esEnrolamiento ? 'Registra tu rostro' : 'Verifica tu identidad'}
+                </h2>
+              </div>
+
+              <p className="mb-5 text-sm text-gray-500">
+                {esEnrolamiento
+                  ? 'Mira a la cámara y toma una foto de tu rostro. La usaremos para confirmar que eres tú quien responde la batería. Busca buena luz y quítate gafas oscuras o gorra.'
+                  : 'Mira a la cámara y toma una foto. Confirmaremos que eres la misma persona que registró el rostro al inicio.'}
+              </p>
+
+              {/* Problemas de calidad de la foto: son accionables, se listan tal cual */}
+              {faceFailed && faceIssues.length > 0 && (
+                <ul className="mb-4 list-disc rounded-xl border border-amber-200 bg-amber-50 py-3 pl-8 pr-4 text-sm text-amber-800">
+                  {faceIssues.map((issue, i) => (
+                    <li key={i}>{issue}</li>
+                  ))}
+                </ul>
+              )}
+
+              {/* Rostro que no coincide: no es un problema de foto, es de identidad */}
+              {faceFailed && faceIssues.length === 0 && (
+                <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                  <p className="font-medium">Tu rostro no coincide con el registrado.</p>
+                  <p className="mt-1">
+                    Intenta de nuevo con mejor luz y de frente a la cámara. Si el problema
+                    continúa, contacta a tu evaluador para que reinicie tu registro.
+                  </p>
+                </div>
+              )}
+
+              <FaceCapture
+                onCapture={submitFacePhoto}
+                busy={faceBusy}
+                label={faceFailed ? 'Intentar de nuevo' : 'Tomar foto'}
+              />
+
+              <p className="mt-4 text-center text-xs text-gray-400">
+                Tu foto se usa únicamente para verificar tu identidad y no se comparte
+                con tus respuestas.
+              </p>
+            </div>
           </div>
         </div>
       </ParticipantLayout>

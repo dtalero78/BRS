@@ -60,7 +60,8 @@ BRS/
 │   │   ├── 20241201*.js      # Esquema inicial (companies, users, evaluations, …)
 │   │   ├── 20250903*.js      # access_token + ficha_datos questionnaire_type
 │   │   ├── 20260420000001_scope_participants_email_per_company.js
-│   │   └── 20260526000001_add_integration_metadata_to_participant_evaluations.js
+│   │   ├── 20260526000001_add_integration_metadata_to_participant_evaluations.js
+│   │   └── 20260730000001_add_face_verification.js  # foto de referencia + bitácora de intentos
 │   ├── routes/
 │   │   ├── auth.js           # Login, register (self-service evaluador), refresh, logout
 │   │   ├── companies.js      # CRUD empresas (admin + evaluador con ownership)
@@ -77,6 +78,7 @@ BRS/
 │   ├── services/
 │   │   └── webhook-emitter.js # Webhook evaluation.completed (HMAC-SHA256) a sistemas externos
 │   └── utils/
+│       ├── rekognition.js            # Verificación facial AWS (DetectFaces + CompareFaces)
 │       ├── calculate-results.js      # Motor de cálculo BRS oficial
 │       ├── baremos-completos.js      # Baremos Tablas 29-34 del Ministerio
 │       ├── excel-import-detector.js  # Detector header-aware + parser de respuestas Excel
@@ -87,6 +89,7 @@ BRS/
 │   ├── config/
 │   │   └── api.ts            # API_URL config (relativa en prod, localhost en dev)
 │   ├── components/
+│   │   ├── FaceCapture.tsx    # Captura de selfie (getUserMedia + canvas) para verificación facial
 │   │   ├── FlowLayout.tsx     # Layout Typeform-style: header + content (reemplaza Layout para la mayoría de páginas)
 │   │   ├── FlowOption.tsx     # Card-option con letra, icono, badge, arrow (para hubs)
 │   │   ├── FlowQuestion.tsx   # Título de pregunta estilo Typeform
@@ -210,6 +213,9 @@ Dimensiones con sufijo `_total` son totales de dominio.
 - `GET /` - Listar (filtrado por ownership)
 - `POST /` | `PUT /:id` | `GET /evaluation/:evalId`
 - `DELETE /:id` - Eliminar (admin: cualquiera, evaluador: solo de empresas propias). Cascada: borra responses + results + participant_evaluations.
+- `GET /face-verification-status` - Probe: ¿esta instancia tiene verificación facial? (va ANTES de `/:id`)
+- `GET /:id/face` - Estado del enrolamiento + últimos 10 intentos
+- `POST /:id/reset-face` - Borra la foto de referencia (válvula de escape del modo bloqueante)
 
 ### Cuestionarios (`/api/questionnaires`)
 - `GET /` - Listar tipos | `GET /:type` - Obtener (forma_a, forma_b, extralaboral, estres)
@@ -230,6 +236,8 @@ Dimensiones con sufijo `_total` son totales de dominio.
 - `POST /token/validate` - Validar token de acceso
 - `GET /token/:token/questionnaires` - Cuestionarios disponibles
 - `POST /token/:token/responses` - Guardar respuestas
+- `GET /:token/face-status` - ¿Esta instancia exige verificación facial? ¿ya está enrolado/verificado?
+- `POST /:token/face` - Enrola (1er ingreso) o verifica la selfie. Rate limit por token.
 
 ### Integración server-to-server (`/api/integration`) - Auth por `X-Api-Key`
 - `POST /participant` - Provisiona participant + participant_evaluation y devuelve token de acceso + URL. Idempotente por `externalRef`.
@@ -327,6 +335,45 @@ El `returnUrl` se sigue guardando y exponiendo en el API, pero el frontend **ya 
 
 ### Env vars de integración
 `BRS_INTEGRATION_API_KEY` (requerida), `BRS_WEBHOOK_SECRET` (requerida para webhooks), `BRS_PUBLIC_URL` (base de la URL del token), `BRS_INTEGRATION_DEFAULT_EVALUATOR`, `BRS_INTEGRATION_DEFAULT_COMPANY` (fallbacks).
+
+## VERIFICACIÓN FACIAL DEL PARTICIPANTE (opt-in por instancia)
+
+Anti-suplantación en el link público del participante: confirma que quien responde la batería es la misma persona de principio a fin. **Portado de BODYTECH-PREPAGADAS** (`/atender`), con dos diferencias: aquí **bloquea** (allá es informativo) y la referencia vive en la batería, no en la persona.
+
+**Está apagado por defecto.** Solo se activa donde se ponga `FACE_VERIFICATION_ENABLED=true` (hoy: app `brs-shaddai`). Sin esa env var nada de esto se ve ni se ejecuta, y el flujo del participante es el de siempre.
+
+### Flujo (auto-enrolamiento)
+1. **Primer ingreso** — el participante toma una selfie. Pasa por `DetectFaces` (gate de calidad: un solo rostro, de frente, nítido, ojos abiertos, sin oclusión). Si pasa, se guarda como referencia en `participant_evaluations.face_reference_photo`. Si no pasa, **no se guarda** y se le devuelven los problemas concretos ("foto muy borrosa", "quítate las gafas oscuras") — una referencia mala condenaría a fallar todas las verificaciones siguientes.
+2. **Ingresos siguientes** — selfie → `CompareFaces` contra la referencia. Umbral 90% (`FACE_MATCH_THRESHOLD`).
+3. Una verificación exitosa vale por **4 horas** (`FACE_SESSION_MINUTES`), para responder varios cuestionarios seguidos sin repetir la selfie.
+
+Esto prueba **continuidad** (la misma persona respondió toda la batería), no identidad contra un documento: nadie valida quién es esa cara en el primer ingreso.
+
+### El bloqueo se aplica en el backend, no en la UI
+`POST /:token/responses` exige una verificación exitosa vigente y responde `403 FACE_VERIFICATION_REQUIRED` si no la hay. La pantalla del participante es la cara visible de la regla, no la regla: el endpoint es público y sin el guard bastaría un POST directo para saltársela.
+
+Si la instancia tiene el flag prendido pero **sin credenciales de AWS**, se **falla cerrado** (`503 FACE_UNAVAILABLE`) con mensaje legible. Dejar pasar anularía en silencio el control contratado.
+
+### Válvula de escape (obligatoria en modo bloqueante)
+Un falso negativo (mala luz, cámara de gama baja) deja al trabajador varado. En `/evaluator/participants` hay un botón por participante (ícono de huella, solo visible si el módulo está activo) que abre el estado del enrolamiento + la bitácora de intentos y permite **reiniciar el registro facial**: borra la referencia para que se re-enrole en su próximo ingreso. La bitácora **no** se borra — es el rastro de por qué hubo que reiniciar.
+
+### Archivos
+- `backend/utils/rekognition.js` — `validateFaceImage` (DetectFaces) y `compareFaces` (CompareFaces) + los flags. CommonJS.
+- `backend/migrations/20260730000001_add_face_verification.js` — `participant_evaluations.face_reference_photo/at` + tabla `face_verifications`.
+- `backend/routes/participant-access.js` — `GET /:token/face-status`, `POST /:token/face`, guard en `POST /:token/responses`.
+- `backend/routes/participants.js` — `GET /face-verification-status` (probe de capacidad), `GET /:id/face`, `POST /:id/reset-face`.
+- `frontend/components/FaceCapture.tsx` — captura con `getUserMedia` + canvas (640×480 JPEG 0.8), sin dependencias.
+- `frontend/pages/participant/evaluation/[token].tsx` — gate antes del hub y de los cuestionarios.
+
+### Notas
+- **Solo se archiva la selfie de los intentos fallidos** (y la del enrolamiento). Guardar todas las exitosas engordaría la tabla sin aportar evidencia.
+- **Rate limit por token, no por IP** (12 intentos / 15 min): una empresa entera responde desde una sola IP pública de oficina y limitar por IP dejaría fuera a los compañeros del que reintenta. Además acota el gasto — cada intento es una llamada facturada a AWS.
+- **El flag es una sola env var, resuelta en el backend.** El frontend pregunta por `GET /api/participants/face-verification-status` en vez de usar una `NEXT_PUBLIC_` paralela: con dos variables la UI podría mentir sobre lo que el backend realmente exige.
+- Baterías ya completadas no vuelven a pedir selfie (no hay nada que escribir).
+- `GET /face-verification-status` va **antes** de `/:id` en `participants.js` — mismo gotcha que `/whatsapp-status` (nota 11).
+
+### Env vars
+`FACE_VERIFICATION_ENABLED` (`'true'` para activar), `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` (SECRET), `FACE_MATCH_THRESHOLD` (default 90), `FACE_SESSION_MINUTES` (default 240). Requiere permisos IAM `rekognition:DetectFaces` y `rekognition:CompareFaces`.
 
 ## GENERACIÓN DE REPORTES PDF
 
@@ -539,6 +586,7 @@ git push origin main
 - [x] **Tabla de participantes con scroll fijo** — `h-[calc(100vh-260px)]` + sticky header
 - [x] **Integración server-to-server** — `POST /api/integration/participant` (auth `X-Api-Key`, idempotente por `externalRef`) + webhook `evaluation.completed` firmado con HMAC
 - [x] **Auto-redirect de retorno desactivado** — el participante ya no es redirigido a la app externa al terminar; se queda en la pantalla de éxito de BRS (webhook sigue notificando)
+- [x] **Verificación facial del participante** (AWS Rekognition, opt-in por instancia vía `FACE_VERIFICATION_ENABLED`, hoy solo `brs-shaddai`) — auto-enrolamiento + verificación bloqueante, guard en el backend, bitácora de intentos y reinicio desde la UI del evaluador
 
 ### Pendiente
 - [ ] Tests unitarios y de integración

@@ -1,10 +1,212 @@
 const express = require('express');
+const rateLimit = require('express-rate-limit');
 const router = express.Router();
 const db = require('../config/database');
 const calculateResults = require('../utils/calculate-results');
 const { calculateCopingResults } = require('../utils/calculate-coping');
 const { isQuestionnaireComplete } = require('../utils/questionnaire-totals');
 const { notifyEvaluationCompleted } = require('../services/webhook-emitter');
+const {
+  isFaceVerificationEnabled,
+  isRekognitionAvailable,
+  validateFaceImage,
+  compareFaces,
+  FACE_MATCH_THRESHOLD,
+  FACE_SESSION_MINUTES,
+} = require('../utils/rekognition');
+
+// ---------------------------------------------------------------------------
+// Verificación facial (opt-in por instancia vía FACE_VERIFICATION_ENABLED)
+// ---------------------------------------------------------------------------
+
+function clientIp(req) {
+  const fwd = req.headers['x-forwarded-for'];
+  return (typeof fwd === 'string' && fwd.split(',')[0].trim()) || req.socket.remoteAddress || 'unknown';
+}
+
+/** Busca el PE por access_token vigente. Devuelve null si no existe o expiró. */
+async function findPeByToken(token) {
+  return db('participant_evaluations')
+    .where('access_token', token)
+    .where('token_expires_at', '>', new Date())
+    .select(
+      'id',
+      'status',
+      'face_reference_photo',
+      'face_reference_at'
+    )
+    .first();
+}
+
+async function logFaceVerification({ peId, mode, verified, score, issues, capturedPhoto, ip }) {
+  try {
+    await db('face_verifications').insert({
+      participant_evaluation_id: peId,
+      mode,
+      verified,
+      score: score == null ? null : Math.round(score * 100) / 100,
+      issues: issues && issues.length ? issues.join('; ') : null,
+      captured_photo: capturedPhoto || null,
+      ip: ip || null,
+    });
+  } catch (err) {
+    // La bitácora no debe tumbar la verificación en sí.
+    console.error('Face verification log error:', err.message);
+  }
+}
+
+/**
+ * ¿Este PE tiene una verificación exitosa vigente?
+ *
+ * El participante se verifica una vez por sesión y responde varios
+ * cuestionarios seguidos; se le vuelve a pedir selfie pasada la ventana
+ * (FACE_SESSION_MINUTES). Esto es lo que hace cumplible el bloqueo en el
+ * backend sin inventar un segundo token de sesión.
+ */
+async function hasValidFaceVerification(peId) {
+  const since = new Date(Date.now() - FACE_SESSION_MINUTES * 60 * 1000);
+  const row = await db('face_verifications')
+    .where('participant_evaluation_id', peId)
+    .where('verified', true)
+    .where('created_at', '>', since)
+    .orderBy('created_at', 'desc')
+    .first();
+  return !!row;
+}
+
+/**
+ * GET /:token/face-status → qué debe mostrar el frontend antes de dejar responder.
+ *
+ * `required` es la única señal que el front necesita: si es false, el flujo es
+ * el de siempre. `available` distingue "módulo prendido pero mal configurado"
+ * (sin credenciales de AWS) de "todo bien", para que el participante vea un
+ * mensaje legible en vez de un error opaco.
+ */
+router.get('/:token/face-status', async (req, res) => {
+  try {
+    if (!isFaceVerificationEnabled()) {
+      return res.json({ required: false });
+    }
+
+    const pe = await findPeByToken(req.params.token);
+    if (!pe) return res.status(404).json({ error: 'Token inválido o expirado' });
+
+    // Una batería ya completada no vuelve a pedir selfie: no hay nada que escribir.
+    if (pe.status === 'completed') return res.json({ required: false });
+
+    if (!isRekognitionAvailable()) {
+      return res.json({ required: true, available: false, enrolled: false, verified: false });
+    }
+
+    res.json({
+      required: true,
+      available: true,
+      enrolled: !!pe.face_reference_photo,
+      verified: await hasValidFaceVerification(pe.id),
+    });
+  } catch (error) {
+    console.error('Face status error:', error);
+    res.status(500).json({ error: 'Error interno del servidor' });
+  }
+});
+
+/**
+ * Rate limit del endpoint facial. La clave es el TOKEN, no la IP: una empresa
+ * entera respondiendo desde la oficina sale por una sola IP pública, y limitar
+ * por IP dejaría fuera a los compañeros del que reintenta. Por token frena la
+ * fuerza bruta contra un participante concreto y acota el gasto en Rekognition
+ * (cada intento es una llamada facturada a AWS).
+ */
+const faceLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 12, // suficiente para reintentos legítimos por luz/encuadre
+  keyGenerator: (req) => req.params.token,
+  message: { error: 'Demasiados intentos de verificación. Espera unos minutos e intenta de nuevo.' },
+  // `ip: false` porque la clave es el token, no una IP: sin esto la librería
+  // avisa en cada arranque de que el keyGenerator no normaliza IPv6.
+  validate: { trustProxy: false, ip: false },
+});
+
+/**
+ * POST /:token/face → enrola (1er ingreso) o verifica (ingresos siguientes).
+ *
+ * Body: `{ photo: '<data URL base64>' }`.
+ *
+ * MODO BLOQUEANTE: si la selfie no coincide con la referencia, la respuesta
+ * trae `verified: false` y el guard de POST /:token/responses no dejará
+ * guardar. La válvula de escape es que el evaluador reinicie la foto de
+ * referencia desde `POST /api/participants/:id/reset-face`.
+ */
+router.post('/:token/face', faceLimiter, async (req, res) => {
+  try {
+    if (!isFaceVerificationEnabled()) {
+      return res.status(404).json({ error: 'Verificación facial no habilitada' });
+    }
+
+    const { photo } = req.body || {};
+    if (typeof photo !== 'string' || photo.length < 100) {
+      return res.status(400).json({ error: 'Foto inválida' });
+    }
+
+    const pe = await findPeByToken(req.params.token);
+    if (!pe) return res.status(404).json({ error: 'Token inválido o expirado' });
+
+    // Sin credenciales no se puede verificar a nadie. Se responde explícito en
+    // vez de dejar pasar: el bloqueo es el control que la empresa contrató.
+    if (!isRekognitionAvailable()) {
+      return res.status(503).json({
+        error: 'La verificación de identidad no está disponible en este momento. Contacta a tu evaluador.',
+        code: 'FACE_UNAVAILABLE',
+      });
+    }
+
+    const ip = clientIp(req);
+
+    // ---- ENROLAR (primer ingreso) ----
+    if (!pe.face_reference_photo) {
+      const validation = await validateFaceImage(photo);
+      if (!validation.isValid) {
+        // No guardamos una referencia mala: con bloqueo, una referencia borrosa
+        // haría fallar todas las verificaciones posteriores.
+        await logFaceVerification({
+          peId: pe.id, mode: 'enroll', verified: false,
+          score: validation.confidence, issues: validation.issues, capturedPhoto: photo, ip,
+        });
+        return res.json({ mode: 'enroll', verified: false, issues: validation.issues });
+      }
+
+      await db('participant_evaluations')
+        .where('id', pe.id)
+        .update({ face_reference_photo: photo, face_reference_at: new Date() });
+      await logFaceVerification({
+        peId: pe.id, mode: 'enroll', verified: true,
+        score: validation.confidence, capturedPhoto: photo, ip,
+      });
+      return res.json({ mode: 'enroll', verified: true, score: validation.confidence });
+    }
+
+    // ---- VERIFICAR (ingresos siguientes) ----
+    const cmp = await compareFaces(pe.face_reference_photo, photo, FACE_MATCH_THRESHOLD);
+    const score = Math.round(cmp.similarityScore * 100) / 100;
+    await logFaceVerification({
+      peId: pe.id, mode: 'verify', verified: cmp.isMatch, score,
+      issues: cmp.error ? [cmp.error] : null,
+      // Solo se archiva la selfie que NO pasó: es la evidencia del intento.
+      capturedPhoto: cmp.isMatch ? null : photo,
+      ip,
+    });
+
+    res.json({
+      mode: 'verify',
+      verified: cmp.isMatch,
+      score,
+      issues: cmp.error === 'no_face' ? ['No se detectó ningún rostro en la foto'] : undefined,
+    });
+  } catch (error) {
+    console.error('Face verification error:', error);
+    res.status(500).json({ error: 'Error interno del servidor' });
+  }
+});
 
 async function autoCalculateResults(peId) {
   try {
@@ -435,6 +637,24 @@ router.post('/:token/responses', async (req, res) => {
     // ni forzar recálculos después de terminada.
     if (participantEvaluation.pe_status === 'completed') {
       return res.status(409).json({ error: 'La batería ya fue completada; no se admiten más respuestas.' });
+    }
+
+    // Guard de verificación facial. El bloqueo se aplica AQUÍ, no solo en la UI:
+    // el endpoint es público y sin este chequeo bastaría un POST directo para
+    // saltarse la pantalla de la selfie.
+    if (isFaceVerificationEnabled()) {
+      if (!isRekognitionAvailable()) {
+        return res.status(503).json({
+          error: 'La verificación de identidad no está disponible en este momento. Contacta a tu evaluador.',
+          code: 'FACE_UNAVAILABLE'
+        });
+      }
+      if (!(await hasValidFaceVerification(participantEvaluation.pe_id))) {
+        return res.status(403).json({
+          error: 'Debes verificar tu identidad antes de responder.',
+          code: 'FACE_VERIFICATION_REQUIRED'
+        });
+      }
     }
 
     let isCompleted = false;

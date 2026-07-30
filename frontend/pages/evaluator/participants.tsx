@@ -20,10 +20,25 @@ import {
   CheckCircleIcon,
   ExclamationCircleIcon,
   PaperAirplaneIcon,
+  FingerPrintIcon,
 } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import PhotoImportModal from '../../components/PhotoImportModal';
 import ManualEntryModal from '../../components/ManualEntryModal';
+
+interface FaceAttempt {
+  mode: 'enroll' | 'verify';
+  verified: boolean;
+  score: string | number | null;
+  issues: string | null;
+  created_at: string;
+}
+
+interface FaceStatus {
+  enrolled: boolean;
+  enrolledAt: string | null;
+  attempts: FaceAttempt[];
+}
 
 interface Participant {
   id: number;
@@ -79,6 +94,13 @@ export default function EvaluatorParticipants() {
   const [editingParticipant, setEditingParticipant] = useState<Participant | null>(null);
   const [photoTarget, setPhotoTarget] = useState<Participant | null>(null);
   const [manualTarget, setManualTarget] = useState<Participant | null>(null);
+
+  // Verificacion facial (solo instancias con FACE_VERIFICATION_ENABLED)
+  const [faceModuleEnabled, setFaceModuleEnabled] = useState(false);
+  const [faceTarget, setFaceTarget] = useState<Participant | null>(null);
+  const [faceData, setFaceData] = useState<FaceStatus | null>(null);
+  const [faceLoading, setFaceLoading] = useState(false);
+  const [faceResetting, setFaceResetting] = useState(false);
   // Alta de participante: 'form' = llenar el formulario a mano; 'photo' = subir
   // la prueba escaneada y dejar que la IA cree la persona desde el encabezado.
   const [newMode, setNewMode] = useState<'form' | 'photo'>('form');
@@ -602,6 +624,58 @@ export default function EvaluatorParticipants() {
       .catch(() => setWaBulkEnabled(false));
   }, []);
 
+  // Verificacion facial: solo las instancias que la tienen prendida muestran el
+  // boton por participante.
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    fetch('/api/participants/face-verification-status', { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => setFaceModuleEnabled(Boolean(d?.enabled)))
+      .catch(() => setFaceModuleEnabled(false));
+  }, []);
+
+  const abrirPanelFacial = async (participant: Participant) => {
+    setFaceTarget(participant);
+    setFaceData(null);
+    setFaceLoading(true);
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(`/api/participants/${participant.id}/face`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (!res.ok) throw new Error('No se pudo cargar el estado de verificación');
+      setFaceData(await res.json());
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Error de conexión');
+      setFaceTarget(null);
+    } finally {
+      setFaceLoading(false);
+    }
+  };
+
+  // Válvula de escape del modo bloqueante: si el participante quedó varado por
+  // un falso negativo, se borra su foto de referencia y se vuelve a enrolar en
+  // su próximo ingreso. La bitácora de intentos se conserva.
+  const reiniciarRostro = async () => {
+    if (!faceTarget) return;
+    setFaceResetting(true);
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(`/api/participants/${faceTarget.id}/reset-face`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'No se pudo reiniciar');
+      toast.success(data.message);
+      setFaceTarget(null);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Error de conexión');
+    } finally {
+      setFaceResetting(false);
+    }
+  };
+
   // Se envia en lotes de 50 (tope del endpoint): una sola peticion con cientos
   // de llamadas a Twilio se pasaria del timeout, y por lotes se ve el avance.
   const enviarWhatsAppMasivo = async () => {
@@ -1118,6 +1192,15 @@ export default function EvaluatorParticipants() {
                                   <path d="M12 0C5.373 0 0 5.373 0 12c0 2.127.559 4.122 1.534 5.854L.046 23.953a.5.5 0 0 0 .612.612l6.1-1.488A11.945 11.945 0 0 0 12 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.9a9.878 9.878 0 0 1-5.031-1.374l-.36-.214-3.732.91.936-3.63-.235-.374A9.867 9.867 0 0 1 2.1 12C2.1 6.534 6.534 2.1 12 2.1S21.9 6.534 21.9 12 17.466 21.9 12 21.9z"/>
                                 </svg>
                               </a>
+                            )}
+                            {faceModuleEnabled && (
+                              <button
+                                onClick={() => abrirPanelFacial(participant)}
+                                className="text-gray-500 hover:text-purple-700"
+                                title="Verificación facial"
+                              >
+                                <FingerPrintIcon className="h-5 w-5" />
+                              </button>
                             )}
                             <button
                               onClick={() => handleEdit(participant)}
@@ -1726,6 +1809,100 @@ export default function EvaluatorParticipants() {
           defaultQuestionnaireType={manualTarget.formType === 'B' ? 'intralaboral_b' : 'intralaboral_a'}
           onSuccess={() => fetchParticipants()}
         />
+      )}
+
+      {/* Panel de verificacion facial: estado del enrolamiento + bitacora de
+          intentos + reinicio. Es la herramienta de soporte del modo bloqueante:
+          desde aqui el evaluador ve POR QUE un participante no puede entrar. */}
+      {faceTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-lg rounded-2xl bg-white shadow-xl">
+            <div className="flex items-start justify-between border-b border-gray-200 px-6 py-4">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">Verificación facial</h3>
+                <p className="text-sm text-gray-500">
+                  {faceTarget.firstName} {faceTarget.lastName} · {faceTarget.documentNumber}
+                </p>
+              </div>
+              <button
+                onClick={() => setFaceTarget(null)}
+                className="text-gray-400 hover:text-gray-600"
+                aria-label="Cerrar"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="max-h-[60vh] overflow-y-auto px-6 py-5">
+              {faceLoading ? (
+                <p className="py-6 text-center text-sm text-gray-500">Cargando…</p>
+              ) : !faceData ? null : (
+                <>
+                  <div
+                    className={`mb-5 rounded-xl px-4 py-3 text-sm ${
+                      faceData.enrolled ? 'bg-green-50 text-green-800' : 'bg-gray-50 text-gray-600'
+                    }`}
+                  >
+                    {faceData.enrolled ? (
+                      <>
+                        <span className="font-medium">Rostro registrado</span>
+                        {faceData.enrolledAt && (
+                          <> · {new Date(faceData.enrolledAt).toLocaleString('es-CO')}</>
+                        )}
+                      </>
+                    ) : (
+                      'Aún no ha registrado su rostro. Se enrolará en su primer ingreso.'
+                    )}
+                  </div>
+
+                  <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                    Últimos intentos
+                  </h4>
+                  {faceData.attempts.length === 0 ? (
+                    <p className="text-sm text-gray-400">Sin intentos registrados.</p>
+                  ) : (
+                    <ul className="divide-y divide-gray-100">
+                      {faceData.attempts.map((a, i) => (
+                        <li key={i} className="flex items-start justify-between gap-3 py-2.5 text-sm">
+                          <div className="min-w-0">
+                            <span
+                              className={`font-medium ${a.verified ? 'text-green-700' : 'text-red-600'}`}
+                            >
+                              {a.verified ? 'Correcto' : 'Fallido'}
+                            </span>
+                            <span className="text-gray-400">
+                              {' '}· {a.mode === 'enroll' ? 'registro' : 'verificación'}
+                            </span>
+                            {a.issues && (
+                              <div className="mt-0.5 text-xs text-gray-500">{a.issues}</div>
+                            )}
+                          </div>
+                          <div className="shrink-0 text-right text-xs text-gray-400">
+                            {a.score != null && <div>{Number(a.score).toFixed(1)}%</div>}
+                            <div>{new Date(a.created_at).toLocaleString('es-CO')}</div>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </>
+              )}
+            </div>
+
+            <div className="flex items-center justify-between gap-3 border-t border-gray-200 px-6 py-4">
+              <p className="text-xs text-gray-500">
+                Reinicia solo si el participante quedó bloqueado por error.
+              </p>
+              <button
+                onClick={reiniciarRostro}
+                disabled={faceResetting || !faceData?.enrolled}
+                className="shrink-0 rounded-xl bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-40"
+              >
+                {faceResetting ? 'Reiniciando…' : 'Reiniciar registro facial'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </FlowLayout>
   );

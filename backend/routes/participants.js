@@ -703,6 +703,19 @@ router.get('/whatsapp-status', auth, authorize('admin', 'evaluator'), (req, res)
   res.json({ enabled: whatsappSender.isConfigured(), from: whatsappSender.WHATSAPP_FROM || null });
 });
 
+// Le dice al frontend si esta instancia tiene verificacion facial (solo asi
+// muestra el boton por participante). Se resuelve en el backend a proposito:
+// con una NEXT_PUBLIC_ paralela habria dos env vars que mantener en sync y la
+// UI podria mentir sobre lo que el backend realmente exige.
+// OJO: va ANTES de '/:id', mismo motivo que whatsapp-status.
+router.get('/face-verification-status', auth, authorize('admin', 'evaluator'), (req, res) => {
+  const { isFaceVerificationEnabled, isRekognitionAvailable } = require('../utils/rekognition');
+  res.json({
+    enabled: isFaceVerificationEnabled(),
+    available: isFaceVerificationEnabled() && isRekognitionAvailable()
+  });
+});
+
 router.get('/:id', auth, async (req, res) => {
   try {
     const { id } = req.params;
@@ -996,6 +1009,79 @@ router.post('/:id/generate-token', auth, authorize('admin', 'evaluator'), async 
 
   } catch (error) {
     console.error('Generate token error:', error);
+    res.status(500).json({ error: 'Error interno del servidor' });
+  }
+});
+
+
+// ---------------------------------------------------------------------------
+// Verificación facial: consulta y reinicio de la foto de referencia
+// ---------------------------------------------------------------------------
+// La verificación del participante es BLOQUEANTE: si su selfie no coincide con
+// la referencia, no puede responder. Estos dos endpoints son la válvula de
+// escape operativa — sin ellos, un falso negativo (mala luz, cámara de gama
+// baja, cambio de aspecto) deja al trabajador varado y sin salida.
+
+/** Busca el PE del participante verificando ownership del evaluador. */
+async function findOwnedPe(userId, participantId) {
+  const ownedIds = await getOwnedCompanyIds(userId);
+  return db('participants')
+    .join('participant_evaluations as pe', 'participants.id', 'pe.participant_id')
+    .join('evaluations', 'pe.evaluation_id', 'evaluations.id')
+    .where('participants.id', participantId)
+    .whereIn('evaluations.company_id', ownedIds)
+    .select('pe.id as pe_id', 'pe.face_reference_photo', 'pe.face_reference_at')
+    .first();
+}
+
+// GET /:id/face → estado de la verificación facial + últimos intentos
+router.get('/:id/face', auth, authorize('admin', 'evaluator'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!isValidId(id)) return res.status(400).json({ error: 'ID inválido' });
+
+    const pe = await findOwnedPe(req.user.userId, id);
+    if (!pe) return res.status(404).json({ error: 'Participante no encontrado' });
+
+    const attempts = await db('face_verifications')
+      .where('participant_evaluation_id', pe.pe_id)
+      .orderBy('created_at', 'desc')
+      .limit(10)
+      .select('mode', 'verified', 'score', 'issues', 'created_at');
+
+    res.json({
+      enrolled: !!pe.face_reference_photo,
+      enrolledAt: pe.face_reference_at,
+      attempts
+    });
+  } catch (error) {
+    console.error('Get face status error:', error);
+    res.status(500).json({ error: 'Error interno del servidor' });
+  }
+});
+
+// POST /:id/reset-face → borra la foto de referencia para que el participante
+// se vuelva a enrolar en su próximo ingreso.
+router.post('/:id/reset-face', auth, authorize('admin', 'evaluator'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!isValidId(id)) return res.status(400).json({ error: 'ID inválido' });
+
+    const pe = await findOwnedPe(req.user.userId, id);
+    if (!pe) return res.status(404).json({ error: 'Participante no encontrado' });
+
+    await db('participant_evaluations')
+      .where('id', pe.pe_id)
+      .update({ face_reference_photo: null, face_reference_at: null });
+
+    // La bitácora de intentos NO se borra: es el rastro de auditoría de por qué
+    // hubo que reiniciar.
+    res.json({
+      success: true,
+      message: 'Foto de referencia reiniciada. El participante se enrolará de nuevo en su próximo ingreso.'
+    });
+  } catch (error) {
+    console.error('Reset face error:', error);
     res.status(500).json({ error: 'Error interno del servidor' });
   }
 });
