@@ -476,10 +476,17 @@ const ParticipantEvaluationPage = () => {
       || 0;
   };
 
-  const handleResponseChange = (questionNumber: number | string, value: number | string) => {
+  const handleResponseChange = (
+    questionNumber: number | string,
+    value: number | string,
+    options?: { raw?: boolean }
+  ) => {
     const key = `q_${questionNumber}`;
-    // Only convert to number if the value is actually numeric
-    const parsedValue = typeof value === 'string' && value !== '' && !isNaN(Number(value))
+    // Only convert to number if the value is actually numeric.
+    // `raw` desactiva la conversión para las opciones de selección: el estrato
+    // tiene opciones "1".."6" y guardarlas como número rompía la comparación
+    // con la opción (1 === '1' es false), así que la tarjeta nunca se marcaba.
+    const parsedValue = !options?.raw && typeof value === 'string' && value !== '' && !isNaN(Number(value))
       ? parseInt(value, 10)
       : value;
     const newResponses = { ...responses, [key]: parsedValue };
@@ -1154,12 +1161,15 @@ const ParticipantEvaluationPage = () => {
             {question.opciones.length <= 8 ? (
               <div className="space-y-2.5">
                 {question.opciones.map((opcion: string, index: number) => {
-                  const selected = selectedOption === opcion;
+                  // Comparación por string: hay respuestas viejas guardadas como
+                  // número (el <select> anterior las convertía) que si no, no se
+                  // verían marcadas al volver a la pregunta.
+                  const selected = selectedOption !== undefined && String(selectedOption) === String(opcion);
                   return (
                     <button
                       key={index}
                       type="button"
-                      onClick={() => handleResponseChange(question.numero, opcion)}
+                      onClick={() => handleResponseChange(question.numero, opcion, { raw: true })}
                       aria-pressed={selected}
                       className={optionCardClass(selected)}
                     >
@@ -1176,8 +1186,8 @@ const ParticipantEvaluationPage = () => {
             ) : (
               <div className="relative">
                 <select
-                  value={selectedOption || ''}
-                  onChange={(e) => handleResponseChange(question.numero, e.target.value)}
+                  value={selectedOption === undefined ? '' : String(selectedOption)}
+                  onChange={(e) => handleResponseChange(question.numero, e.target.value, { raw: true })}
                   className={`${fieldClass} appearance-none pr-12`}
                 >
                   <option value="">Selecciona una opción</option>
