@@ -696,6 +696,13 @@ router.post('/import-excel', auth, authorize('admin', 'evaluator'), upload.singl
 // ─────────────────────────────────────────────────────────────────────────────
 
 // Get participant by ID
+// Le dice al frontend si mostrar el boton de envio masivo.
+// OJO: va ANTES de '/:id' o Express lo captura como si 'whatsapp-status'
+// fuera el id de un participante y nunca llega aqui.
+router.get('/whatsapp-status', auth, authorize('admin', 'evaluator'), (req, res) => {
+  res.json({ enabled: whatsappSender.isConfigured(), from: whatsappSender.WHATSAPP_FROM || null });
+});
+
 router.get('/:id', auth, async (req, res) => {
   try {
     const { id } = req.params;
@@ -1080,9 +1087,5 @@ router.post('/send-whatsapp', auth, authorize('admin', 'evaluator'), async (req,
   }
 });
 
-// Le dice al frontend si mostrar el boton de envio masivo.
-router.get('/whatsapp-status', auth, authorize('admin', 'evaluator'), (req, res) => {
-  res.json({ enabled: whatsappSender.isConfigured(), from: whatsappSender.WHATSAPP_FROM || null });
-});
 
 module.exports = router;
