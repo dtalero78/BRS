@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, ReactNode } from 'react';
 import { useRouter } from 'next/router';
 import toast from 'react-hot-toast';
-import { ClipboardList, Briefcase, HardHat, Home, Brain, Shield, FileText, CheckCircle2, LucideIcon } from 'lucide-react';
+import { ClipboardList, Briefcase, HardHat, Home, Brain, Shield, FileText, CheckCircle2, ArrowLeft, ChevronLeft, ChevronDown, Check, LucideIcon } from 'lucide-react';
 import { BRAND } from '../../../config/brand';
 
 // Simple wrapper for participant pages (no auth required)
@@ -85,9 +85,19 @@ const ParticipantEvaluationPage = () => {
   const [success, setSuccess] = useState('');
   const [progress, setProgress] = useState(0);
   const [loading, setLoading] = useState(true);
+  // Estado del autoguardado: se muestra como una línea discreta bajo el CTA para
+  // que el participante sepa que su avance está a salvo sin generar layout shift.
+  const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
 
   // Auto-save timeout ref for debouncing
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  // El scroll de la pregunta vive dentro de <main>, no en la página: `globals.css`
+  // pone `overflow-x: hidden` en html/body y eso rompe `position: sticky`, así que
+  // header y footer se fijan como hermanos flex de un contenedor sin scroll.
+  const questionScrollRef = useRef<HTMLElement | null>(null);
+  // Alto real del viewport visible. En iOS el teclado NO encoge `100dvh`: sin esto
+  // el botón "Continuar" queda escondido detrás del teclado.
+  const [viewportHeight, setViewportHeight] = useState<number | null>(null);
 
   // Questions per page for pagination (changed to 1 for individual display)
   const QUESTIONS_PER_PAGE = 1;
@@ -124,6 +134,27 @@ const ParticipantEvaluationPage = () => {
       }
     };
   }, []);
+
+  // Una pregunta = una pantalla: al avanzar/retroceder hay que volver arriba,
+  // si no el participante cae a media pregunta cuando la anterior era larga.
+  useEffect(() => {
+    questionScrollRef.current?.scrollTo({ top: 0, behavior: 'auto' });
+  }, [currentQuestionIndex, currentQuestionnaire?.type]);
+
+  // Sigue el viewport visible (teclado virtual incluido) mientras se responde.
+  useEffect(() => {
+    if (!currentQuestionnaire || typeof window === 'undefined') return;
+    const vv = window.visualViewport;
+    if (!vv) return;
+
+    const sync = () => setViewportHeight(vv.height);
+    sync();
+    vv.addEventListener('resize', sync);
+    return () => {
+      vv.removeEventListener('resize', sync);
+      setViewportHeight(null);
+    };
+  }, [currentQuestionnaire]);
 
   const validateTokenAndLoadData = async (accessToken: string) => {
     try {
@@ -437,6 +468,7 @@ const ParticipantEvaluationPage = () => {
 
       // Reintentos agotados: respalda SIEMPRE en localStorage y avisa al usuario.
       console.error('Guardado fallido tras reintentos:', error);
+      setSaveState('error');
       try {
         const backupKey = `brs_backup_${token}_${currentQuestionnaire?.type}`;
         localStorage.setItem(backupKey, JSON.stringify(responsesToSave));
@@ -453,6 +485,8 @@ const ParticipantEvaluationPage = () => {
 
   const saveResponses = async (responsesToSave = responses) => {
     if (!currentQuestionnaire || !token || typeof token !== 'string') return;
+
+    setSaveState('saving');
 
     try {
       const questionnaireTypeMap: {[key: string]: string} = {
@@ -496,6 +530,7 @@ const ParticipantEvaluationPage = () => {
       }
 
       // Success message removed to prevent layout shift
+      setSaveState('saved');
       console.log('Responses saved successfully');
 
     } catch (err) {
@@ -621,6 +656,33 @@ const ParticipantEvaluationPage = () => {
     if (canNavigatePrev()) {
       setCurrentQuestionIndex(Math.max(0, currentQuestionIndex - QUESTIONS_PER_PAGE));
     }
+  };
+
+  // Índice de la primera pregunta sin responder (-1 si están todas).
+  const findFirstIncompleteIndex = () => {
+    return getAllQuestions().findIndex((q) => !isQuestionComplete(q));
+  };
+
+  // Único handler del CTA principal: avanza, o finaliza si ya es la última.
+  // Si al finalizar quedan preguntas sueltas, en vez de dejar el botón
+  // bloqueado sin explicación, salta a la primera pendiente y lo dice.
+  const handleContinue = () => {
+    const question = getAllQuestions()[currentQuestionIndex];
+    if (!question || !isQuestionComplete(question)) return;
+
+    if (canNavigateNext()) {
+      goToNextPage();
+      return;
+    }
+
+    const pendingIndex = findFirstIncompleteIndex();
+    if (pendingIndex !== -1) {
+      setCurrentQuestionIndex(pendingIndex);
+      toast('Falta responder esta pregunta para poder finalizar', { icon: '☝️' });
+      return;
+    }
+
+    submitQuestionnaire();
   };
 
   const getResponseOptions = () => {
@@ -800,13 +862,366 @@ const ParticipantEvaluationPage = () => {
     );
   }
 
+  // ---------------------------------------------------------------------------
+  // Vista de aplicación: una pregunta = una pantalla.
+  // Sale del ParticipantLayout a propósito: ocupa el viewport completo con
+  // progreso fijo arriba y CTA fija abajo, para que en móvil nunca haya que
+  // scrollear para encontrar el botón (antes eran tres tarjetas apiladas).
+  // ---------------------------------------------------------------------------
+  if (currentQuestionnaire) {
+    const questions = getAllQuestions();
+    const totalQuestions = questions.length;
+    const question = questions[currentQuestionIndex];
+    const position = totalQuestions > 0 ? Math.min(currentQuestionIndex + 1, totalQuestions) : 0;
+    // La barra refleja la POSICIÓN, no el % de respuestas guardadas: con la ficha
+    // pre-llenada por el evaluador el porcentaje viejo (63%) no cuadraba con
+    // "pregunta 6 de 19" y se leía como un bug.
+    const positionPct = totalQuestions > 0 ? (position / totalQuestions) * 100 : 0;
+    const isLast = !canNavigateNext();
+    const isAnswered = question ? isQuestionComplete(question) : false;
+    // La rama demográfica se decide por el cuestionario, no por el campo: un
+    // campo de ficha sin `tipo` ni `opciones` caía antes en el render de escala.
+    const isDemographic = !!currentQuestionnaire.questionnaire.campos;
+    const isFirstQuestion = currentQuestionIndex === 0;
+    const instrucciones = currentQuestionnaire.questionnaire.instrucciones;
+
+    const fieldClass =
+      'w-full rounded-xl border-2 border-gray-200 bg-white px-4 py-3.5 text-[17px] text-gray-900 ' +
+      'placeholder:text-gray-400 transition-colors focus:border-blue-600 focus:outline-none focus:ring-0';
+
+    const optionCardClass = (selected: boolean) =>
+      `flex w-full items-center gap-3 rounded-xl border-2 px-4 py-4 text-left transition-colors ` +
+      (selected
+        ? 'border-blue-600 bg-blue-50'
+        : 'border-gray-200 bg-white active:bg-gray-50 sm:hover:border-blue-300');
+
+    const optionBulletClass = (selected: boolean) =>
+      `flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full border-2 transition-colors ` +
+      (selected ? 'border-blue-600 bg-blue-600' : 'border-gray-300 bg-white');
+
+    // Enter avanza (en móvil el teclado muestra "ir/siguiente" y funciona igual).
+    const handleFieldKeyDown = (e: React.KeyboardEvent) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        handleContinue();
+      }
+    };
+
+    const renderDemographicField = () => {
+      if (!question) return null;
+      const key = `q_${question.numero}`;
+
+      // Varios subcampos (ciudad / departamento)
+      if (question.subcampos) {
+        return (
+          <div className="space-y-5">
+            {question.subcampos.map((subcampo: any, index: number) => (
+              <div key={index}>
+                <label
+                  htmlFor={`field_${question.numero}_${index}`}
+                  className="mb-2 block text-sm font-medium text-gray-600"
+                >
+                  {subcampo.campo}
+                </label>
+                <input
+                  id={`field_${question.numero}_${index}`}
+                  type="text"
+                  autoFocus={index === 0}
+                  autoCapitalize="words"
+                  autoComplete={index === 0 ? 'address-level2' : 'address-level1'}
+                  enterKeyHint={index === question.subcampos.length - 1 ? 'go' : 'next'}
+                  value={responses[`q_${question.numero}_${index}`] || ''}
+                  onChange={(e) => handleResponseChange(`${question.numero}_${index}`, e.target.value)}
+                  className={fieldClass}
+                />
+              </div>
+            ))}
+          </div>
+        );
+      }
+
+      // Opciones: pocas → tarjetas de un toque; muchas → select nativo
+      if (question.opciones && question.opciones.length > 0) {
+        const selectedOption = responses[key];
+        const needsYears = selectedOption?.toString().includes('más de un año');
+
+        return (
+          <div className="space-y-5">
+            {question.opciones.length <= 8 ? (
+              <div className="space-y-2.5">
+                {question.opciones.map((opcion: string, index: number) => {
+                  const selected = selectedOption === opcion;
+                  return (
+                    <button
+                      key={index}
+                      type="button"
+                      onClick={() => handleResponseChange(question.numero, opcion)}
+                      aria-pressed={selected}
+                      className={optionCardClass(selected)}
+                    >
+                      <span className={optionBulletClass(selected)}>
+                        {selected && <Check className="h-3.5 w-3.5 text-white" strokeWidth={3} />}
+                      </span>
+                      <span className={`text-[17px] ${selected ? 'font-medium text-blue-900' : 'text-gray-700'}`}>
+                        {opcion}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="relative">
+                <select
+                  value={selectedOption || ''}
+                  onChange={(e) => handleResponseChange(question.numero, e.target.value)}
+                  className={`${fieldClass} appearance-none pr-12`}
+                >
+                  <option value="">Selecciona una opción</option>
+                  {question.opciones.map((opcion: string, index: number) => (
+                    <option key={index} value={opcion}>
+                      {opcion}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown className="pointer-events-none absolute right-4 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" />
+              </div>
+            )}
+
+            {needsYears && (
+              <div>
+                <label htmlFor={`field_${question.numero}_years`} className="mb-2 block text-sm font-medium text-gray-600">
+                  ¿Cuántos años exactamente?
+                </label>
+                <input
+                  id={`field_${question.numero}_years`}
+                  type="number"
+                  inputMode="numeric"
+                  min="1"
+                  max="50"
+                  enterKeyHint="go"
+                  value={responses[`q_${question.numero}_years`] || ''}
+                  onChange={(e) => handleResponseChange(`${question.numero}_years`, e.target.value)}
+                  className={fieldClass}
+                  placeholder="Ej. 5"
+                />
+              </div>
+            )}
+          </div>
+        );
+      }
+
+      if (question.tipo === 'numerico') {
+        return (
+          <input
+            type="number"
+            inputMode="numeric"
+            autoFocus
+            enterKeyHint="go"
+            value={responses[key] || ''}
+            onChange={(e) => handleResponseChange(question.numero, e.target.value)}
+            className={fieldClass}
+          />
+        );
+      }
+
+      return (
+        <input
+          type="text"
+          autoFocus
+          autoCapitalize="sentences"
+          enterKeyHint="go"
+          value={responses[key] || ''}
+          onChange={(e) => handleResponseChange(question.numero, e.target.value)}
+          className={fieldClass}
+        />
+      );
+    };
+
+    const renderScaleOptions = () => {
+      if (!question) return null;
+      const key = `q_${question.numero}`;
+
+      return (
+        <fieldset className="border-0 p-0">
+          <legend className="sr-only">{question.pregunta || question.texto}</legend>
+          <div className="space-y-2.5">
+            {getResponseOptions().map((option) => {
+              const selected = responses[key] === option.value;
+              return (
+                <label key={option.value} className={`${optionCardClass(selected)} cursor-pointer`}>
+                  <input
+                    type="radio"
+                    name={`question_${question.numero}`}
+                    value={option.value}
+                    checked={selected}
+                    onChange={() => handleResponseChange(question.numero, option.value)}
+                    className="peer sr-only"
+                  />
+                  <span
+                    className={`${optionBulletClass(selected)} peer-focus-visible:ring-2 peer-focus-visible:ring-blue-500 peer-focus-visible:ring-offset-2`}
+                  >
+                    {selected && <Check className="h-3.5 w-3.5 text-white" strokeWidth={3} />}
+                  </span>
+                  <span className={`text-[17px] ${selected ? 'font-medium text-blue-900' : 'text-gray-700'}`}>
+                    {option.label}
+                  </span>
+                </label>
+              );
+            })}
+          </div>
+        </fieldset>
+      );
+    };
+
+    const ctaLabel = isSubmitting
+      ? 'Enviando…'
+      : !isAnswered
+        ? (isDemographic ? 'Completa la respuesta' : 'Selecciona una opción')
+        : isLast
+          ? 'Finalizar cuestionario'
+          : 'Continuar';
+
+    const saveHint =
+      saveState === 'saving'
+        ? 'Guardando…'
+        : saveState === 'error'
+          ? 'Sin conexión: guardado en este dispositivo'
+          : saveState === 'saved'
+            ? 'Respuestas guardadas'
+            : 'Tus respuestas se guardan automáticamente';
+
+    return (
+      <div
+        className="flex h-screen h-[100dvh] flex-col overflow-hidden bg-white"
+        style={viewportHeight ? { height: `${viewportHeight}px` } : undefined}
+      >
+        {/* Barra superior: salida, cuestionario, posición y progreso */}
+        <header className="flex-shrink-0 border-b border-gray-200 bg-white">
+          <div className="mx-auto flex w-full max-w-2xl items-center gap-3 px-4 py-3 sm:px-8">
+            <button
+              onClick={() => setCurrentQuestionnaire(null)}
+              aria-label="Volver a la lista de cuestionarios"
+              className="-ml-2 flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full text-gray-500 transition-colors active:bg-gray-100 sm:hover:bg-gray-100 sm:hover:text-gray-900"
+            >
+              <ArrowLeft className="h-5 w-5" />
+            </button>
+            <span className="flex-1 truncate text-sm font-medium text-gray-500">
+              {currentQuestionnaire.questionnaire.nombre}
+            </span>
+            <span className="flex-shrink-0 text-sm font-semibold tabular-nums text-gray-900">
+              {position}
+              <span className="font-normal text-gray-400"> / {totalQuestions}</span>
+            </span>
+          </div>
+          <div
+            className="h-1 w-full bg-gray-100"
+            role="progressbar"
+            aria-valuenow={position}
+            aria-valuemin={0}
+            aria-valuemax={totalQuestions}
+          >
+            <div
+              className="h-1 bg-blue-600 transition-all duration-300"
+              style={{ width: `${positionPct}%` }}
+            />
+          </div>
+        </header>
+
+        {/* Pregunta. Anclada arriba a propósito: si se centrara verticalmente el
+            título saltaría de posición entre una pregunta de 2 campos y una de 5
+            opciones, y en 123 preguntas seguidas eso marea. */}
+        <main ref={questionScrollRef} className="flex flex-1 items-start overflow-y-auto overscroll-contain">
+          <div
+            key={question?.numero ?? currentQuestionIndex}
+            className="mx-auto w-full max-w-2xl px-5 pb-10 pt-8 sm:px-8 sm:pb-16 sm:pt-12"
+          >
+            {instrucciones && (
+              isFirstQuestion ? (
+                <p className="mb-7 rounded-xl bg-blue-50 px-4 py-3 text-sm leading-relaxed text-blue-900">
+                  {instrucciones}
+                </p>
+              ) : (
+                <details className="group mb-7">
+                  <summary className="inline-flex cursor-pointer list-none items-center gap-1 text-sm font-medium text-blue-600">
+                    Ver instrucciones
+                    <ChevronDown className="h-4 w-4 transition-transform group-open:rotate-180" />
+                  </summary>
+                  <p className="mt-3 rounded-xl bg-blue-50 px-4 py-3 text-sm leading-relaxed text-blue-900">
+                    {instrucciones}
+                  </p>
+                </details>
+              )
+            )}
+
+            {isFirstQuestion && currentQuestionnaire.type === 'ficha-datos' && (
+              <p className="mb-7 text-sm leading-relaxed text-gray-500">
+                Algunos datos ya vienen registrados por tu evaluador. Revísalos y corrige lo que no
+                sea correcto.
+              </p>
+            )}
+
+            <h1 className="text-[22px] font-semibold leading-snug tracking-tight text-gray-900 sm:text-3xl">
+              {question?.pregunta || question?.texto}
+            </h1>
+
+            <div className="mt-7 sm:mt-9" onKeyDown={isDemographic ? handleFieldKeyDown : undefined}>
+              {isDemographic ? renderDemographicField() : renderScaleOptions()}
+            </div>
+
+            {/* La mecánica se explica una sola vez: el CTA ya dice "Selecciona
+                una opción" en las demás preguntas. */}
+            {!isDemographic && isFirstQuestion && (
+              <p className="mt-5 text-center text-sm text-gray-400">
+                Al elegir una opción avanzas automáticamente
+              </p>
+            )}
+          </div>
+        </main>
+
+        {/* Acciones: siempre al alcance del pulgar */}
+        <footer className="flex-shrink-0 border-t border-gray-200 bg-white pb-[env(safe-area-inset-bottom)]">
+          <div className="mx-auto w-full max-w-2xl px-5 py-3 sm:px-8 sm:py-4">
+            <div className="flex items-center gap-3">
+              <button
+                onClick={goToPrevPage}
+                disabled={!canNavigatePrev()}
+                aria-label="Pregunta anterior"
+                className="flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-xl border-2 border-gray-200 text-gray-600 transition-colors active:bg-gray-50 disabled:border-gray-100 disabled:text-gray-300 sm:hover:enabled:border-gray-300"
+              >
+                <ChevronLeft className="h-5 w-5" />
+              </button>
+              <button
+                onClick={handleContinue}
+                disabled={!isAnswered || isSubmitting}
+                className={`flex h-14 flex-1 items-center justify-center gap-2 rounded-xl px-6 text-[17px] font-semibold transition-colors ${
+                  !isAnswered || isSubmitting
+                    ? 'cursor-not-allowed bg-gray-100 text-gray-400'
+                    : isLast
+                      ? 'bg-green-600 text-white active:bg-green-700 sm:hover:bg-green-700'
+                      : 'bg-blue-600 text-white active:bg-blue-700 sm:hover:bg-blue-700'
+                }`}
+              >
+                {ctaLabel}
+                {isAnswered && !isSubmitting && isLast && <Check className="h-5 w-5" strokeWidth={2.5} />}
+              </button>
+            </div>
+            <p className="mt-2 h-4 text-center text-xs text-gray-400" aria-live="polite">
+              {saveHint}
+            </p>
+          </div>
+        </footer>
+      </div>
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Hub: selección de cuestionarios
+  // ---------------------------------------------------------------------------
   return (
     <ParticipantLayout>
       <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 py-4">
         <div className="max-w-4xl mx-auto px-6">
-        {!currentQuestionnaire ? (
-          // Questionnaire selection view - simplified Typeform-style list
-          (() => {
+        {(() => {
             const completedCount = availableQuestionnaires.filter(q => q.completed).length;
             const totalCount = availableQuestionnaires.length;
             const allDone = totalCount > 0 && completedCount === totalCount;
@@ -967,302 +1382,7 @@ const ParticipantEvaluationPage = () => {
                 )}
               </div>
             );
-          })()
-        ) : (
-          // Questionnaire taking view
-          <div>
-            {/* Header with progress */}
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
-              <div className="flex items-center justify-between mb-4">
-                <button
-                  onClick={() => setCurrentQuestionnaire(null)}
-                  className="text-blue-600 hover:text-blue-800 font-medium"
-                >
-                  ← Volver a cuestionarios
-                </button>
-                <div className="text-sm text-gray-500">
-                  Página {Math.floor(currentQuestionIndex / QUESTIONS_PER_PAGE) + 1} de {Math.ceil(getAllQuestions().length / QUESTIONS_PER_PAGE)}
-                </div>
-              </div>
-
-              <h2 className="text-xl font-bold text-gray-900 mb-2">
-                {currentQuestionnaire.questionnaire.nombre}
-              </h2>
-
-              {currentQuestionnaire.questionnaire.instrucciones && (
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
-                  <p className="text-blue-800 text-sm">
-                    {currentQuestionnaire.questionnaire.instrucciones}
-                  </p>
-                </div>
-              )}
-
-              {/* Special instructions for demographic form */}
-              {currentQuestionnaire.type === 'ficha-datos' && (
-                <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-4">
-                  <div className="flex items-start">
-                    <svg className="w-5 h-5 text-green-600 mr-2 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-                    </svg>
-                    <div>
-                      <p className="text-green-800 text-sm font-medium">
-                        ✅ Datos pre-llenados por el evaluador
-                      </p>
-                      <p className="text-green-700 text-xs mt-1">
-                        Algunos campos ya están completados con la información que registró su evaluador. 
-                        Por favor revise y corrija cualquier dato que no sea correcto.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Progress bar */}
-              <div className="mb-4">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm text-gray-600">Progreso</span>
-                  <span className="text-sm font-medium text-gray-900">
-                    {Math.round(progress)}%
-                  </span>
-                </div>
-                <div className="w-full bg-gray-200 rounded-full h-2">
-                  <div
-                    className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-                    style={{ width: `${progress}%` }}
-                  ></div>
-                </div>
-              </div>
-            </div>
-
-            {/* Single Question Display */}
-            <div className="bg-white rounded-lg shadow-lg border border-gray-200 mb-6">
-              {getCurrentPageQuestions().map((question: Question) => (
-                <div key={question.numero} className="p-8">
-                  {/* Question Header */}
-                  <div className="text-center mb-8">
-                    <div className="inline-flex items-center justify-center w-12 h-12 bg-blue-100 text-blue-600 rounded-full mb-4 text-lg font-bold">
-                      {question.numero}
-                    </div>
-                    <h2 className="text-2xl font-semibold text-gray-900 mb-3 leading-relaxed">
-                      {question.pregunta || question.texto}
-                    </h2>
-                    {question.dimension && (
-                      <p className="text-sm text-gray-500 bg-gray-50 inline-block px-3 py-1 rounded-full">
-                        Dimensión: {question.dimension}
-                      </p>
-                    )}
-                  </div>
-
-                  {/* Render demographic field or regular question */}
-                  {question.tipo || question.subcampos || question.opciones ? (
-                    // Demographic Field Rendering
-                    <div className="max-w-2xl mx-auto">
-                      <div className="space-y-4">
-                        {question.subcampos ? (
-                          // Multiple sub-fields (like city/department)
-                          <div className="space-y-4">
-                            {question.subcampos.map((subcampo: any, index: number) => (
-                              <div key={index}>
-                                <label className="block text-sm font-medium text-gray-700 mb-2">
-                                  {subcampo.campo}
-                                </label>
-                                <input
-                                  type="text"
-                                  value={responses[`q_${question.numero}_${index}`] || ''}
-                                  onChange={(e) => handleResponseChange(`${question.numero}_${index}`, e.target.value)}
-                                  className="w-full p-4 border-2 border-gray-300 rounded-lg text-lg focus:ring-blue-500 focus:border-blue-500"
-                                  placeholder={`Ingresa ${subcampo.campo.toLowerCase()}`}
-                                />
-                              </div>
-                            ))}
-                          </div>
-                        ) : (question.tipo === 'seleccion_unica' && question.opciones) || (!question.tipo && question.opciones) ? (
-                          // Select dropdown for demographic field (either with tipo='seleccion_unica' or just opciones)
-                          <div className="space-y-4">
-                            <select
-                              value={responses[`q_${question.numero}`] || ''}
-                              onChange={(e) => handleResponseChange(question.numero, e.target.value)}
-                              className="w-full p-4 border-2 border-gray-300 rounded-lg text-lg focus:ring-blue-500 focus:border-blue-500"
-                            >
-                              <option value="">Selecciona una opción</option>
-                              {question.opciones.map((opcion: string, index: number) => (
-                                <option key={index} value={opcion}>
-                                  {opcion}
-                                </option>
-                              ))}
-                            </select>
-                            
-                            {/* Conditional numeric input for years questions */}
-                            {(responses[`q_${question.numero}`] && 
-                              responses[`q_${question.numero}`].toString().includes('más de un año')) && (
-                              <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-2">
-                                  ¿Cuántos años exactamente?
-                                </label>
-                                <input
-                                  type="number"
-                                  min="1"
-                                  max="50"
-                                  value={responses[`q_${question.numero}_years`] || ''}
-                                  onChange={(e) => handleResponseChange(`${question.numero}_years`, e.target.value)}
-                                  className="w-full p-4 border-2 border-gray-300 rounded-lg text-lg focus:ring-blue-500 focus:border-blue-500"
-                                  placeholder="Ejemplo: 5"
-                                />
-                              </div>
-                            )}
-                          </div>
-                        ) : question.tipo === 'numerico' ? (
-                          // Number input for demographic field
-                          <div>
-                            <input
-                              type="number"
-                              value={responses[`q_${question.numero}`] || ''}
-                              onChange={(e) => handleResponseChange(question.numero, e.target.value)}
-                              className="w-full p-4 border-2 border-gray-300 rounded-lg text-lg focus:ring-blue-500 focus:border-blue-500"
-                              placeholder="Ingresa un número"
-                            />
-                          </div>
-                        ) : (
-                          // Text input for demographic field
-                          <div>
-                            <input
-                              type="text"
-                              value={responses[`q_${question.numero}`] || ''}
-                              onChange={(e) => handleResponseChange(question.numero, e.target.value)}
-                              className="w-full p-4 border-2 border-gray-300 rounded-lg text-lg focus:ring-blue-500 focus:border-blue-500"
-                              placeholder="Escribe tu respuesta"
-                            />
-                          </div>
-                        )}
-                        
-                        {/* Navigation for demographic fields */}
-                        <div className="flex justify-center mt-6">
-                          <button
-                            onClick={() => {
-                              if (isQuestionComplete(question)) {
-                                // Auto-advance after clicking continue
-                                if (canNavigateNext()) {
-                                  goToNextPage();
-                                }
-                              }
-                            }}
-                            disabled={!isQuestionComplete(question)}
-                            className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
-                          >
-                            Continuar
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  ) : (
-                    // Regular Question Response Options - Vertical Layout with Cards
-                    <div className="max-w-2xl mx-auto">
-                      <p className="text-center text-sm text-gray-500 mb-6">
-                        Selecciona una opción y avanzarás automáticamente
-                      </p>
-                      <div className="space-y-4">
-                        {getResponseOptions().map((option) => (
-                          <label
-                            key={option.value}
-                            className={`
-                              flex items-center p-5 border-2 rounded-xl cursor-pointer transition-all duration-300 transform
-                              ${responses[`q_${question.numero}`] === option.value 
-                                ? 'border-blue-500 bg-blue-50 shadow-lg scale-105 ring-2 ring-blue-300 ring-opacity-50' 
-                                : 'border-gray-200 hover:border-blue-300 hover:bg-blue-50 hover:shadow-md hover:-translate-y-1'
-                              }
-                            `}
-                          >
-                            <input
-                              type="radio"
-                              name={`question_${question.numero}`}
-                              value={option.value}
-                              checked={responses[`q_${question.numero}`] === option.value}
-                              onChange={() => handleResponseChange(question.numero, option.value)}
-                              className="h-5 w-5 text-blue-600 border-2 border-gray-300 focus:ring-blue-500 focus:ring-2"
-                            />
-                            <span className={`ml-4 text-lg ${
-                              responses[`q_${question.numero}`] === option.value 
-                                ? 'text-blue-900 font-medium' 
-                                : 'text-gray-700'
-                            }`}>
-                              {option.label}
-                            </span>
-                          </label>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-
-            {/* Simplified Navigation */}
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-              <div className="flex justify-between items-center">
-                {/* Previous Button - Left Side */}
-                <div className="flex-1">
-                  <button
-                    onClick={goToPrevPage}
-                    disabled={!canNavigatePrev()}
-                    className="inline-flex items-center px-6 py-3 border border-gray-300 rounded-lg text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
-                  >
-                    <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                    </svg>
-                    Pregunta Anterior
-                  </button>
-                </div>
-
-                {/* Central Progress Indicator */}
-                <div className="flex-1 text-center">
-                  <div className="text-lg font-semibold text-gray-900">
-                    Pregunta {currentQuestionIndex + 1} de {getAllQuestions().length}
-                  </div>
-                  <div className="text-sm text-gray-500 mt-1">
-                    {Math.round(progress)}% completado
-                  </div>
-                  {!canNavigateNext() && (
-                    <div className="text-xs text-blue-600 mt-2 font-medium">
-                      ¡Última pregunta!
-                    </div>
-                  )}
-                </div>
-
-                {/* Right Side - Finish Button or Empty Space */}
-                <div className="flex-1 text-right">
-                  {!canNavigateNext() ? (
-                    <button
-                      onClick={submitQuestionnaire}
-                      disabled={isSubmitting || progress < 100}
-                      className="inline-flex items-center px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-sm"
-                    >
-                      {isSubmitting ? (
-                        <>
-                          <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
-                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                          </svg>
-                          Enviando...
-                        </>
-                      ) : (
-                        <>
-                          Finalizar Cuestionario
-                          <svg className="w-5 h-5 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                          </svg>
-                        </>
-                      )}
-                    </button>
-                  ) : (
-                    <div className="text-sm text-gray-400 italic px-6 py-3">
-                      Selecciona una respuesta para continuar
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
+          })()}
         </div>
       </div>
     </ParticipantLayout>

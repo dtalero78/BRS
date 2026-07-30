@@ -389,6 +389,18 @@ La UI usa dos sistemas de layout:
 - **FlowStats** — Barra de estadísticas compactas (4 valores)
 - **useFlowKeyboard** — Hook: presionar A-Z navega a la opción correspondiente
 
+### Pantalla de aplicación de cuestionarios (participante)
+`frontend/pages/participant/evaluation/[token].tsx` — vista full-screen "una pregunta = una pantalla".
+No usa FlowLayout ni ParticipantLayout: es un contenedor propio de tres zonas fijas.
+
+- **Estructura**: contenedor `flex flex-col overflow-hidden` con alto de viewport; `<header>` (salir + nombre + `N / total` + barra de progreso), `<main>` con el scroll (`flex-1 overflow-y-auto`) y `<footer>` con el CTA. Header y footer NO usan `sticky`: `globals.css` tiene `overflow-x: hidden` en `html/body`, lo que rompe `position: sticky`. El scroll vive dentro de `<main>`.
+- **Alto del viewport**: `h-[100dvh]` como base + `style={{height: visualViewport.height}}`. En iOS el teclado no encoge `100dvh`; sin la medida de `visualViewport` el botón "Continuar" queda tapado por el teclado.
+- **Progreso**: la barra refleja la **posición** (`índice / total`), no el % de respuestas guardadas. Con la ficha pre-llenada por el evaluador ambos números no coinciden y el % se leía como bug.
+- **Pregunta anclada arriba** (`items-start`), no centrada: con centrado vertical el título salta de posición entre preguntas de distinta altura.
+- **CTA único** (`handleContinue`): avanza, o finaliza en la última. Si al finalizar faltan respuestas, salta a la primera pendiente con un toast en vez de quedarse bloqueado sin explicación.
+- **Rama demográfica vs escala**: se decide por `questionnaire.campos` (el cuestionario), no por el campo. Un campo de ficha sin `tipo` ni `opciones` caía antes en el render de escala Likert.
+- Campos de opciones: ≤ 8 opciones → tarjetas de un toque; > 8 → `<select>` nativo.
+
 ### Patrón de uso
 ```tsx
 // Hub (dashboard): centrado con gradiente
