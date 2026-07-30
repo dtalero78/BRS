@@ -5,6 +5,7 @@ const { auth, authorize, getOwnedCompanyIds, isSuperAdmin } = require('../middle
 const db = require('../config/database');
 const multer = require('multer');
 const XLSX = require('xlsx');
+const whatsappSender = require('../services/whatsapp-sender');
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -990,6 +991,98 @@ router.post('/:id/generate-token', auth, authorize('admin', 'evaluator'), async 
     console.error('Generate token error:', error);
     res.status(500).json({ error: 'Error interno del servidor' });
   }
+});
+
+
+// ---------------------------------------------------------------------------
+// Envio masivo de invitaciones por WhatsApp (Twilio)
+// ---------------------------------------------------------------------------
+// Se procesa por lotes desde el frontend (tope de 50 por peticion) en vez de
+// mandar los 703 de una: una sola request sincrona con cientos de llamadas a
+// Twilio se pasa del timeout del proxy, y por lotes el usuario ve avance real.
+const LOTE_MAXIMO = 50;
+
+router.post('/send-whatsapp', auth, authorize('admin', 'evaluator'), async (req, res) => {
+  try {
+    if (!whatsappSender.isConfigured()) {
+      return res.status(503).json({ error: 'El envio por WhatsApp no esta habilitado en esta instancia' });
+    }
+
+    const { items } = req.body;
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ error: 'items es requerido' });
+    }
+    if (items.length > LOTE_MAXIMO) {
+      return res.status(400).json({ error: `Maximo ${LOTE_MAXIMO} participantes por peticion` });
+    }
+
+    const companyIds = await getOwnedCompanyIds(req.user.userId);
+    const superAdmin = isSuperAdmin(req.user);
+
+    // Se re-resuelve todo contra la BD: el telefono y el token NO se aceptan
+    // del cliente, para que nadie pueda mandar mensajes a numeros arbitrarios
+    // ni filtrar tokens de otra empresa.
+    let query = db('participant_evaluations as pe')
+      .join('participants as p', 'p.id', 'pe.participant_id')
+      .join('evaluations as e', 'e.id', 'pe.evaluation_id')
+      .leftJoin('companies as c', 'c.id', 'p.company_id')
+      .whereIn('pe.participant_id', items.map(i => Number(i.participantId)).filter(Boolean))
+      .select(
+        'pe.participant_id', 'pe.evaluation_id', 'pe.access_token', 'pe.token_expires_at',
+        'p.demographic_data', 'c.name as company_name'
+      );
+
+    if (!superAdmin) query = query.whereIn('p.company_id', companyIds);
+
+    const filas = await query;
+    const porParticipante = new Map(filas.map(f => [Number(f.participant_id), f]));
+
+    const resultados = [];
+    for (const item of items) {
+      const pid = Number(item.participantId);
+      const fila = porParticipante.get(pid);
+
+      if (!fila) {
+        resultados.push({ participantId: pid, ok: false, error: 'No encontrado o sin permiso' });
+        continue;
+      }
+      if (fila.token_expires_at && new Date(fila.token_expires_at) < new Date()) {
+        resultados.push({ participantId: pid, ok: false, error: 'El link ya vencio, regeneralo antes de enviar' });
+        continue;
+      }
+
+      const demo = typeof fila.demographic_data === 'string'
+        ? JSON.parse(fila.demographic_data)
+        : (fila.demographic_data || {});
+
+      const envio = await whatsappSender.enviarInvitacion({
+        telefono: demo.phone,
+        nombre: (demo.firstName || '').split(' ')[0] || demo.firstName,
+        empresa: fila.company_name,
+        token: fila.access_token,
+      });
+
+      resultados.push({
+        participantId: pid,
+        nombre: `${demo.firstName || ''} ${demo.lastName || ''}`.trim(),
+        ...envio,
+      });
+    }
+
+    res.json({
+      enviados: resultados.filter(r => r.ok).length,
+      fallidos: resultados.filter(r => !r.ok).length,
+      resultados,
+    });
+  } catch (error) {
+    console.error('Send whatsapp error:', error);
+    res.status(500).json({ error: 'Error interno del servidor' });
+  }
+});
+
+// Le dice al frontend si mostrar el boton de envio masivo.
+router.get('/whatsapp-status', auth, authorize('admin', 'evaluator'), (req, res) => {
+  res.json({ enabled: whatsappSender.isConfigured(), from: whatsappSender.WHATSAPP_FROM || null });
 });
 
 module.exports = router;

@@ -44,6 +44,14 @@ export interface Brand {
    * instancia ni siquiera contiene el markup de la landing.
    */
   hasMarketingSite: boolean;
+  /**
+   * Envio masivo de invitaciones por WhatsApp (Twilio).
+   *
+   * Requiere sender propio aprobado y plantilla aprobada por WhatsApp, que se
+   * configuran por instancia. El backend ademas responde 503 si le faltan las
+   * credenciales, asi que esto solo controla si el boton se muestra.
+   */
+  bulkWhatsApp: boolean;
 }
 
 const BRANDS: Record<string, Brand> = {
@@ -62,6 +70,8 @@ const BRANDS: Record<string, Brand> = {
     surfaceData: '#f0f8ff',
     supportWhatsApp: '573008021701',
     hasMarketingSite: true,
+    // BRS no tiene sender propio de WhatsApp aprobado.
+    bulkWhatsApp: false,
   },
   shaddai: {
     key: 'shaddai',
@@ -81,6 +91,8 @@ const BRANDS: Record<string, Brand> = {
     supportWhatsApp: '573008021701',
     // Shaddai no tiene landing: la raíz entra directo al login.
     hasMarketingSite: false,
+    // Sender propio "Shaddai Consultants" (whatsapp:+15559533027).
+    bulkWhatsApp: true,
   },
 };
 

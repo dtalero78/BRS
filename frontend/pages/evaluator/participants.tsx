@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import FlowLayout from '../../components/FlowLayout';
+import { BRAND } from '../../config/brand';
 import {
   PlusIcon,
   PencilIcon,
@@ -18,6 +19,7 @@ import {
   ArrowDownTrayIcon,
   CheckCircleIcon,
   ExclamationCircleIcon,
+  PaperAirplaneIcon,
 } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import PhotoImportModal from '../../components/PhotoImportModal';
@@ -85,6 +87,12 @@ export default function EvaluatorParticipants() {
 
   // WhatsApp selection state
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  // Envio masivo por Twilio. `enabled` lo confirma el backend: la marca decide
+  // si se muestra el boton, pero si faltan credenciales el endpoint da 503.
+  const [waBulkEnabled, setWaBulkEnabled] = useState(false);
+  const [sendingBulk, setSendingBulk] = useState(false);
+  const [bulkProgress, setBulkProgress] = useState({ hechos: 0, total: 0, ok: 0, fallidos: 0 });
+  const [bulkErrors, setBulkErrors] = useState<{ nombre: string; error: string }[]>([]);
   const [showWaModal, setShowWaModal] = useState(false);
 
   // Excel import state
@@ -577,6 +585,75 @@ export default function EvaluatorParticipants() {
 
   const selectedParticipants = filteredParticipants.filter(p => selectedIds.has(p.id));
 
+  // Twilio solo se ofrece si la marca lo habilita Y el backend tiene las
+  // credenciales; se consulta una vez al montar.
+  useEffect(() => {
+    if (!BRAND.bulkWhatsApp) return;
+    const token = localStorage.getItem('token');
+    fetch('/api/participants/whatsapp-status', { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => setWaBulkEnabled(Boolean(d?.enabled)))
+      .catch(() => setWaBulkEnabled(false));
+  }, []);
+
+  // Se envia en lotes de 50 (tope del endpoint): una sola peticion con cientos
+  // de llamadas a Twilio se pasaria del timeout, y por lotes se ve el avance.
+  const enviarWhatsAppMasivo = async () => {
+    const destinatarios = selectedParticipants.filter(p => p.evaluationUrl);
+    if (destinatarios.length === 0) {
+      toast.error('Ninguno de los seleccionados tiene link generado');
+      return;
+    }
+
+    setSendingBulk(true);
+    setBulkErrors([]);
+    setBulkProgress({ hechos: 0, total: destinatarios.length, ok: 0, fallidos: 0 });
+
+    const token = localStorage.getItem('token');
+    const LOTE = 50;
+    let ok = 0;
+    let fallidos = 0;
+    const errores: { nombre: string; error: string }[] = [];
+
+    for (let i = 0; i < destinatarios.length; i += LOTE) {
+      const lote = destinatarios.slice(i, i + LOTE);
+      try {
+        const res = await fetch('/api/participants/send-whatsapp', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({
+            items: lote.map(p => ({ participantId: p.id, evaluationId: p.evaluationId })),
+          }),
+        });
+
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          // Un lote fallido no aborta el resto: se contabiliza y se sigue.
+          fallidos += lote.length;
+          errores.push({ nombre: `Lote ${Math.floor(i / LOTE) + 1}`, error: err.error || `HTTP ${res.status}` });
+        } else {
+          const data = await res.json();
+          ok += data.enviados || 0;
+          fallidos += data.fallidos || 0;
+          (data.resultados || [])
+            .filter((r: any) => !r.ok)
+            .forEach((r: any) => errores.push({ nombre: r.nombre || `ID ${r.participantId}`, error: r.error }));
+        }
+      } catch (e: any) {
+        fallidos += lote.length;
+        errores.push({ nombre: `Lote ${Math.floor(i / LOTE) + 1}`, error: e.message || 'Error de red' });
+      }
+
+      setBulkProgress({ hechos: Math.min(i + LOTE, destinatarios.length), total: destinatarios.length, ok, fallidos });
+    }
+
+    setBulkErrors(errores);
+    setSendingBulk(false);
+
+    if (fallidos === 0) toast.success(`${ok} invitaciones enviadas`);
+    else toast.error(`${ok} enviadas, ${fallidos} con error`);
+  };
+
   const waMessage = (p: Participant) => {
     const empresa = p.companyName || 'tu empresa';
     const url = p.evaluationUrl || '';
@@ -622,6 +699,19 @@ export default function EvaluatorParticipants() {
                 WhatsApp ({selectedIds.size})
               </button>
             )}
+            {selectedIds.size > 0 && BRAND.bulkWhatsApp && waBulkEnabled && (
+              <button
+                onClick={enviarWhatsAppMasivo}
+                disabled={sendingBulk}
+                title="Envia la invitacion por Twilio, sin abrir WhatsApp"
+                className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+              >
+                <PaperAirplaneIcon className="h-4 w-4 mr-2" />
+                {sendingBulk
+                  ? `Enviando ${bulkProgress.hechos}/${bulkProgress.total}...`
+                  : `Enviar automatico (${selectedIds.size})`}
+              </button>
+            )}
             <button
               onClick={handleExportCsv}
               className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
@@ -656,7 +746,47 @@ export default function EvaluatorParticipants() {
           </div>
         </div>
 
-        {/* Stats Cards */}
+        {/* Stats Cards */}        {(sendingBulk || bulkProgress.total > 0) && (
+          <div className="mt-6 rounded-lg border border-blue-200 bg-blue-50 p-4">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-medium text-blue-900">
+                {sendingBulk
+                  ? `Enviando invitaciones... ${bulkProgress.hechos} de ${bulkProgress.total}`
+                  : `Envio terminado: ${bulkProgress.ok} enviadas, ${bulkProgress.fallidos} con error`}
+              </p>
+              {!sendingBulk && (
+                <button
+                  onClick={() => { setBulkProgress({ hechos: 0, total: 0, ok: 0, fallidos: 0 }); setBulkErrors([]); }}
+                  className="text-blue-600 hover:text-blue-800 text-xl leading-none"
+                >
+                  &times;
+                </button>
+              )}
+            </div>
+            <div className="mt-2 h-2 w-full rounded-full bg-blue-100">
+              <div
+                className="h-2 rounded-full bg-blue-600 transition-all"
+                style={{ width: `${bulkProgress.total ? (bulkProgress.hechos / bulkProgress.total) * 100 : 0}%` }}
+              />
+            </div>
+            {bulkErrors.length > 0 && (
+              <details className="mt-3">
+                <summary className="cursor-pointer text-sm text-blue-800">
+                  Ver {bulkErrors.length} con error
+                </summary>
+                <ul className="mt-2 max-h-48 space-y-1 overflow-y-auto text-xs text-gray-700">
+                  {bulkErrors.map((e, i) => (
+                    <li key={i}>
+                      <span className="font-medium">{e.nombre}:</span> {e.error}
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            )}
+          </div>
+        )}
+
+
         <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
           <div className="bg-white overflow-hidden shadow rounded-lg">
             <div className="p-5">
