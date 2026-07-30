@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef, ReactNode } from 'react';
 import { useRouter } from 'next/router';
 import toast from 'react-hot-toast';
-import { ClipboardList, Briefcase, HardHat, Home, Brain, Shield, FileText, CheckCircle2, ArrowLeft, ChevronLeft, ChevronDown, Check, ScanFace, ShieldAlert, LucideIcon } from 'lucide-react';
+import { ClipboardList, Briefcase, HardHat, Home, Brain, Shield, FileText, CheckCircle2, ArrowLeft, ChevronLeft, ChevronDown, Check, ScanFace, ShieldAlert, PlayCircle, LucideIcon } from 'lucide-react';
 import { BRAND } from '../../../config/brand';
 import FaceCapture from '../../../components/FaceCapture';
+import IntroVideoModal from '../../../components/IntroVideoModal';
 
 // Simple wrapper for participant pages (no auth required)
 function ParticipantLayout({ children }: { children: ReactNode }) {
@@ -137,6 +138,13 @@ const ParticipantEvaluationPage = () => {
   // el botón "Continuar" queda escondido detrás del teclado.
   const [viewportHeight, setViewportHeight] = useState<number | null>(null);
 
+  // Video de instrucciones sobre el panel de cuestionarios (solo marcas con
+  // `BRAND.introVideo`). Se abre una vez por participante y dispositivo: al
+  // terminar cada cuestionario se vuelve a este panel, y reproducirlo cinco
+  // veces sería un castigo. Queda un botón para volver a verlo.
+  const [showIntroVideo, setShowIntroVideo] = useState(false);
+  const introVideoSeenKey = token ? `brs_intro_video_seen_${token}` : null;
+
   // Questions per page for pagination (changed to 1 for individual display)
   const QUESTIONS_PER_PAGE = 1;
 
@@ -178,6 +186,29 @@ const ParticipantEvaluationPage = () => {
   useEffect(() => {
     questionScrollRef.current?.scrollTo({ top: 0, behavior: 'auto' });
   }, [currentQuestionIndex, currentQuestionnaire?.type]);
+
+  // Abre el video apenas el panel queda a la vista (token validado y sin
+  // cuestionario en curso), no antes: si se abriera durante la carga el
+  // participante vería el video sobre una pantalla en blanco.
+  useEffect(() => {
+    if (!BRAND.introVideo || !participant || currentQuestionnaire || !introVideoSeenKey) return;
+    try {
+      if (localStorage.getItem(introVideoSeenKey)) return;
+    } catch (e) {
+      // Safari en modo privado puede lanzar al leer localStorage: se muestra
+      // el video igual, que es mejor que romper el panel.
+    }
+    setShowIntroVideo(true);
+  }, [participant, currentQuestionnaire, introVideoSeenKey]);
+
+  const closeIntroVideo = () => {
+    setShowIntroVideo(false);
+    try {
+      if (introVideoSeenKey) localStorage.setItem(introVideoSeenKey, '1');
+    } catch (e) {
+      // Sin persistencia el video reaparecerá; no es motivo para fallar.
+    }
+  };
 
   // Sigue el viewport visible (teclado virtual incluido) mientras se responde.
   useEffect(() => {
@@ -1483,6 +1514,13 @@ const ParticipantEvaluationPage = () => {
   // ---------------------------------------------------------------------------
   return (
     <ParticipantLayout>
+      {BRAND.introVideo && showIntroVideo && (
+        <IntroVideoModal
+          src={BRAND.introVideo}
+          poster={BRAND.introVideoPoster}
+          onClose={closeIntroVideo}
+        />
+      )}
       <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 py-4">
         <div className="max-w-4xl mx-auto px-6">
         {(() => {
@@ -1521,6 +1559,15 @@ const ParticipantEvaluationPage = () => {
                   <p className="text-gray-500">
                     Selecciona un cuestionario para continuar
                   </p>
+                  {BRAND.introVideo && (
+                    <button
+                      onClick={() => setShowIntroVideo(true)}
+                      className="mt-3 inline-flex items-center gap-1.5 text-sm font-medium text-blue-600 hover:text-blue-800"
+                    >
+                      <PlayCircle className="h-4 w-4" />
+                      Ver video de instrucciones
+                    </button>
+                  )}
                 </div>
 
                 {/* Progress bars (compact) — obligatorios + Brief COPE por separado */}

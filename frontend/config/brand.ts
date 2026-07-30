@@ -52,6 +52,14 @@ export interface Brand {
    * credenciales, asi que esto solo controla si el boton se muestra.
    */
   bulkWhatsApp: boolean;
+  /**
+   * Video de instrucciones que se abre solo la primera vez que el participante
+   * entra al panel de cuestionarios. Sin este campo la marca no muestra ningún
+   * video y el panel abre directo (comportamiento de BRS).
+   */
+  introVideo?: string;
+  /** Portada del `introVideo` (frame representativo). */
+  introVideoPoster?: string;
 }
 
 const BRANDS: Record<string, Brand> = {
@@ -93,6 +101,8 @@ const BRANDS: Record<string, Brand> = {
     hasMarketingSite: false,
     // Sender propio "Shaddai Consultants" (whatsapp:+15559533027).
     bulkWhatsApp: true,
+    introVideo: '/brand/shaddai/intro.mp4',
+    introVideoPoster: '/brand/shaddai/intro-poster.jpg',
   },
 };
 
