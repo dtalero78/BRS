@@ -649,11 +649,25 @@ router.post('/:token/responses', async (req, res) => {
       return res.status(404).json({ error: 'Token inválido o expirado' });
     }
 
-    // Una batería ya completada no admite más escrituras vía token: el access_token
-    // sigue siendo válido (TTL 90 días) pero no debe permitir sobrescribir respuestas
-    // ni forzar recálculos después de terminada.
+    // Una batería ya completada no admite SOBRESCRIBIR lo ya respondido: el
+    // access_token sigue siendo válido (TTL 90 días) pero no debe permitir
+    // rehacer un cuestionario terminado ni forzar recálculos.
+    //
+    // El bloqueo es por cuestionario, no por batería. El Brief COPE es opcional
+    // y NO cuenta para marcar la batería como completada, pero el hub lo sigue
+    // ofreciendo después: bloquear por estado del PE hacía que quien lo dejaba
+    // de último perdiera sus 28 respuestas con un 409 que el frontend mostraba
+    // como "revisa tu conexión". Un cuestionario que nunca se terminó todavía
+    // se puede terminar.
     if (participantEvaluation.pe_status === 'completed') {
-      return res.status(409).json({ error: 'La batería ya fue completada; no se admiten más respuestas.' });
+      const yaTerminado = await db('responses')
+        .where('participant_evaluation_id', participantEvaluation.pe_id)
+        .where('questionnaire_type', questionnaireType)
+        .whereNotNull('completed_at')
+        .first();
+      if (yaTerminado) {
+        return res.status(409).json({ error: 'Este cuestionario ya fue completado; no se admiten más respuestas.' });
+      }
     }
 
     // Guard de verificación facial. El bloqueo se aplica AQUÍ, no solo en la UI:
@@ -768,10 +782,15 @@ router.post('/:token/responses', async (req, res) => {
     });
 
     if (isCompleted) {
+      // Recalcular sí conviene siempre: un Brief COPE respondido después de
+      // terminada la batería agrega sus resultados a los ya calculados.
       autoCalculateResults(participantEvaluation.pe_id);
-      // Notificar al sistema externo (ej. BSL-PLATAFORMA2) sin bloquear la
-      // respuesta. El emitter es no-op si el PE no tiene callbackUrl.
-      notifyEvaluationCompleted(participantEvaluation.pe_id);
+      // El webhook solo en la TRANSICIÓN a completada. Sin esta condición, un
+      // cuestionario opcional guardado después de terminar la batería volvería
+      // a notificar al sistema externo un evento que ya emitimos.
+      if (participantEvaluation.pe_status !== 'completed') {
+        notifyEvaluationCompleted(participantEvaluation.pe_id);
+      }
     }
 
     res.json({
