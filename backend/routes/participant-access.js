@@ -95,11 +95,16 @@ router.get('/:token/face-status', async (req, res) => {
     const pe = await findPeByToken(req.params.token);
     if (!pe) return res.status(404).json({ error: 'Token inválido o expirado' });
 
-    // Una batería ya completada no vuelve a pedir selfie: no hay nada que escribir.
-    if (pe.status === 'completed') return res.json({ required: false });
+    // OJO: aquí NO se corta por `status === 'completed'`. Se hacía cuando una
+    // batería terminada no admitía ninguna escritura, pero el Brief COPE sí se
+    // puede responder después (no cuenta para completarla). Con el atajo, la UI
+    // se saltaba la selfie mientras el guard de /responses seguía exigiéndola:
+    // el participante respondía las 28 preguntas y las perdía con un 403 que se
+    // mostraba como "revisa tu conexión". Si ya no queda nada por responder, el
+    // hub no deja entrar a ningún cuestionario y la selfie nunca se pide.
 
     if (!isRekognitionAvailable()) {
-      return res.json({ required: true, available: false, enrolled: false, verified: false });
+      return res.json({ required: true, available: false, enrolled: false });
     }
 
     // No se devuelve qué cuestionarios ya están verificados a propósito: el
