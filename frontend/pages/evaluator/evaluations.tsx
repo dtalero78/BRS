@@ -128,14 +128,25 @@ export default function EvaluatorEvaluations() {
         : '/api/evaluations';
       
       const method = editingEvaluation ? 'PUT' : 'POST';
-      
+
+      // La empresa no se puede cambiar al editar y el schema del PUT rechaza
+      // claves desconocidas, asi que solo se envian los campos editables.
+      const payload = editingEvaluation
+        ? {
+            name: formData.name,
+            description: formData.description,
+            startDate: formData.startDate,
+            endDate: formData.endDate || null
+          }
+        : { ...formData, endDate: formData.endDate || null };
+
       const response = await fetch(url, {
         method,
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify(formData)
+        body: JSON.stringify(payload)
       });
 
       if (response.ok) {
