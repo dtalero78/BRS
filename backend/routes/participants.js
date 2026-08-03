@@ -260,6 +260,7 @@ router.get('/', auth, async (req, res) => {
         'pe.assigned_at',
         'pe.completed_at',
         'pe.access_token',
+        'pe.whatsapp_sent_at',
         'companies.name as company_name'
       );
 
@@ -352,6 +353,7 @@ router.get('/', auth, async (req, res) => {
         createdAt: p.created_at,
         updatedAt: p.updated_at,
         accessToken: p.access_token,
+        whatsappSentAt: p.whatsapp_sent_at || null,
         evaluationUrl: p.access_token ? `${getBaseUrl(req)}/participant/evaluation/${p.access_token}` : null
       };
     }));
@@ -1173,6 +1175,19 @@ router.post('/send-whatsapp', auth, authorize('admin', 'evaluator'), async (req,
         empresa: fila.company_name,
         token: fila.access_token,
       });
+
+      // Se deja constancia del envio para poder reintentar SOLO a los que no
+      // recibieron. Si falla el UPDATE no se aborta: el mensaje ya salio y
+      // perderlo de vista es preferible a cortar la tanda.
+      if (envio.ok) {
+        try {
+          await db('participant_evaluations')
+            .where({ evaluation_id: fila.evaluation_id, participant_id: pid })
+            .update({ whatsapp_sent_at: new Date(), whatsapp_message_sid: envio.sid || null });
+        } catch (e) {
+          console.error('No se pudo marcar whatsapp_sent_at para', pid, e.message);
+        }
+      }
 
       resultados.push({
         participantId: pid,

@@ -64,6 +64,8 @@ interface Participant {
   evaluationName?: string;
   evaluationPaid?: boolean;
   evaluationUrl?: string;
+  /** ISO de cuando se envio la invitacion por WhatsApp. null = nunca se envio. */
+  whatsappSentAt?: string | null;
   email?: string;
   companyName?: string;
   status: 'pending' | 'in_progress' | 'completed';
@@ -118,6 +120,9 @@ export default function EvaluatorParticipants() {
   // Motivo por el que se corto el envio (null = termino normal).
   const [bulkStopped, setBulkStopped] = useState<string | null>(null);
   const [waLoteMaximo, setWaLoteMaximo] = useState(25);
+  // Filtra por si ya se les mando la invitacion. Clave para reintentar solo
+  // a los que faltan cuando el envio se corta a mitad.
+  const [whatsappFilter, setWhatsappFilter] = useState<'all' | 'sent' | 'unsent'>('all');
   const [showWaModal, setShowWaModal] = useState(false);
 
   // Excel import state
@@ -586,7 +591,12 @@ export default function EvaluatorParticipants() {
     
     const matchesFormType = formTypeFilter === 'all' || participant.formType === formTypeFilter;
     
-    return matchesSearch && matchesFormType;
+    const matchesWhatsapp =
+      whatsappFilter === 'all' ||
+      (whatsappFilter === 'sent' && !!participant.whatsappSentAt) ||
+      (whatsappFilter === 'unsent' && !participant.whatsappSentAt);
+
+    return matchesSearch && matchesFormType && matchesWhatsapp;
   });
 
   const allFilteredSelected = filteredParticipants.length > 0 && filteredParticipants.every(p => selectedIds.has(p.id));
@@ -707,6 +717,7 @@ export default function EvaluatorParticipants() {
     let ok = 0;
     let fallidos = 0;
     const errores: { nombre: string; error: string }[] = [];
+    const enviadosOk = new Set<number>();
     let detenido: string | null = null;
 
     for (let i = 0; i < destinatarios.length; i += LOTE) {
@@ -731,9 +742,10 @@ export default function EvaluatorParticipants() {
           const data = await res.json();
           ok += data.enviados || 0;
           fallidos += data.fallidos || 0;
-          (data.resultados || [])
-            .filter((r: any) => !r.ok)
-            .forEach((r: any) => errores.push({ nombre: r.nombre || `ID ${r.participantId}`, error: r.error }));
+          (data.resultados || []).forEach((r: any) => {
+            if (r.ok) enviadosOk.add(Number(r.participantId));
+            else errores.push({ nombre: r.nombre || `ID ${r.participantId}`, error: r.error });
+          });
 
           if (data.fatal) {
             detenido = `WhatsApp bloqueo el remitente (codigo ${data.fatal.code}). Envio detenido para no agravarlo.`;
@@ -754,6 +766,13 @@ export default function EvaluatorParticipants() {
 
       // Pausa entre lotes, salvo despues del ultimo.
       if (i + LOTE < destinatarios.length) await new Promise(r => setTimeout(r, PAUSA_ENTRE_LOTES_MS));
+    }
+
+    // Se marcan en pantalla los que salieron bien, sin recargar la tabla
+    // entera (son 703 filas en 4 peticiones).
+    if (enviadosOk.size > 0) {
+      const ahora = new Date().toISOString();
+      setParticipants(prev => prev.map(p => (enviadosOk.has(p.id) ? { ...p, whatsappSentAt: ahora } : p)));
     }
 
     setBulkErrors(errores);
@@ -998,6 +1017,19 @@ export default function EvaluatorParticipants() {
                 <option value="completed">Completado</option>
               </select>
             </div>
+            {BRAND.bulkWhatsApp && waBulkEnabled && (
+              <div>
+                <select
+                  value={whatsappFilter}
+                  onChange={(e) => setWhatsappFilter(e.target.value as 'all' | 'sent' | 'unsent')}
+                  className="block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                >
+                  <option value="all">WhatsApp: todos</option>
+                  <option value="unsent">WhatsApp: sin enviar</option>
+                  <option value="sent">WhatsApp: ya enviado</option>
+                </select>
+              </div>
+            )}
 
             <div>
               <select
@@ -1121,8 +1153,21 @@ export default function EvaluatorParticipants() {
                               <UserIcon className="h-6 w-6 text-gray-600" />
                             </div>
                             <div className="ml-4">
-                              <div className="text-sm font-medium text-gray-900">
-                                {participant.firstName} {participant.lastName}
+                              <div className="flex items-center gap-2">
+                                <div className="text-sm font-medium text-gray-900">
+                                  {participant.firstName} {participant.lastName}
+                                </div>
+                                {participant.whatsappSentAt && (
+                                  <span
+                                    title={`Invitacion enviada el ${new Date(participant.whatsappSentAt).toLocaleString('es-CO')}`}
+                                    className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800"
+                                  >
+                                    <svg className="h-3 w-3" viewBox="0 0 24 24" fill="currentColor">
+                                      <path d="M12 0C5.373 0 0 5.373 0 12c0 2.127.559 4.122 1.534 5.854L.046 23.953a.5.5 0 0 0 .612.612l6.1-1.488A11.945 11.945 0 0 0 12 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.9a9.878 9.878 0 0 1-5.031-1.374l-.36-.214-3.732.91.936-3.63-.235-.374A9.867 9.867 0 0 1 2.1 12C2.1 6.534 6.534 2.1 12 2.1S21.9 6.534 21.9 12 17.466 21.9 12 21.9z"/>
+                                    </svg>
+                                    WHP Enviado
+                                  </span>
+                                )}
                               </div>
                               <div className="text-sm text-gray-500">
                                 {participant.documentType}: {participant.documentNumber}
