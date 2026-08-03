@@ -698,6 +698,17 @@ const ParticipantEvaluationPage = () => {
       });
 
       if (!response.ok) {
+        // 409 = "este cuestionario ya fue completado". No es un fallo: el
+        // servidor está confirmando que el dato YA está guardado. Reintentar
+        // nunca lo resuelve, y agotar los reintentos termina culpando a la
+        // conexión y pidiéndole al participante que no cierre la pestaña —
+        // el peor mensaje posible para el caso más benigno. Se trata como
+        // éxito para que un guardado rezagado no alarme a quien ya terminó.
+        if (response.status === 409) {
+          setSaveState('saved');
+          console.log('Guardado ignorado: el cuestionario ya estaba completado en el servidor');
+          return;
+        }
         if (response.status === 429) {
           throw new Error('429: Too Many Requests');
         }
@@ -727,6 +738,17 @@ const ParticipantEvaluationPage = () => {
 
   const submitQuestionnaire = async () => {
     if (!currentQuestionnaire || !token) return;
+
+    // Cancela el autoguardado rezagado antes de enviar. Al responder la ultima
+    // pregunta, handleResponse programa un guardado a 1s; si el participante
+    // toca "Finalizar" antes de que dispare, ese timeout reenvia el mismo
+    // cuestionario DESPUES de que este submit lo marco como completado, y el
+    // backend lo rechaza con 409. En el ultimo cuestionario de la bateria eso
+    // es sistematico, porque el submit tambien deja el PE en 'completed'.
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+      saveTimeoutRef.current = null;
+    }
 
     setIsSubmitting(true);
     try {
