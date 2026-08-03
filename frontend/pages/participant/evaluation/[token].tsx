@@ -625,12 +625,24 @@ const ParticipantEvaluationPage = () => {
       // y se reguardan al verificar.
       if (error?.faceVerificationRequired) {
         const tipo = QUESTIONNAIRE_TYPE_MAP[currentQuestionnaire?.type || ''];
+        // El servidor no las va a aceptar hasta que se verifique; quedan en el
+        // dispositivo por si el participante cierra o sale al menu.
+        respaldarEnDispositivo(responsesToSave);
         pendingSaveRef.current = true;
         setFaceRequired(true);
         setVerifiedQuestionnaires(prev => prev.filter(t => t !== tipo));
         if (currentQuestionnaire) setPendingQuestionnaireId(currentQuestionnaire.type);
         setSaveState('idle');
         toast('Por seguridad debemos verificar tu identidad otra vez.', { icon: '🔒' });
+        return;
+      }
+
+      // Rechazo explicito del servidor: reintentar no lo arregla y el mensaje
+      // final culparia a la conexion.
+      if (error?.noReintentar) {
+        respaldarEnDispositivo(responsesToSave);
+        setSaveState('error');
+        toast.error(error.message, { duration: 8000 });
         return;
       }
 
@@ -662,6 +674,23 @@ const ParticipantEvaluationPage = () => {
         'en este dispositivo; no cierres esta pestaña e intenta continuar.',
         { duration: 8000 }
       );
+    }
+  };
+
+  /**
+   * Respalda en el dispositivo lo respondido hasta ahora. Se usa antes de
+   * cualquier salida que no pueda guardar en el servidor (verificacion facial
+   * pendiente): sin esto, salir al menu pierde las respuestas en memoria.
+   */
+  const respaldarEnDispositivo = (responsesToSave = responses) => {
+    if (!currentQuestionnaire) return;
+    try {
+      localStorage.setItem(
+        `brs_backup_${token}_${currentQuestionnaire.type}`,
+        JSON.stringify(responsesToSave)
+      );
+    } catch (err) {
+      console.error('No se pudo respaldar en localStorage:', err);
     }
   };
 
@@ -722,6 +751,12 @@ const ParticipantEvaluationPage = () => {
             if (body.code === 'FACE_UNAVAILABLE') setFaceAvailable(false);
             throw faceError;
           }
+          // Un 403 sin ese código sigue siendo un rechazo del servidor, no un
+          // problema de red: reintentarlo 3 veces para terminar diciendo
+          // "revisa tu conexión" desorienta a quien tiene señal perfecta.
+          const rechazo: any = new Error(body.error || 'El servidor rechazó el guardado');
+          rechazo.noReintentar = true;
+          throw rechazo;
         }
         throw new Error(`Error al guardar respuestas: ${response.status}`);
       }
@@ -1107,11 +1142,20 @@ const ParticipantEvaluationPage = () => {
         <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 py-8">
           <div className="max-w-md mx-auto px-4">
             <button
-              onClick={() => setPendingQuestionnaireId(null)}
+              onClick={() => {
+                // Sale al menu, no de vuelta al cuestionario. Cuando la selfie
+                // se pide a mitad de camino (el guardado devolvio 403),
+                // limpiar solo pendingQuestionnaireId dejaba al participante
+                // adentro respondiendo algo que el servidor iba a rechazar en
+                // cada guardado, con el aviso enganoso de "revisa tu conexion".
+                respaldarEnDispositivo();
+                setPendingQuestionnaireId(null);
+                setCurrentQuestionnaire(null);
+              }}
               className="mb-4 flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700"
             >
               <ChevronLeft className="w-4 h-4" />
-              Volver
+              Volver al menú
             </button>
 
             <div className="mb-6">
