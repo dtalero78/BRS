@@ -68,7 +68,9 @@ interface Participant {
   whatsappSentAt?: string | null;
   email?: string;
   companyName?: string;
-  status: 'pending' | 'in_progress' | 'completed';
+  // 'assigned' es el estado real en participant_evaluations (el mayoritario);
+  // 'pending' solo llega como fallback del backend cuando no hay evaluacion.
+  status: 'assigned' | 'pending' | 'in_progress' | 'completed';
   completionPercentage: number;
   startedAt?: string;
   completedAt?: string;
@@ -418,14 +420,20 @@ export default function EvaluatorParticipants() {
     }
   };
 
+  // El estado real de participant_evaluations es 'assigned' (no 'pending'): sin
+  // esa clave el badge salia sin color ni texto para la mayoria de la tabla.
+  // 'pending' se conserva porque el backend lo usa como fallback cuando el
+  // participante todavia no tiene evaluacion asignada.
   const getStatusBadge = (status: string) => {
     const badges = {
+      assigned: 'bg-yellow-100 text-yellow-800',
       pending: 'bg-yellow-100 text-yellow-800',
       in_progress: 'bg-blue-100 text-blue-800',
       completed: 'bg-green-100 text-green-800'
     };
 
     const labels = {
+      assigned: 'Pendiente',
       pending: 'Pendiente',
       in_progress: 'En Progreso',
       completed: 'Completado'
@@ -503,7 +511,7 @@ export default function EvaluatorParticipants() {
     const statusLabel = (s: string) =>
       s === 'completed' ? 'Completado'
       : s === 'in_progress' ? 'En progreso'
-      : s === 'assigned' ? 'Asignado'
+      : s === 'assigned' ? 'Pendiente'
       : s === 'pending' ? 'Pendiente'
       : (s || '');
 
@@ -940,7 +948,11 @@ export default function EvaluatorParticipants() {
                       Pendientes
                     </dt>
                     <dd className="text-lg font-medium text-gray-900">
-                      {participants?.filter(p => p.status === 'pending' || p.status === 'in_progress')?.length || 0}
+                      {/* Pendiente = asignado pero sin empezar. Antes sumaba
+                          'in_progress', asi que duplicaba la tarjeta de al lado,
+                          y buscaba 'pending' —que no existe en la BD— dejando
+                          fuera del tablero a los realmente asignados. */}
+                      {participants?.filter(p => p.status === 'assigned' || p.status === 'pending')?.length || 0}
                     </dd>
                   </dl>
                 </div>
@@ -1012,7 +1024,7 @@ export default function EvaluatorParticipants() {
                 className="block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
               >
                 <option value="all">Todos los estados</option>
-                <option value="assigned">Asignado</option>
+                <option value="assigned">Pendiente</option>
                 <option value="in_progress">En Progreso</option>
                 <option value="completed">Completado</option>
               </select>
