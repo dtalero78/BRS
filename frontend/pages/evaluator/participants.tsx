@@ -115,6 +115,9 @@ export default function EvaluatorParticipants() {
   const [sendingBulk, setSendingBulk] = useState(false);
   const [bulkProgress, setBulkProgress] = useState({ hechos: 0, total: 0, ok: 0, fallidos: 0 });
   const [bulkErrors, setBulkErrors] = useState<{ nombre: string; error: string }[]>([]);
+  // Motivo por el que se corto el envio (null = termino normal).
+  const [bulkStopped, setBulkStopped] = useState<string | null>(null);
+  const [waLoteMaximo, setWaLoteMaximo] = useState(25);
   const [showWaModal, setShowWaModal] = useState(false);
 
   // Excel import state
@@ -620,7 +623,7 @@ export default function EvaluatorParticipants() {
     const token = localStorage.getItem('token');
     fetch('/api/participants/whatsapp-status', { headers: { Authorization: `Bearer ${token}` } })
       .then(r => (r.ok ? r.json() : null))
-      .then(d => setWaBulkEnabled(Boolean(d?.enabled)))
+      .then(d => { setWaBulkEnabled(Boolean(d?.enabled)); if (d?.loteMaximo) setWaLoteMaximo(d.loteMaximo); })
       .catch(() => setWaBulkEnabled(false));
   }, []);
 
@@ -686,17 +689,30 @@ export default function EvaluatorParticipants() {
     }
 
     setSendingBulk(true);
+    setBulkStopped(null);
     setBulkErrors([]);
     setBulkProgress({ hechos: 0, total: destinatarios.length, ok: 0, fallidos: 0 });
 
     const token = localStorage.getItem('token');
-    const LOTE = 50;
+
+    // Ritmo del envio. El lote lo fija el backend (25) para no pasarse del
+    // timeout de Cloudflare; entre lotes se espera para no disparar todo de
+    // corrido y, sobre todo, para poder frenar a tiempo si algo va mal.
+    const LOTE = waLoteMaximo || 25;
+    const PAUSA_ENTRE_LOTES_MS = 45000;
+    // Si un lote falla por encima de esto, se detiene: sintoma de que Meta
+    // empezo a rechazar y seguir solo empeora la reputacion del remitente.
+    const UMBRAL_FALLO = 0.2;
+
     let ok = 0;
     let fallidos = 0;
     const errores: { nombre: string; error: string }[] = [];
+    let detenido: string | null = null;
 
     for (let i = 0; i < destinatarios.length; i += LOTE) {
       const lote = destinatarios.slice(i, i + LOTE);
+      const numLote = Math.floor(i / LOTE) + 1;
+
       try {
         const res = await fetch('/api/participants/send-whatsapp', {
           method: 'POST',
@@ -708,9 +724,9 @@ export default function EvaluatorParticipants() {
 
         if (!res.ok) {
           const err = await res.json().catch(() => ({}));
-          // Un lote fallido no aborta el resto: se contabiliza y se sigue.
           fallidos += lote.length;
-          errores.push({ nombre: `Lote ${Math.floor(i / LOTE) + 1}`, error: err.error || `HTTP ${res.status}` });
+          errores.push({ nombre: `Lote ${numLote}`, error: err.error || `HTTP ${res.status}` });
+          detenido = `El lote ${numLote} fue rechazado por el servidor. Envio detenido.`;
         } else {
           const data = await res.json();
           ok += data.enviados || 0;
@@ -718,19 +734,34 @@ export default function EvaluatorParticipants() {
           (data.resultados || [])
             .filter((r: any) => !r.ok)
             .forEach((r: any) => errores.push({ nombre: r.nombre || `ID ${r.participantId}`, error: r.error }));
+
+          if (data.fatal) {
+            detenido = `WhatsApp bloqueo el remitente (codigo ${data.fatal.code}). Envio detenido para no agravarlo.`;
+          } else if ((data.tasaFallo ?? 0) > UMBRAL_FALLO) {
+            detenido = `El lote ${numLote} fallo en ${Math.round((data.tasaFallo || 0) * 100)}% de los envios. Envio detenido.`;
+          }
         }
       } catch (e: any) {
         fallidos += lote.length;
-        errores.push({ nombre: `Lote ${Math.floor(i / LOTE) + 1}`, error: e.message || 'Error de red' });
+        errores.push({ nombre: `Lote ${numLote}`, error: e.message || 'Error de red' });
+        detenido = `Error de red en el lote ${numLote}. Envio detenido.`;
       }
 
       setBulkProgress({ hechos: Math.min(i + LOTE, destinatarios.length), total: destinatarios.length, ok, fallidos });
+      setBulkErrors([...errores]);
+
+      if (detenido) break;
+
+      // Pausa entre lotes, salvo despues del ultimo.
+      if (i + LOTE < destinatarios.length) await new Promise(r => setTimeout(r, PAUSA_ENTRE_LOTES_MS));
     }
 
     setBulkErrors(errores);
+    setBulkStopped(detenido);
     setSendingBulk(false);
 
-    if (fallidos === 0) toast.success(`${ok} invitaciones enviadas`);
+    if (detenido) toast.error(detenido);
+    else if (fallidos === 0) toast.success(`${ok} invitaciones enviadas`);
     else toast.error(`${ok} enviadas, ${fallidos} con error`);
   };
 
@@ -826,7 +857,7 @@ export default function EvaluatorParticipants() {
               </p>
               {!sendingBulk && (
                 <button
-                  onClick={() => { setBulkProgress({ hechos: 0, total: 0, ok: 0, fallidos: 0 }); setBulkErrors([]); }}
+                  onClick={() => { setBulkProgress({ hechos: 0, total: 0, ok: 0, fallidos: 0 }); setBulkErrors([]); setBulkStopped(null); }}
                   className="text-blue-600 hover:text-blue-800 text-xl leading-none"
                 >
                   &times;
@@ -1550,6 +1581,16 @@ export default function EvaluatorParticipants() {
                         ? `Enviando ${bulkProgress.hechos} de ${bulkProgress.total}...`
                         : `${bulkProgress.ok} enviadas, ${bulkProgress.fallidos} con error`}
                     </p>
+                    {bulkStopped && !sendingBulk && (
+                      <div className="mt-2 rounded-md border border-red-200 bg-red-50 p-3">
+                        <p className="text-sm font-medium text-red-800">Envio detenido automaticamente</p>
+                        <p className="mt-1 text-xs text-red-700">{bulkStopped}</p>
+                        <p className="mt-1 text-xs text-red-700">
+                          Quedan {bulkProgress.total - bulkProgress.hechos} sin enviar. Revisa la causa
+                          antes de reintentar: insistir sobre un remitente bloqueado empeora su reputacion.
+                        </p>
+                      </div>
+                    )}
                     {bulkErrors.length > 0 && !sendingBulk && (
                       <details className="mt-2">
                         <summary className="cursor-pointer text-xs text-blue-600">

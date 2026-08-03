@@ -700,7 +700,12 @@ router.post('/import-excel', auth, authorize('admin', 'evaluator'), upload.singl
 // OJO: va ANTES de '/:id' o Express lo captura como si 'whatsapp-status'
 // fuera el id de un participante y nunca llega aqui.
 router.get('/whatsapp-status', auth, authorize('admin', 'evaluator'), (req, res) => {
-  res.json({ enabled: whatsappSender.isConfigured(), from: whatsappSender.WHATSAPP_FROM || null });
+  res.json({
+    enabled: whatsappSender.isConfigured(),
+    from: whatsappSender.WHATSAPP_FROM || null,
+    loteMaximo: LOTE_MAXIMO,
+    pausaEntreMensajesMs: PAUSA_ENTRE_MENSAJES_MS,
+  });
 });
 
 // Le dice al frontend si esta instancia tiene verificacion facial (solo asi
@@ -1093,7 +1098,20 @@ router.post('/:id/reset-face', auth, authorize('admin', 'evaluator'), async (req
 // Se procesa por lotes desde el frontend (tope de 50 por peticion) en vez de
 // mandar los 703 de una: una sola request sincrona con cientos de llamadas a
 // Twilio se pasa del timeout del proxy, y por lotes el usuario ve avance real.
-const LOTE_MAXIMO = 50;
+// Ritmo del envio masivo.
+//
+// LOTE_MAXIMO x PAUSA_ENTRE_MENSAJES_MS debe quedar holgadamente por debajo del
+// timeout de Cloudflare (100s) o la peticion muere con 524 aunque los mensajes
+// hayan salido: 25 x 2s = 50s, mas la latencia de Twilio (~0.3s c/u) = ~58s.
+// Subir el lote a 50 con la misma pausa daria 100s y quedaria justo en el corte.
+const LOTE_MAXIMO = Number(process.env.WHATSAPP_LOTE_MAXIMO) || 25;
+const PAUSA_ENTRE_MENSAJES_MS = Number(process.env.WHATSAPP_PAUSA_MS) || 2000;
+
+// Codigos de Twilio que significan "la cuenta o el remitente esta bloqueado":
+// reintentar con los demas destinatarios solo agrava el caso ante Meta.
+const ERRORES_FATALES = new Set([63112, 63113, 63024, 21408]);
+
+const dormir = (ms) => new Promise(r => setTimeout(r, ms));
 
 router.post('/send-whatsapp', auth, authorize('admin', 'evaluator'), async (req, res) => {
   try {
@@ -1131,6 +1149,7 @@ router.post('/send-whatsapp', auth, authorize('admin', 'evaluator'), async (req,
     const porParticipante = new Map(filas.map(f => [Number(f.participant_id), f]));
 
     const resultados = [];
+    let fatal = null;
     for (const item of items) {
       const pid = Number(item.participantId);
       const fila = porParticipante.get(pid);
@@ -1160,11 +1179,28 @@ router.post('/send-whatsapp', auth, authorize('admin', 'evaluator'), async (req,
         nombre: `${demo.firstName || ''} ${demo.lastName || ''}`.trim(),
         ...envio,
       });
+
+      // Si Meta bloqueo el remitente, se corta YA: seguir mandando contra un
+      // numero restringido es lo que convierte una restriccion en un baneo.
+      if (!envio.ok && ERRORES_FATALES.has(Number(envio.code))) {
+        fatal = { code: envio.code, error: envio.error };
+        break;
+      }
+
+      // Espaciado entre mensajes. No evita el baneo por si solo —Meta castiga
+      // reportes, no velocidad— pero evita el patron de rafaga automatizada.
+      if (item !== items[items.length - 1]) await dormir(PAUSA_ENTRE_MENSAJES_MS);
     }
 
+    const enviados = resultados.filter(r => r.ok).length;
+    const fallidos = resultados.filter(r => !r.ok).length;
+
     res.json({
-      enviados: resultados.filter(r => r.ok).length,
-      fallidos: resultados.filter(r => !r.ok).length,
+      enviados,
+      fallidos,
+      // El frontend frena si esto viene en true.
+      fatal: fatal || null,
+      tasaFallo: resultados.length ? fallidos / resultados.length : 0,
       resultados,
     });
   } catch (error) {
