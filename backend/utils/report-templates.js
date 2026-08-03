@@ -750,7 +750,25 @@ function generateOverallRiskText(riskCounts, totalParticipants, label) {
 //   'paragraphs' -> string[], each entry rendered as its own justified paragraph
 //   'list'       -> string[], each entry rendered as a bullet / numbered item
 // Array fields ('paragraphs' and 'list') are edited as "one line = one entry".
+
+// Último recurso para la ciudad de la portada: solo se usa cuando ninguna ficha
+// de datos trae ciudad de trabajo.
+const DEFAULT_REPORT_CITY = 'BOGOTÁ D.C.';
+
+// Ciudad más frecuente entre las fichas de datos de la evaluación.
+// `demographics.ciudadTrabajo` es un mapa { 'Tumaco, Nariño': 5, ... } que arma
+// aggregateExtendedDemographics; se elige la de mayor conteo (empate -> la
+// primera alfabéticamente, para que el mismo dato no produzca portadas distintas).
+function resolveReportCity(demographics) {
+  const counts = (demographics && demographics.ciudadTrabajo) || {};
+  const entries = Object.entries(counts).filter(([city, n]) => city && n > 0);
+  if (!entries.length) return '';
+  entries.sort((a, b) => (b[1] - a[1]) || a[0].localeCompare(b[0], 'es'));
+  return entries[0][0];
+}
+
 const ORG_TEXT_FIELDS = [
+  { key: 'ciudad', group: 'Descripción de la empresa', label: 'Ciudad del informe', kind: 'paragraph', help: 'Aparece en la portada, junto al mes y año. Por defecto se toma la ciudad de trabajo más frecuente en las fichas de datos.' },
   { key: 'direccion', group: 'Descripción de la empresa', label: 'Dirección', kind: 'paragraph', help: 'Opcional. Se muestra en la ficha de la empresa.' },
   { key: 'actividadEconomica', group: 'Descripción de la empresa', label: 'Actividad económica', kind: 'paragraph', help: 'Opcional.' },
   { key: 'mision', group: 'Descripción de la empresa', label: 'Misión', kind: 'paragraph', help: 'Opcional.' },
@@ -771,9 +789,13 @@ const ORG_TEXT_FIELD_MAP = ORG_TEXT_FIELDS.reduce((acc, f) => { acc[f.key] = f; 
 
 // Builds the default texts with company name and population count already
 // resolved, so the evaluator edits WYSIWYG strings (not tokens).
-function buildDefaultOrgTexts({ companyName = 'la organización', totalEvaluated = 0 } = {}) {
+function buildDefaultOrgTexts({ companyName = 'la organización', totalEvaluated = 0, city = '' } = {}) {
   const empresa = companyName || 'la organización';
   return {
+    // Ciudad de la portada. Antes era 'BOGOTÁ D.C.' fijo en el PDF, lo que
+    // firmaba desde Bogotá informes de empresas de cualquier parte del país.
+    // Se deriva de las fichas y el evaluador puede corregirla.
+    ciudad: city || DEFAULT_REPORT_CITY,
     // Descripción de la empresa — vacíos por defecto (los diligencia el evaluador)
     direccion: '',
     actividadEconomica: '',
@@ -1116,6 +1138,8 @@ module.exports = {
   buildDefaultOrgTexts,
   sanitizeOrgTexts,
   mergeOrgTexts,
+  resolveReportCity,
+  DEFAULT_REPORT_CITY,
   writeIntroduccion,
   writeMarcoReferencial,
   writeMarcoTeorico,

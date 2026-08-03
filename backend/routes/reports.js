@@ -244,7 +244,8 @@ router.post('/organizational', auth, async (req, res) => {
     // Resolve editable report texts: defaults <- saved overrides <- inline (unsaved editor) overrides
     const defaultTexts = templates.buildDefaultOrgTexts({
       companyName: evaluation.company_name,
-      totalEvaluated: aggResults.population.total
+      totalEvaluated: aggResults.population.total,
+      city: templates.resolveReportCity(demographics)
     });
     const savedOverrides = parseJsonMaybe(evaluation.report_text_overrides);
     let reportTexts = templates.mergeOrgTexts(defaultTexts, savedOverrides);
@@ -358,9 +359,19 @@ router.get('/organizational/texts', auth, async (req, res) => {
       .first();
     const totalEvaluated = parseInt(totalRow?.count || 0, 10);
 
+    // La ciudad por defecto sale de las fichas, igual que en el PDF: si el editor
+    // mostrara otro valor, el evaluador guardaría sin querer una ciudad distinta
+    // a la que imprime el informe.
+    const fichaRows = await db('responses')
+      .join('participant_evaluations as pe', 'responses.participant_evaluation_id', 'pe.id')
+      .where('pe.evaluation_id', evaluationId)
+      .where('responses.questionnaire_type', 'ficha_datos')
+      .select('responses.responses', 'pe.participant_id', 'pe.id as participant_evaluation_id');
+
     const defaults = templates.buildDefaultOrgTexts({
       companyName: evaluation.company_name,
-      totalEvaluated
+      totalEvaluated,
+      city: templates.resolveReportCity(aggregateExtendedDemographics(fichaRows))
     });
     const savedOverrides = parseJsonMaybe(evaluation.report_text_overrides);
     const texts = templates.mergeOrgTexts(defaults, savedOverrides);
@@ -967,7 +978,10 @@ function generateOrganizationalPDF(doc, { evaluation, demographics, aggResults, 
   const now = new Date();
   const months = ['ENERO', 'FEBRERO', 'MARZO', 'ABRIL', 'MAYO', 'JUNIO', 'JULIO', 'AGOSTO', 'SEPTIEMBRE', 'OCTUBRE', 'NOVIEMBRE', 'DICIEMBRE'];
   doc.fontSize(12).fillColor('#4B5563');
-  doc.text(`BOGOTÁ D.C., ${months[now.getMonth()]} ${now.getFullYear()}`, { align: 'center' });
+  // La ciudad es editable (campo 'ciudad'); su default sale de las fichas de
+  // datos, no de Bogotá fijo. Se imprime en mayúsculas como el resto de la portada.
+  const reportCity = (t.ciudad || templates.DEFAULT_REPORT_CITY).trim().toUpperCase();
+  doc.text(`${reportCity}, ${months[now.getMonth()]} ${now.getFullYear()}`, { align: 'center' });
 
   // ==========================================================
   // DESCRIPCIÓN DE LA EMPRESA
