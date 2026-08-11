@@ -3,6 +3,7 @@ const router = express.Router();
 const PDFDocument = require('pdfkit');
 const db = require('../config/database');
 const { auth, getOwnedCompanyIds, isSuperAdmin } = require('../middleware/auth');
+const { REQUIRE_PAID_EVALUATION } = require('../config/brand');
 const { drawPieChart, drawBarChart, drawHorizontalBarChart, drawGroupedBarChart, drawTable, createRiskSeries, drawDonutChart, drawSemicircleGauge, drawSimpleRiskBars, drawColorCodedRiskTable, drawRiskPrioritizationMatrix, drawSectionBanner, RISK_COLORS, RISK_ORDER, RISK_LABELS } = require('../utils/pdf-charts');
 const { aggregateDemographics, aggregateExtendedDemographics, aggregateResultsByForm, getAtRiskDimensions, aggregateStressTypology, buildRiskPrioritizationMatrix, aggregateResultsByArea, aggregateResultsByCargo, buildDemandasPorCargo, resolveFicha, sumCounts } = require('../utils/report-data-aggregator');
 const templates = require('../utils/report-templates');
@@ -49,7 +50,7 @@ router.post('/individual', auth, async (req, res) => {
       return res.status(404).json({ error: 'Participante no encontrado' });
     }
 
-    if (!participant.evaluation_paid && !isSuperAdmin(req.user)) {
+    if (REQUIRE_PAID_EVALUATION && !participant.evaluation_paid && !isSuperAdmin(req.user)) {
       return res.status(403).json({
         error: 'payment_required',
         message: 'Esta evaluación no está habilitada para descarga. Contacta al administrador.'
@@ -151,7 +152,7 @@ router.post('/organizational', auth, async (req, res) => {
 
     const evaluation = await evaluationQuery.first();
 
-    if (evaluation && !evaluation.paid && !isSuperAdmin(req.user)) {
+    if (REQUIRE_PAID_EVALUATION && evaluation && !evaluation.paid && !isSuperAdmin(req.user)) {
       return res.status(403).json({
         error: 'payment_required',
         message: 'Esta evaluación no está habilitada para descarga. Contacta al administrador.'

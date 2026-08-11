@@ -6,6 +6,7 @@ const db = require('../config/database');
 const multer = require('multer');
 const XLSX = require('xlsx');
 const whatsappSender = require('../services/whatsapp-sender');
+const { REQUIRE_PAID_EVALUATION } = require('../config/brand');
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -344,7 +345,10 @@ router.get('/', auth, async (req, res) => {
         phone: demographicData.phone || '',
         evaluationId: p.evaluation_id,
         evaluationName: p.evaluation_name,
-        evaluationPaid: superAdmin ? true : !!p.evaluation_paid,
+        // En instancias sin cobro por evaluacion todo cuenta como habilitado:
+        // asi las guardas del frontend (exportar, descargar) dejan de aplicar
+        // sin duplicar la regla alla.
+        evaluationPaid: (!REQUIRE_PAID_EVALUATION || superAdmin) ? true : !!p.evaluation_paid,
         companyName: p.company_name || '',
         status: p.evaluation_status || 'pending',
         completionPercentage: completionPercentage,

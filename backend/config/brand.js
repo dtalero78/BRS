@@ -35,4 +35,16 @@ const HAS_MARKETING_SITE = process.env.BRAND_HAS_MARKETING_SITE !== 'false';
  */
 const SHARED_WORKSPACE = process.env.BRAND_SHARED_WORKSPACE === 'true';
 
-module.exports = { BRAND_NAME, HAS_MARKETING_SITE, SHARED_WORKSPACE };
+/**
+ * Cobro por evaluacion.
+ *
+ * BRS es un SaaS donde el evaluador paga por evaluacion: hasta que no esta
+ * marcada como pagada, los informes no se descargan. Un licenciatario ya pago
+ * la plataforma completa, asi que ese cobro no aplica y la guarda solo estorba.
+ *
+ * En `false` los informes se descargan sin exigir el marcado de pago. Por
+ * defecto queda activo: produccion no cambia.
+ */
+const REQUIRE_PAID_EVALUATION = process.env.BRAND_REQUIRE_PAID_EVALUATION !== 'false';
+
+module.exports = { BRAND_NAME, HAS_MARKETING_SITE, SHARED_WORKSPACE, REQUIRE_PAID_EVALUATION };
