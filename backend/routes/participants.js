@@ -409,7 +409,11 @@ router.get('/evaluation/:evaluationId', auth, async (req, res) => {
     let query = db('participants')
       .join('participant_evaluations', 'participants.id', 'participant_evaluations.participant_id')
       .where('participant_evaluations.evaluation_id', evaluationId)
-      .orderBy('participants.created_at', 'desc');
+      // Mismo desempate que en GET /: created_at empata masivamente tras una
+      // importacion de Excel. Aqui todavia no se nota porque el limite es 1000
+      // y suele caber en una sola pagina, pero el defecto es identico.
+      .orderBy('participants.created_at', 'desc')
+      .orderBy('participants.id', 'desc');
 
     if (status) {
       query = query.where('status', status);
