@@ -555,7 +555,10 @@ const FIELD_KEYWORDS = {
   salaryRange:     [/salario/i, /sueldo/i, /rango.*sal/i, /salary/i],
   workHoursPerDay: [/horas.*(d[ií]a|day)/i, /horas\/d/i],
   workDaysPerWeek: [/d[ií]as.*semana/i, /d[ií]as\/sem/i],
-  formType:        [/^forma$/i, /^formulario$/i, /^form$/i, /tipo.*forma/i],
+  // OJO: la plantilla que emite ESTE archivo escribe el header 'Forma (A/B)'.
+  // Los patrones anclados (/^forma$/) no lo reconocian, colMap.formType quedaba
+  // undefined y TODOS los participantes entraban como Forma A en silencio.
+  formType:        [/^forma\b/i, /^formulario\b/i, /^form$/i, /tipo.*forma/i],
   phone:           [/tel[eé]fono/i, /celular/i, /m[oó]vil/i, /^tel$/i, /^phone$/i, /whatsapp/i],
 };
 
@@ -593,6 +596,25 @@ function normalizeEducation(v) {
   if (/bach|secu|media/.test(l)) return 'Bachiller';
   if (/prim/.test(l)) return 'Primaria';
   return String(v).trim() || 'Bachiller';
+}
+// La planilla suele traer la FECHA de nacimiento, no el ano. XLSX la entrega como
+// serial (36551 = 26/01/2000) y un parseInt directo la guardaba tal cual: el ano
+// de nacimiento de toda la planilla quedaba en cinco digitos.
+function normalizeBirthYear(v) {
+  if (v instanceof Date && !isNaN(v)) return v.getUTCFullYear();
+  const s = String(v ?? '').trim();
+  if (!s) return 1990;
+  const n = Number(s);
+  if (Number.isFinite(n)) {
+    if (n >= 1900 && n <= 2100) return Math.trunc(n);
+    if (n > 0 && n < 100000) {
+      const d = XLSX.SSF.parse_date_code(n);
+      if (d && d.y >= 1900 && d.y <= 2100) return d.y;
+    }
+    return 1990;
+  }
+  const m = s.match(/(1[89]\d{2}|20\d{2})/);
+  return m ? parseInt(m[1]) : 1990;
 }
 function normalizeContract(v) {
   const l = String(v).trim().toLowerCase();
@@ -661,7 +683,7 @@ router.post('/import-excel', auth, authorize('admin', 'evaluator'), upload.singl
           : 'CC';
         const firstName   = colMap.firstName   !== undefined ? String(row[colMap.firstName]).trim()   : 'Sin nombre';
         const lastName    = colMap.lastName    !== undefined ? String(row[colMap.lastName]).trim()    : 'Sin apellido';
-        const birthYear   = colMap.birthYear   !== undefined ? parseInt(row[colMap.birthYear]) || 1990 : 1990;
+        const birthYear   = colMap.birthYear   !== undefined ? normalizeBirthYear(row[colMap.birthYear])       : 1990;
         const gender      = colMap.gender      !== undefined ? normalizeGender(row[colMap.gender])   : 'Masculino';
         const maritalStatus    = colMap.maritalStatus    !== undefined ? normalizeMaritalStatus(row[colMap.maritalStatus])    : 'Soltero(a)';
         const educationLevel   = colMap.educationLevel   !== undefined ? normalizeEducation(row[colMap.educationLevel])      : 'Bachiller';
