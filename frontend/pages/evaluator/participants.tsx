@@ -84,6 +84,11 @@ interface Evaluation {
   status: string;
 }
 
+// Un participante puede estar asignado a mas de una evaluacion, asi que su id
+// NO identifica la fila: la pareja (participante, evaluacion) si. Usarlo como
+// key de React evita filas fantasma cuando la lista se filtra.
+const filaKey = (p: Participant) => `${p.id}-${p.evaluationId ?? 'sin-evaluacion'}`;
+
 // Normaliza texto para buscar: minusculas, sin tildes y sin espacios de sobra.
 // Los nombres llegan del Excel del cliente, casi siempre en mayusculas y con
 // tildes, asi que sin esto "nunez" no encontraba a "NUNEZ" con enye/tilde ni
@@ -228,7 +233,18 @@ export default function EvaluatorParticipants() {
         lotes.forEach(lote => acumulados.push(...(lote.participants || [])));
       }
 
-      setParticipants(acumulados);
+      // Blindaje contra filas repetidas entre paginas: dos <tr> con la misma
+      // key dejan filas fantasma en el DOM al filtrar (la tabla mostraba 125
+      // filas mientras el contador decia "1 resultado(s)").
+      const vistos = new Set<string>();
+      const unicos = acumulados.filter(p => {
+        const clave = filaKey(p);
+        if (vistos.has(clave)) return false;
+        vistos.add(clave);
+        return true;
+      });
+
+      setParticipants(unicos);
       setTotalParticipants(total);
     } catch (error) {
       console.error('Error:', error);
@@ -608,7 +624,7 @@ export default function EvaluatorParticipants() {
   // frase entera. Tampoco se podia buscar por evaluacion, empresa ni email,
   // aunque son columnas visibles.
   const indiceBusqueda = useMemo(() => {
-    const indice = new Map<number, string>();
+    const indice = new Map<string, string>();
     // El backend rellena los campos vacios con 'N/A'; indexarlo haria que
     // teclear "a" o "n" trajera media tabla, asi que no entra al indice.
     const dato = (v: unknown) => {
@@ -618,7 +634,7 @@ export default function EvaluatorParticipants() {
     participants.forEach((p: Participant) => {
       const doc = dato(p.documentNumber);
       const evaluacion = evaluations.find(e => String(e.id) === String(p.evaluationId));
-      indice.set(p.id, normalizarBusqueda([
+      indice.set(filaKey(p), normalizarBusqueda([
         dato(p.firstName),
         dato(p.lastName),
         `${dato(p.firstName)} ${dato(p.lastName)}`.trim(),
@@ -644,7 +660,7 @@ export default function EvaluatorParticipants() {
 
   // Filtrar solo por búsqueda local y tipo de formulario (los otros se filtran en el backend)
   const filteredParticipants = participants.filter((participant: Participant) => {
-    const texto = indiceBusqueda.get(participant.id) || '';
+    const texto = indiceBusqueda.get(filaKey(participant)) || '';
     const matchesSearch = terminosBusqueda.every(t => texto.includes(t));
 
     const matchesFormType = formTypeFilter === 'all' || participant.formType === formTypeFilter;
@@ -1200,7 +1216,7 @@ export default function EvaluatorParticipants() {
                   {filteredParticipants.map((participant) => {
                     const evaluation = evaluations.find(e => e.id === participant.evaluationId);
                     return (
-                      <tr key={participant.id} className={`hover:bg-gray-50 ${selectedIds.has(participant.id) ? 'bg-green-50' : ''}`}>
+                      <tr key={filaKey(participant)} className={`hover:bg-gray-50 ${selectedIds.has(participant.id) ? 'bg-green-50' : ''}`}>
                         <td className="px-4 py-4 w-10">
                           <input
                             type="checkbox"

@@ -239,7 +239,14 @@ router.get('/', auth, async (req, res) => {
       [joinType]('evaluations', 'pe.evaluation_id', 'evaluations.id')
       .leftJoin('companies', 'participants.company_id', 'companies.id')
       .whereIn('participants.company_id', companyIds)
-      .orderBy('participants.created_at', 'desc');
+      // El desempate por id no es cosmetico: created_at NO es unico —una
+      // importacion de Excel inserta cientos de participantes con el mismo
+      // timestamp (en shaddai, ~700 filas comparten uno solo)— y ante empates
+      // Postgres no garantiza un orden estable entre consultas. El frontend
+      // pide las paginas en paralelo, asi que sin desempate se solapan: se
+      // repetian 124 participantes y otros 124 no aparecian nunca.
+      .orderBy('participants.created_at', 'desc')
+      .orderBy('participants.id', 'desc');
 
     if (status) {
       query = query.where('pe.status', status);
