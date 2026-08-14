@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/router';
 import FlowLayout from '../../components/FlowLayout';
 import { BRAND } from '../../config/brand';
@@ -83,6 +83,19 @@ interface Evaluation {
   name: string;
   status: string;
 }
+
+// Normaliza texto para buscar: minusculas, sin tildes y sin espacios de sobra.
+// Los nombres llegan del Excel del cliente, casi siempre en mayusculas y con
+// tildes, asi que sin esto "nunez" no encontraba a "NUNEZ" con enye/tilde ni
+// "  juan " (pegado desde Excel) encontraba a nadie. String() ademas evita que
+// un documento guardado como numero rompa el render al teclear.
+const normalizarBusqueda = (valor: unknown) =>
+  String(valor ?? '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
 
 export default function EvaluatorParticipants() {
   const [participants, setParticipants] = useState<Participant[]>([]);
@@ -588,15 +601,52 @@ export default function EvaluatorParticipants() {
     }
   };
 
+  // Indice de busqueda: un solo texto por participante con todo lo que se ve en
+  // la tabla. Antes se comparaba campo por campo, asi que escribir el nombre
+  // como aparece en pantalla ("juan perez") no encontraba nada: "juan" vive en
+  // firstName y "perez" en lastName, y ningun campo por si solo contiene la
+  // frase entera. Tampoco se podia buscar por evaluacion, empresa ni email,
+  // aunque son columnas visibles.
+  const indiceBusqueda = useMemo(() => {
+    const indice = new Map<number, string>();
+    // El backend rellena los campos vacios con 'N/A'; indexarlo haria que
+    // teclear "a" o "n" trajera media tabla, asi que no entra al indice.
+    const dato = (v: unknown) => {
+      const texto = String(v ?? '').trim();
+      return texto.toUpperCase() === 'N/A' ? '' : texto;
+    };
+    participants.forEach((p: Participant) => {
+      const doc = dato(p.documentNumber);
+      const evaluacion = evaluations.find(e => String(e.id) === String(p.evaluationId));
+      indice.set(p.id, normalizarBusqueda([
+        dato(p.firstName),
+        dato(p.lastName),
+        `${dato(p.firstName)} ${dato(p.lastName)}`.trim(),
+        doc,
+        // El documento se guarda tal como venia del Excel ("1.234.567") pero se
+        // teclea sin puntos, y viceversa: se indexan las dos formas.
+        doc.replace(/\D+/g, ''),
+        dato(p.department),
+        dato(p.position),
+        dato(p.email),
+        dato(p.phone).replace(/\D+/g, ''),
+        dato(p.companyName),
+        dato(p.evaluationName),
+        dato(evaluacion?.name),
+      ].filter(Boolean).join(' ')));
+    });
+    return indice;
+  }, [participants, evaluations]);
+
+  // Cada palabra debe aparecer en algun lado (AND) y en cualquier orden, para
+  // que "perez juan" y "juan ventas" tambien encuentren.
+  const terminosBusqueda = normalizarBusqueda(searchTerm).split(' ').filter(Boolean);
+
   // Filtrar solo por búsqueda local y tipo de formulario (los otros se filtran en el backend)
   const filteredParticipants = participants.filter((participant: Participant) => {
-    const matchesSearch = searchTerm === '' || 
-                         participant.firstName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         participant.lastName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         participant.documentNumber.includes(searchTerm) ||
-                         participant.department.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         participant.position.toLowerCase().includes(searchTerm.toLowerCase());
-    
+    const texto = indiceBusqueda.get(participant.id) || '';
+    const matchesSearch = terminosBusqueda.every(t => texto.includes(t));
+
     const matchesFormType = formTypeFilter === 'all' || participant.formType === formTypeFilter;
     
     const matchesWhatsapp =
