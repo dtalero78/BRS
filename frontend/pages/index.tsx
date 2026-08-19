@@ -82,10 +82,6 @@ function MarketingHome() {
       answer: 'Sí. BRS Digital implementa fielmente la Batería de Instrumentos para la Evaluación de Factores de Riesgo Psicosocial adoptada por la Resolución 2764 de 2022 del Ministerio del Trabajo, que actualiza y unifica la normativa de la Resolución 2646 de 2008. Los baremos, ítems invertidos y factores de transformación son los oficiales del documento de validación.',
     },
     {
-      question: '¿Cuánto cuesta usar BRS Digital?',
-      answer: 'BRS Digital ofrece un plan gratuito con 5 evaluaciones incluidas para conocer la plataforma. Los planes de pago empiezan desde $5.000 COP por prueba (plan Estándar) hasta $2.000 COP por prueba (plan Corporativo). No hay mensualidades ni compromisos de permanencia. Se paga solo por evaluación realizada.',
-    },
-    {
       question: '¿Qué diferencia hay entre Forma A y Forma B del cuestionario intralaboral?',
       answer: 'La Forma A está diseñada para trabajadores con cargos de jefatura, profesionales o técnicos (123 ítems, 19 dimensiones). La Forma B aplica a trabajadores con cargos auxiliares u operarios (97 ítems, 16 dimensiones). La principal diferencia es que la Forma A incluye dimensiones adicionales de liderazgo y relaciones sociales propias de cargos con responsabilidad sobre otros.',
     },
@@ -114,7 +110,7 @@ function MarketingHome() {
             price: '5000',
             priceCurrency: 'COP',
             name: 'Plan Estandar',
-            description: 'Evaluaciones ilimitadas, hasta 5 empresas',
+            description: 'Evaluaciones ilimitadas',
             priceSpecification: {
               '@type': 'UnitPriceSpecification',
               price: '5000',
@@ -637,7 +633,7 @@ function MarketingHome() {
           </p>
         </div>
 
-        <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-5">
+        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-5">
           {/* Plan Gratis */}
           <div className="bg-white rounded-2xl p-6 border border-gray-100 shadow-sm flex flex-col">
             <div className="mb-6">
@@ -686,11 +682,10 @@ function MarketingHome() {
               <span className="text-4xl font-bold text-gray-900">$5.000</span>
               <span className="text-sm text-gray-500 ml-1">/prueba</span>
             </div>
-            <p className="text-xs text-gray-400 mb-6">Hasta 5 empresas</p>
+            <div className="h-4 mb-6" aria-hidden="true" />
             <ul className="space-y-3 mb-8 flex-1">
               {[
                 'Evaluaciones ilimitadas',
-                'Hasta 5 empresas',
                 'Reportes individuales PDF',
                 'Reportes organizacionales PDF',
                 'Dashboard de resultados',
@@ -712,42 +707,6 @@ function MarketingHome() {
             </Link>
           </div>
 
-          {/* Plan Profesional */}
-          <div className="bg-white rounded-2xl p-6 border border-gray-100 shadow-sm flex flex-col">
-            <div className="mb-6">
-              <h3 className="text-lg font-bold text-gray-900 mb-1">Profesional</h3>
-              <p className="text-sm text-gray-500">Para consultorios y firmas</p>
-            </div>
-            <div className="mb-2">
-              <span className="text-4xl font-bold text-gray-900">$3.500</span>
-              <span className="text-sm text-gray-500 ml-1">/prueba</span>
-            </div>
-            <p className="text-xs text-gray-400 mb-6">Hasta 20 empresas</p>
-            <ul className="space-y-3 mb-8 flex-1">
-              {[
-                'Todo lo del plan Estándar',
-                'Hasta 20 empresas',
-                'Múltiples evaluadores',
-                'Dashboard organizacional',
-                'Exportación de datos',
-                'Soporte prioritario',
-              ].map((item) => (
-                <li key={item} className="flex items-start gap-2 text-sm text-gray-600">
-                  <svg className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                  </svg>
-                  {item}
-                </li>
-              ))}
-            </ul>
-            <Link
-              href="/auth/register"
-              className="inline-flex items-center justify-center text-sm font-semibold text-gray-800 border border-gray-300 rounded-full px-6 py-3 hover:bg-gray-50 transition-colors"
-            >
-              Comenzar ahora
-            </Link>
-          </div>
-
           {/* Plan Corporativo */}
           <div className="rounded-2xl p-6 border border-gray-700 shadow-sm flex flex-col text-white" style={{ backgroundColor: '#0a2d4e' }}>
             <div className="mb-6">
@@ -761,7 +720,7 @@ function MarketingHome() {
             <p className="text-xs text-gray-500 mb-6">Empresas ilimitadas</p>
             <ul className="space-y-3 mb-8 flex-1">
               {[
-                'Todo lo del plan Profesional',
+                'Todo lo del plan Estándar',
                 'Empresas ilimitadas',
                 'API de integración',
                 'Marca blanca disponible',
