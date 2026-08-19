@@ -16,7 +16,8 @@ import {
   CheckCircleIcon,
   ExclamationTriangleIcon,
   CameraIcon,
-  DocumentTextIcon
+  DocumentTextIcon,
+  ShieldCheckIcon
 } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import PhotoImportModal from '../../components/PhotoImportModal';
@@ -60,6 +61,16 @@ export default function EvaluatorEvaluations() {
 
   // Excel import state
   const [showImportModal, setShowImportModal] = useState(false);
+
+  // Editor del consentimiento informado por evaluacion. El default lo arma el
+  // backend con el nombre de la empresa; el evaluador puede reemplazarlo porque
+  // el texto es responsabilidad del profesional que firma la medicion.
+  const [consentEvalId, setConsentEvalId] = useState<number | null>(null);
+  const [consentTexto, setConsentTexto] = useState('');
+  const [consentDefault, setConsentDefault] = useState('');
+  const [consentEsPropio, setConsentEsPropio] = useState(false);
+  const [consentCargando, setConsentCargando] = useState(false);
+  const [consentGuardando, setConsentGuardando] = useState(false);
   const [importEvaluationId, setImportEvaluationId] = useState<number | null>(null);
   const [importFile, setImportFile] = useState<File | null>(null);
   const [importing, setImporting] = useState(false);
@@ -166,6 +177,54 @@ export default function EvaluatorEvaluations() {
     } catch (error) {
       console.error('Error:', error);
       toast.error('Error de conexión');
+    }
+  };
+
+  const abrirConsentimiento = async (evaluationId: number) => {
+    setConsentEvalId(evaluationId);
+    setConsentCargando(true);
+    setConsentTexto('');
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(`/api/evaluations/${evaluationId}/consent-text`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (!res.ok) throw new Error('No se pudo cargar el consentimiento');
+      const data = await res.json();
+      setConsentTexto(data.text || '');
+      setConsentDefault(data.defaultText || '');
+      setConsentEsPropio(!!data.isCustom);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Error de conexion');
+      setConsentEvalId(null);
+    } finally {
+      setConsentCargando(false);
+    }
+  };
+
+  const guardarConsentimiento = async () => {
+    if (consentEvalId == null) return;
+    setConsentGuardando(true);
+    try {
+      const token = localStorage.getItem('token');
+      // Enviar el texto igual al default se guarda como null: asi la evaluacion
+      // sigue heredando futuras mejoras de la plantilla en vez de congelarse.
+      const esIgualAlDefault = consentTexto.trim() === consentDefault.trim();
+      const res = await fetch(`/api/evaluations/${consentEvalId}/consent-text`, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: esIgualAlDefault ? '' : consentTexto })
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.error || 'No se pudo guardar');
+      }
+      toast.success('Consentimiento guardado');
+      setConsentEvalId(null);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Error de conexion');
+    } finally {
+      setConsentGuardando(false);
     }
   };
 
@@ -555,6 +614,13 @@ export default function EvaluatorEvaluations() {
                           title="Ingresar respuestas manualmente"
                         >
                           <DocumentTextIcon className="h-5 w-5" />
+                        </button>
+                        <button
+                          onClick={() => abrirConsentimiento(evaluation.id)}
+                          className="text-gray-400 hover:text-emerald-600"
+                          title="Consentimiento informado"
+                        >
+                          <ShieldCheckIcon className="h-5 w-5" />
                         </button>
                         <button
                           onClick={() => handleEdit(evaluation)}
@@ -1037,6 +1103,87 @@ export default function EvaluatorEvaluations() {
           evaluationId={manualEvaluationId}
           onSuccess={() => fetchEvaluations()}
         />
+      )}
+
+      {/* Editor del consentimiento informado de la evaluacion */}
+      {consentEvalId != null && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="flex max-h-[90vh] w-full max-w-3xl flex-col rounded-2xl bg-white shadow-xl">
+            <div className="flex items-start justify-between border-b border-gray-200 px-6 py-4">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">Consentimiento informado</h3>
+                <p className="text-sm text-gray-500">
+                  Es lo primero que ve el participante al abrir su enlace.
+                </p>
+              </div>
+              <button onClick={() => setConsentEvalId(null)} className="text-gray-400 hover:text-gray-600" aria-label="Cerrar">
+                ✕
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto px-6 py-5">
+              {consentCargando ? (
+                <p className="py-8 text-center text-sm text-gray-500">Cargando…</p>
+              ) : (
+                <>
+                  <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                    El texto por defecto es un <strong>borrador de referencia</strong>, no asesoria
+                    legal. Revisalo y ajustalo bajo tu criterio profesional antes de aplicar la
+                    bateria: como psicologo responsable, este documento es tu respaldo ante la
+                    Resolucion 2646 de 2008 y la Ley 1581 de 2012.
+                  </div>
+
+                  <div className="mb-2 flex items-center justify-between">
+                    <span className="text-xs font-medium uppercase tracking-wide text-gray-500">
+                      {consentEsPropio ? 'Texto propio' : 'Texto por defecto'}
+                    </span>
+                    {consentTexto.trim() !== consentDefault.trim() && (
+                      <button
+                        onClick={() => setConsentTexto(consentDefault)}
+                        className="text-xs font-medium text-blue-600 hover:text-blue-800"
+                      >
+                        Restaurar el texto por defecto
+                      </button>
+                    )}
+                  </div>
+
+                  <textarea
+                    value={consentTexto}
+                    onChange={(e) => setConsentTexto(e.target.value)}
+                    rows={20}
+                    spellCheck
+                    className="w-full rounded-xl border border-gray-300 p-4 font-mono text-xs leading-relaxed focus:border-blue-500 focus:outline-none"
+                  />
+
+                  <p className="mt-2 text-xs text-gray-400">
+                    Formato: <code>## Titulo</code> para secciones, <code>- </code> para vinetas,
+                    <code>**negrita**</code>. Linea en blanco = parrafo nuevo.
+                  </p>
+                  <p className="mt-3 text-xs text-gray-500">
+                    Editar el texto no invalida los consentimientos ya aceptados: de cada uno se
+                    guarda copia de lo que esa persona leyo.
+                  </p>
+                </>
+              )}
+            </div>
+
+            <div className="flex justify-end gap-3 border-t border-gray-200 px-6 py-4">
+              <button
+                onClick={() => setConsentEvalId(null)}
+                className="rounded-xl border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={guardarConsentimiento}
+                disabled={consentGuardando || consentCargando}
+                className="rounded-xl bg-blue-600 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-40"
+              >
+                {consentGuardando ? 'Guardando…' : 'Guardar'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </FlowLayout>
   );

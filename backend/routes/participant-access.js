@@ -13,6 +13,115 @@ const {
   compareFaces,
   FACE_MATCH_THRESHOLD,
 } = require('../utils/rekognition');
+const { buildDefaultConsentText } = require('../utils/consent-template');
+
+// ---------------------------------------------------------------------------
+// Consentimiento informado (obligatorio en TODAS las instancias)
+// ---------------------------------------------------------------------------
+// Exigido por la Resolución 2646/2008 y la Ley 1090/2006 para aplicar la
+// batería, y por la Ley 1581/2012 para tratar los datos. No es opt-in como la
+// verificación facial: aplicar la batería sin consentimiento invalida la
+// medición, y el informe organizacional ya afirma que se recogió.
+
+/** Busca el PE por token con lo necesario para el consentimiento. */
+async function findPeForConsent(token) {
+  return db('participant_evaluations')
+    .join('evaluations', 'participant_evaluations.evaluation_id', 'evaluations.id')
+    .join('companies', 'evaluations.company_id', 'companies.id')
+    .where('participant_evaluations.access_token', token)
+    .where('participant_evaluations.token_expires_at', '>', new Date())
+    .select(
+      'participant_evaluations.id',
+      'participant_evaluations.consent_accepted_at',
+      'participant_evaluations.consent_declined_at',
+      'evaluations.consent_text_override',
+      'companies.name as company_name'
+    )
+    .first();
+}
+
+/**
+ * Texto que se le muestra a ESTE participante: el del evaluador si lo definió,
+ * si no el default de la plantilla.
+ */
+function consentTextFor(pe) {
+  const override = (pe.consent_text_override || '').trim();
+  if (override) return override;
+  return buildDefaultConsentText({ companyName: pe.company_name });
+}
+
+/**
+ * GET /:token/consent → qué mostrarle al participante antes del menú.
+ */
+router.get('/:token/consent', async (req, res) => {
+  try {
+    const pe = await findPeForConsent(req.params.token);
+    if (!pe) return res.status(404).json({ error: 'Token inválido o expirado' });
+
+    res.json({
+      accepted: !!pe.consent_accepted_at,
+      declined: !!pe.consent_declined_at,
+      acceptedAt: pe.consent_accepted_at,
+      text: consentTextFor(pe),
+    });
+  } catch (error) {
+    console.error('Get consent error:', error);
+    res.status(500).json({ error: 'Error interno del servidor' });
+  }
+});
+
+/**
+ * POST /:token/consent → registra la decisión. Body: `{ accepted: boolean }`.
+ *
+ * Al aceptar se guarda un SNAPSHOT del texto exacto que se mostró: el
+ * evaluador puede editarlo después, y sin la copia no habría forma de probar
+ * qué fue lo que la persona aceptó.
+ *
+ * Rechazar no es definitivo: aceptar más tarde limpia el rechazo. La
+ * participación es voluntaria y cambiar de opinión hace parte de eso.
+ */
+router.post('/:token/consent', async (req, res) => {
+  try {
+    const { accepted } = req.body || {};
+    if (typeof accepted !== 'boolean') {
+      return res.status(400).json({ error: 'accepted debe ser booleano' });
+    }
+
+    const pe = await findPeForConsent(req.params.token);
+    if (!pe) return res.status(404).json({ error: 'Token inválido o expirado' });
+
+    const ahora = new Date();
+    const update = accepted
+      ? {
+          consent_accepted_at: pe.consent_accepted_at || ahora,
+          consent_declined_at: null,
+          consent_ip: clientIp(req),
+          consent_text: pe.consent_accepted_at ? undefined : consentTextFor(pe),
+        }
+      : {
+          consent_accepted_at: null,
+          consent_declined_at: ahora,
+          consent_ip: clientIp(req),
+        };
+    // `undefined` no debe llegar a knex como columna a actualizar.
+    Object.keys(update).forEach(k => update[k] === undefined && delete update[k]);
+
+    await db('participant_evaluations').where('id', pe.id).update(update);
+    res.json({ accepted, declined: !accepted });
+  } catch (error) {
+    console.error('Post consent error:', error);
+    res.status(500).json({ error: 'Error interno del servidor' });
+  }
+});
+
+/** ¿Este PE ya aceptó el consentimiento? */
+async function hasConsent(peId) {
+  const row = await db('participant_evaluations')
+    .where('id', peId)
+    .whereNotNull('consent_accepted_at')
+    .first();
+  return !!row;
+}
 
 // ---------------------------------------------------------------------------
 // Verificación facial (opt-in por instancia vía FACE_VERIFICATION_ENABLED)
@@ -172,6 +281,16 @@ router.post('/:token/face', faceLimiter, async (req, res) => {
 
     const pe = await findPeByToken(req.params.token);
     if (!pe) return res.status(404).json({ error: 'Token inválido o expirado' });
+
+    // La foto del rostro es un dato biométrico: dato SENSIBLE según el art. 5
+    // de la Ley 1581/2012. No se captura ni se envía a AWS antes de que el
+    // participante haya autorizado su tratamiento.
+    if (!(await hasConsent(pe.id))) {
+      return res.status(403).json({
+        error: 'Debes aceptar el consentimiento informado antes de continuar.',
+        code: 'CONSENT_REQUIRED'
+      });
+    }
 
     // Sin credenciales no se puede verificar a nadie. Se responde explícito en
     // vez de dejar pasar: el bloqueo es el control que la empresa contrató.
@@ -673,6 +792,16 @@ router.post('/:token/responses', async (req, res) => {
       if (yaTerminado) {
         return res.status(409).json({ error: 'Este cuestionario ya fue completado; no se admiten más respuestas.' });
       }
+    }
+
+    // Guard de consentimiento informado. Va antes que el facial: sin
+    // autorización no se debe tratar ningún dato, ni el de las respuestas ni
+    // el biométrico.
+    if (!(await hasConsent(participantEvaluation.pe_id))) {
+      return res.status(403).json({
+        error: 'Debes aceptar el consentimiento informado antes de responder.',
+        code: 'CONSENT_REQUIRED'
+      });
     }
 
     // Guard de verificación facial. El bloqueo se aplica AQUÍ, no solo en la UI:

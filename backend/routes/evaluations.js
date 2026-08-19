@@ -939,4 +939,72 @@ router.post('/:evaluationId/import-excel', auth, authorize('admin', 'evaluator')
   }
 });
 
+// ---------------------------------------------------------------------------
+// Consentimiento informado: texto por evaluación
+// ---------------------------------------------------------------------------
+// El default lo arma `utils/consent-template.js` con el nombre de la empresa y,
+// si la instancia tiene verificación facial, la sección de datos biométricos.
+// Cada evaluador puede reemplazarlo por el suyo — distintos licenciatarios
+// tienen asesoría jurídica distinta y el texto es responsabilidad del
+// profesional que firma la medición, no de la plataforma.
+
+const { buildDefaultConsentText } = require('../utils/consent-template');
+
+// GET /:id/consent-text → texto vigente + el default, para poder comparar/restaurar
+router.get('/:id/consent-text', auth, authorize('admin', 'evaluator'), async (req, res) => {
+  try {
+    const companyIds = await getOwnedCompanyIds(req.user.userId);
+    const evaluation = await db('evaluations')
+      .join('companies', 'evaluations.company_id', 'companies.id')
+      .where('evaluations.id', req.params.id)
+      .whereIn('evaluations.company_id', companyIds)
+      .select('evaluations.consent_text_override', 'companies.name as company_name')
+      .first();
+
+    if (!evaluation) return res.status(404).json({ error: 'Evaluación no encontrada' });
+
+    const defaultText = buildDefaultConsentText({ companyName: evaluation.company_name });
+    res.json({
+      text: evaluation.consent_text_override || defaultText,
+      defaultText,
+      isCustom: !!evaluation.consent_text_override
+    });
+  } catch (error) {
+    console.error('Get consent text error:', error);
+    res.status(500).json({ error: 'Error interno del servidor' });
+  }
+});
+
+// PUT /:id/consent-text → guarda el texto propio. Body `{ text }`; vacío = volver al default.
+router.put('/:id/consent-text', auth, authorize('admin', 'evaluator'), async (req, res) => {
+  try {
+    const { text } = req.body || {};
+    if (text != null && typeof text !== 'string') {
+      return res.status(400).json({ error: 'text debe ser una cadena' });
+    }
+    if (typeof text === 'string' && text.length > 50000) {
+      return res.status(400).json({ error: 'El texto es demasiado largo' });
+    }
+
+    const companyIds = await getOwnedCompanyIds(req.user.userId);
+    const evaluation = await db('evaluations')
+      .where('id', req.params.id)
+      .whereIn('company_id', companyIds)
+      .first();
+    if (!evaluation) return res.status(404).json({ error: 'Evaluación no encontrada' });
+
+    const limpio = (text || '').trim();
+    await db('evaluations')
+      .where('id', req.params.id)
+      .update({ consent_text_override: limpio || null });
+
+    // Editar el texto NO invalida los consentimientos ya firmados: cada uno
+    // guardó su propio snapshot de lo que la persona leyó.
+    res.json({ success: true, isCustom: !!limpio });
+  } catch (error) {
+    console.error('Update consent text error:', error);
+    res.status(500).json({ error: 'Error interno del servidor' });
+  }
+});
+
 module.exports = router;

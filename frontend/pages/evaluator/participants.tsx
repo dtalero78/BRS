@@ -66,6 +66,9 @@ interface Participant {
   evaluationUrl?: string;
   /** ISO de cuando se envio la invitacion por WhatsApp. null = nunca se envio. */
   whatsappSentAt?: string | null;
+  /** Consentimiento informado: solo una de las dos tiene valor a la vez. */
+  consentAcceptedAt?: string | null;
+  consentDeclinedAt?: string | null;
   email?: string;
   companyName?: string;
   // 'assigned' es el estado real en participant_evaluations (el mayoritario);
@@ -1235,6 +1238,14 @@ export default function EvaluatorParticipants() {
                                 <div className="text-sm font-medium text-gray-900">
                                   {participant.firstName} {participant.lastName}
                                 </div>
+                                {participant.consentDeclinedAt && (
+                                  <span
+                                    title={`No autorizo participar el ${new Date(participant.consentDeclinedAt).toLocaleString('es-CO')}`}
+                                    className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800"
+                                  >
+                                    No autorizo
+                                  </span>
+                                )}
                                 {participant.whatsappSentAt && (
                                   <span
                                     title={`Invitacion enviada el ${new Date(participant.whatsappSentAt).toLocaleString('es-CO')}`}

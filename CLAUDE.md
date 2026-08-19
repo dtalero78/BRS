@@ -208,6 +208,7 @@ Dimensiones con sufijo `_total` son totales de dominio.
 - `GET /` - Listar (filtrado por ownership para evaluadores)
 - `POST /` - Crear (requiere `companyId` en body, evaluador elige empresa)
 - `PUT /:id` | `POST /:id/assign`
+- `GET /:id/consent-text` | `PUT /:id/consent-text` - Texto del consentimiento informado por evaluación
 - `POST /:id/preview-excel` - Analiza el Excel y devuelve layout detectado + muestra de filas, sin persistir nada (multipart `file`)
 - `POST /:id/import-excel` - Crea participantes + respuestas + resultados desde Excel (multipart `file`, máx 10MB)
 
@@ -238,6 +239,8 @@ Dimensiones con sufijo `_total` son totales de dominio.
 - `POST /token/validate` - Validar token de acceso
 - `GET /token/:token/questionnaires` - Cuestionarios disponibles
 - `POST /token/:token/responses` - Guardar respuestas
+- `GET /:token/consent` - Texto del consentimiento + si ya aceptó/rechazó
+- `POST /:token/consent` - Registra la decisión (`{accepted: boolean}`)
 - `GET /:token/face-status` - ¿Esta instancia exige verificación facial? ¿ya está enrolado/verificado?
 - `POST /:token/face` - Enrola (1er ingreso) o verifica la selfie. Rate limit por token.
 
@@ -337,6 +340,46 @@ El `returnUrl` se sigue guardando y exponiendo en el API, pero el frontend **ya 
 
 ### Env vars de integración
 `BRS_INTEGRATION_API_KEY` (requerida), `BRS_WEBHOOK_SECRET` (requerida para webhooks), `BRS_PUBLIC_URL` (base de la URL del token), `BRS_INTEGRATION_DEFAULT_EVALUATOR`, `BRS_INTEGRATION_DEFAULT_COMPANY` (fallbacks).
+
+## CONSENTIMIENTO INFORMADO DEL PARTICIPANTE
+
+**Obligatorio en TODAS las instancias** (no es opt-in como la verificación facial). Es la primera pantalla que ve el participante al abrir su enlace, antes del menú de cuestionarios.
+
+**Por qué es obligatorio.** La Resolución 2646/2008 y la Ley 1090/2006 lo exigen para aplicar la batería; sin él la medición es legalmente impugnable. La Ley 1581/2012 lo exige para tratar los datos, y con más razón aquí: las respuestas sobre salud psicológica son **datos sensibles** (art. 5), igual que la foto del rostro en las instancias con verificación facial. Además, el informe organizacional ya afirmaba que el consentimiento se había aplicado (`report-templates.js`), cosa que era falsa mientras la plataforma no lo recogía.
+
+### Flujo
+1. Al abrir el enlace, antes de cualquier otra cosa, se muestra el texto completo.
+2. Una casilla obliga a un acto deliberado ("Leí y entendí…"). Un consentimiento que se acepta de un clic reflejo no es informado.
+3. **Acepto** → se guarda `consent_accepted_at`, la IP, y un **snapshot del texto exacto** que se le mostró.
+4. **No autorizo** → se guarda `consent_declined_at` y ve una pantalla de salida. Puede volver y aceptar: la participación es voluntaria y cambiar de opinión hace parte de eso.
+
+### Los guards van en el backend
+`POST /:token/responses` y `POST /:token/face` responden `403 CONSENT_REQUIRED` sin consentimiento. El de `/face` es el legalmente crítico: **no se captura ni se envía a AWS ninguna imagen del rostro antes de la autorización**, porque el dato biométrico es sensible y requiere autorización previa, expresa e informada.
+
+### Por qué se guarda un snapshot del texto
+`participant_evaluations.consent_text` guarda copia de lo que esa persona leyó. El evaluador puede editar el texto de la evaluación después, y sin la copia no habría forma de probar **qué** fue lo que aceptó. Editar el texto no invalida los consentimientos ya firmados.
+
+### Texto editable por evaluación
+- Default: `backend/utils/consent-template.js` — arma el texto con el nombre de la empresa y la marca; la sección de datos biométricos aparece solo si `FACE_VERIFICATION_ENABLED`.
+- Override: `evaluations.consent_text_override` (NULL = usar el default). Se edita desde `/evaluator/evaluations` (ícono de escudo).
+- `GET|PUT /api/evaluations/:id/consent-text`.
+- Guardar un texto idéntico al default lo persiste como NULL, para que la evaluación siga heredando mejoras de la plantilla en vez de congelarse.
+
+> ⚠️ **El texto por defecto es un borrador de referencia, no asesoría legal.** Debe revisarlo el psicólogo responsable de cada instancia. La UI del evaluador lo advierte de forma explícita.
+
+### Formato del texto
+Texto plano con un contrato mínimo para que un evaluador lo edite sin saber HTML: `## Título` para secciones, `- ` para viñetas, `**negrita**`, línea en blanco para párrafo nuevo. Lo renderiza `frontend/components/ConsentText.tsx` a mano (sin librería de markdown) para que no haya ninguna ruta que inyecte HTML en la página del participante.
+
+### Visibilidad para el evaluador
+`/evaluator/participants` marca con una insignia ámbar a quien **no autorizó**. Solo se marca el rechazo: aceptar es lo esperado y marcarlo en cientos de filas sería ruido. Distinguir "rechazó" de "nunca abrió el enlace" importa para no perseguir a quien ya dijo que no, y para reportar cobertura con honestidad.
+
+### Archivos
+- `backend/migrations/20260801000001_add_informed_consent.js`
+- `backend/utils/consent-template.js` — texto por defecto
+- `backend/routes/participant-access.js` — `GET|POST /:token/consent` + guards
+- `backend/routes/evaluations.js` — `GET|PUT /:id/consent-text`
+- `frontend/components/ConsentText.tsx` — renderizador
+- `frontend/pages/participant/evaluation/[token].tsx` — pantalla bloqueante
 
 ## VERIFICACIÓN FACIAL DEL PARTICIPANTE (opt-in por instancia)
 
@@ -598,6 +641,7 @@ git push origin main
 - [x] **Tabla de participantes con scroll fijo** — `h-[calc(100vh-260px)]` + sticky header
 - [x] **Integración server-to-server** — `POST /api/integration/participant` (auth `X-Api-Key`, idempotente por `externalRef`) + webhook `evaluation.completed` firmado con HMAC
 - [x] **Auto-redirect de retorno desactivado** — el participante ya no es redirigido a la app externa al terminar; se queda en la pantalla de éxito de BRS (webhook sigue notificando)
+- [x] **Consentimiento informado del participante** — pantalla bloqueante antes del menú, en todas las instancias; registro de aceptación/rechazo con IP y snapshot del texto; editable por evaluación
 - [x] **Verificación facial del participante** (AWS Rekognition, opt-in por instancia vía `FACE_VERIFICATION_ENABLED`, hoy solo `brs-shaddai`) — auto-enrolamiento + verificación bloqueante, guard en el backend, bitácora de intentos y reinicio desde la UI del evaluador
 
 ### Pendiente

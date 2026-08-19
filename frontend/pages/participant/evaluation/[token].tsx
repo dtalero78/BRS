@@ -4,6 +4,7 @@ import toast from 'react-hot-toast';
 import { ClipboardList, Briefcase, HardHat, Home, Brain, Shield, FileText, CheckCircle2, ArrowLeft, ChevronLeft, ChevronDown, Check, ScanFace, ShieldAlert, PlayCircle, LucideIcon } from 'lucide-react';
 import { BRAND } from '../../../config/brand';
 import FaceCapture from '../../../components/FaceCapture';
+import ConsentText from '../../../components/ConsentText';
 import IntroVideoModal from '../../../components/IntroVideoModal';
 
 // Simple wrapper for participant pages (no auth required)
@@ -102,6 +103,15 @@ const ParticipantEvaluationPage = () => {
   // Estado del autoguardado: se muestra como una línea discreta bajo el CTA para
   // que el participante sepa que su avance está a salvo sin generar layout shift.
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+
+  // Consentimiento informado. Va ANTES del menú de cuestionarios y bloquea:
+  // sin aceptar no se trata ningún dato. El backend aplica el mismo guard en
+  // /responses y /face, así que esta pantalla es la cara visible de la regla.
+  const [consentText, setConsentText] = useState('');
+  const [consentAccepted, setConsentAccepted] = useState(true); // optimista hasta cargar
+  const [consentDeclined, setConsentDeclined] = useState(false);
+  const [consentBusy, setConsentBusy] = useState(false);
+  const [consentLeido, setConsentLeido] = useState(false);
 
   // Verificación facial (opt-in por instancia: FACE_VERIFICATION_ENABLED en el
   // backend). Si `faceRequired` es false todo este bloque es inerte y el flujo
@@ -241,6 +251,19 @@ const ParticipantEvaluationPage = () => {
       setParticipant(validationData.participant);
       setEvaluation(validationData.evaluation);
 
+      // Consentimiento informado: se carga siempre, en todas las instancias.
+      try {
+        const consentResponse = await fetch(`/api/participant-access/${accessToken}/consent`);
+        if (consentResponse.ok) {
+          const consentData = await consentResponse.json();
+          setConsentText(consentData.text || '');
+          setConsentAccepted(!!consentData.accepted);
+          setConsentDeclined(!!consentData.declined);
+        }
+      } catch (consentErr) {
+        console.error('Consent status error:', consentErr);
+      }
+
       // Estado de la verificación facial. Si la instancia no la tiene prendida
       // el endpoint devuelve `{ required: false }` y no cambia nada del flujo.
       try {
@@ -274,6 +297,37 @@ const ParticipantEvaluationPage = () => {
       setError(err instanceof Error ? err.message : 'Error al cargar datos');
     } finally {
       setLoading(false);
+    }
+  };
+
+  /**
+   * Registra la decisión del participante sobre el consentimiento informado.
+   * Rechazar no es definitivo: puede volver a entrar y aceptar.
+   */
+  const responderConsentimiento = async (accepted: boolean) => {
+    if (!token) return;
+    setConsentBusy(true);
+    try {
+      const response = await fetch(`/api/participant-access/${token}/consent`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ accepted })
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || 'No se pudo registrar tu respuesta');
+      }
+      setConsentAccepted(accepted);
+      setConsentDeclined(!accepted);
+      // Si un guardado se cayó por falta de consentimiento, se reintenta ahora.
+      if (accepted && pendingSaveRef.current) {
+        pendingSaveRef.current = false;
+        saveResponsesWithRetry();
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'No se pudo registrar tu respuesta');
+    } finally {
+      setConsentBusy(false);
     }
   };
 
@@ -623,6 +677,14 @@ const ParticipantEvaluationPage = () => {
       // intentos para terminar culpando a la conexión. Se devuelve al
       // participante a la pantalla de selfie; sus respuestas siguen en memoria
       // y se reguardan al verificar.
+      if (error?.consentRequired) {
+        pendingSaveRef.current = true;
+        setConsentAccepted(false);
+        setConsentLeido(false);
+        setSaveState('idle');
+        return;
+      }
+
       if (error?.faceVerificationRequired) {
         const tipo = QUESTIONNAIRE_TYPE_MAP[currentQuestionnaire?.type || ''];
         // El servidor no las va a aceptar hasta que se verifique; quedan en el
@@ -745,6 +807,12 @@ const ParticipantEvaluationPage = () => {
         // reintentos no lo trate como fallo de red.
         if (response.status === 403 || response.status === 503) {
           const body = await response.json().catch(() => ({}));
+          // Consentimiento revocado o nunca aceptado: se devuelve a esa pantalla.
+          if (body.code === 'CONSENT_REQUIRED') {
+            const consentError: any = new Error(body.error || 'Consentimiento requerido');
+            consentError.consentRequired = true;
+            throw consentError;
+          }
           if (body.code === 'FACE_VERIFICATION_REQUIRED' || body.code === 'FACE_UNAVAILABLE') {
             const faceError: any = new Error(body.error || 'Verificación de identidad requerida');
             faceError.faceVerificationRequired = true;
@@ -1099,6 +1167,99 @@ const ParticipantEvaluationPage = () => {
           <div className="bg-red-50 border border-red-200 rounded-lg p-6">
             <h2 className="text-lg font-medium text-red-800 mb-2">Error</h2>
             <p className="text-red-600">No se encontraron datos del participante.</p>
+          </div>
+        </div>
+      </ParticipantLayout>
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Consentimiento informado (bloqueante).
+  // Es la PRIMERA pantalla: va antes del gate facial y antes del menú, porque
+  // sin autorización no se debe tratar ningún dato — ni las respuestas ni el
+  // rostro. El backend rechaza /responses y /face con CONSENT_REQUIRED.
+  // ---------------------------------------------------------------------------
+  if (!consentAccepted) {
+    // Rechazó: pantalla de salida, con la puerta abierta a cambiar de opinión.
+    if (consentDeclined) {
+      return (
+        <ParticipantLayout>
+          <div className="max-w-md mx-auto px-4 py-12">
+            <div className="rounded-2xl border border-gray-200 bg-white p-6 text-center shadow-sm">
+              <h2 className="text-lg font-semibold text-gray-900">Registramos tu decisión</h2>
+              <p className="mt-3 text-sm text-gray-600">
+                No autorizaste participar en la evaluación. Ya puedes cerrar esta página.
+              </p>
+              <p className="mt-3 text-sm text-gray-500">
+                Tu decisión no tiene ninguna consecuencia laboral. Si cambias de opinión,
+                puedes volver a este enlace y aceptar.
+              </p>
+              <button
+                onClick={() => { setConsentDeclined(false); setConsentLeido(false); }}
+                className="mt-5 w-full rounded-xl border border-gray-300 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+              >
+                Volver a leer el consentimiento
+              </button>
+            </div>
+          </div>
+        </ParticipantLayout>
+      );
+    }
+
+    return (
+      <ParticipantLayout>
+        <div className="min-h-screen bg-gray-50 py-6">
+          <div className="max-w-2xl mx-auto px-4">
+            <div className="mb-5">
+              <h1 className="text-2xl font-bold text-gray-900 mb-1">
+                Hola, {participant.firstName}
+              </h1>
+              <p className="text-gray-500">
+                Antes de empezar, necesitamos tu autorización
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+              {consentText
+                ? <ConsentText text={consentText} />
+                : <p className="text-sm text-gray-500">Cargando el consentimiento…</p>}
+
+              {/* La casilla obliga a un acto deliberado. Un consentimiento que se
+                  acepta de un clic reflejo no es informado. */}
+              <label className="mt-6 flex cursor-pointer items-start gap-3 rounded-xl border border-gray-200 bg-gray-50 p-4">
+                <input
+                  type="checkbox"
+                  checked={consentLeido}
+                  onChange={(e) => setConsentLeido(e.target.checked)}
+                  className="mt-0.5 h-5 w-5 flex-shrink-0 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                />
+                <span className="text-sm text-gray-700">
+                  Leí y entendí este documento, y autorizo de forma libre el tratamiento
+                  de mis datos en los términos descritos.
+                </span>
+              </label>
+
+              <div className="mt-5 space-y-2">
+                <button
+                  onClick={() => responderConsentimiento(true)}
+                  disabled={!consentLeido || consentBusy || !consentText}
+                  className="w-full rounded-xl bg-blue-600 py-3.5 text-base font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
+                >
+                  {consentBusy ? 'Registrando…' : 'Acepto y deseo participar'}
+                </button>
+                <button
+                  onClick={() => responderConsentimiento(false)}
+                  disabled={consentBusy}
+                  className="w-full rounded-xl border border-gray-300 py-3 text-sm font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-40"
+                >
+                  No autorizo participar
+                </button>
+              </div>
+
+              <p className="mt-4 text-center text-xs text-gray-400">
+                Negarte no tiene ninguna consecuencia laboral.
+              </p>
+            </div>
           </div>
         </div>
       </ParticipantLayout>

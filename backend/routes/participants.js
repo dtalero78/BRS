@@ -269,6 +269,10 @@ router.get('/', auth, async (req, res) => {
         'pe.completed_at',
         'pe.access_token',
         'pe.whatsapp_sent_at',
+        // Consentimiento informado: el evaluador necesita distinguir "rechazó"
+        // de "nunca abrió el link" para no perseguir a quien ya dijo que no.
+        'pe.consent_accepted_at',
+        'pe.consent_declined_at',
         'companies.name as company_name'
       );
 
@@ -365,6 +369,8 @@ router.get('/', auth, async (req, res) => {
         updatedAt: p.updated_at,
         accessToken: p.access_token,
         whatsappSentAt: p.whatsapp_sent_at || null,
+        consentAcceptedAt: p.consent_accepted_at || null,
+        consentDeclinedAt: p.consent_declined_at || null,
         evaluationUrl: p.access_token ? `${getBaseUrl(req)}/participant/evaluation/${p.access_token}` : null
       };
     }));
