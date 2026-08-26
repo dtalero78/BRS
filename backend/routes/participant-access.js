@@ -596,10 +596,13 @@ router.get('/validate/:token', async (req, res) => {
     const participantEvaluation = await db('participant_evaluations')
       .join('participants', 'participant_evaluations.participant_id', 'participants.id')
       .join('evaluations', 'participant_evaluations.evaluation_id', 'evaluations.id')
+      .join('companies', 'evaluations.company_id', 'companies.id')
       .where('participant_evaluations.access_token', token)
       .where('participant_evaluations.token_expires_at', '>', new Date())
       .select(
         'participants.*',
+        'companies.name as company_name',
+        'companies.logo_url as company_logo_url',
         'evaluations.id as evaluation_id',
         'evaluations.name as evaluation_name',
         'evaluations.description as evaluation_description',
@@ -640,6 +643,12 @@ router.get('/validate/:token', async (req, res) => {
         id: participantEvaluation.evaluation_id,
         name: participantEvaluation.evaluation_name,
         description: participantEvaluation.evaluation_description
+      },
+      // Co-marca: el logo de la empresa se muestra junto al de la plataforma en
+      // la pantalla del participante. `logoUrl` en null = solo la plataforma.
+      company: {
+        name: participantEvaluation.company_name,
+        logoUrl: participantEvaluation.company_logo_url || null
       },
       status: participantEvaluation.status,
       assignedAt: participantEvaluation.assigned_at,

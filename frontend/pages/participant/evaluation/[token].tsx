@@ -8,12 +8,30 @@ import ConsentText from '../../../components/ConsentText';
 import IntroVideoModal from '../../../components/IntroVideoModal';
 
 // Simple wrapper for participant pages (no auth required)
-function ParticipantLayout({ children }: { children: ReactNode }) {
+//
+// `coBrandLogo` es el logo de la EMPRESA evaluada (companies.logo_url), que se
+// muestra junto al de la plataforma. Es distinto de BRAND, que es la marca de
+// la instancia y se resuelve en build: dentro de una misma instancia cada
+// empresa puede tener el suyo. En null se ve solo el de la plataforma.
+function ParticipantLayout({ children, coBrandLogo }: { children: ReactNode; coBrandLogo?: string | null }) {
   return (
     <div className="min-h-screen bg-gray-50">
       <header className="bg-white shadow-sm border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-4 py-3 flex items-center">
+        <div className="max-w-7xl mx-auto px-4 py-3 flex items-center gap-3">
           <img src={BRAND.logo} alt={BRAND.name} className="h-8 w-auto" />
+          {coBrandLogo && (
+            <>
+              <span className="h-6 w-px flex-shrink-0 bg-gray-200" aria-hidden="true" />
+              {/* alt vacio a proposito: el logotipo trae su propia razon social,
+                  que no tiene por que coincidir con companies.name (aqui, por
+                  ejemplo, la consultora que aplica la medicion y no la empresa
+                  evaluada). Un alt inventado a partir del nombre en la base
+                  leeria mal. La plataforma ya queda nombrada por el logo de al
+                  lado. `rounded` porque el archivo trae su propio fondo solido
+                  y sin esquinas se ve como una calcomania pegada al header. */}
+              <img src={coBrandLogo} alt="" className="h-8 w-auto rounded" />
+            </>
+          )}
         </div>
       </header>
       <main>{children}</main>
@@ -86,6 +104,7 @@ const ParticipantEvaluationPage = () => {
   const [token, setToken] = useState<string | null>(null);
   const [participant, setParticipant] = useState<ParticipantData | null>(null);
   const [evaluation, setEvaluation] = useState<EvaluationData | null>(null);
+  const [coBrandLogo, setCoBrandLogo] = useState<string | null>(null);
   const [availableQuestionnaires, setAvailableQuestionnaires] = useState<any[]>([]);
   // returnUrl viene solo cuando el participant fue creado por integración externa
   // (BSL-PLATAFORMA2 / Platzi). Para evaluadores que se auto-registran este state
@@ -250,6 +269,7 @@ const ParticipantEvaluationPage = () => {
       const validationData = await validateResponse.json();
       setParticipant(validationData.participant);
       setEvaluation(validationData.evaluation);
+      setCoBrandLogo(validationData.company?.logoUrl || null);
 
       // Consentimiento informado: se carga siempre, en todas las instancias.
       try {
@@ -1131,7 +1151,7 @@ const ParticipantEvaluationPage = () => {
 
   if (loading) {
     return (
-      <ParticipantLayout>
+      <ParticipantLayout coBrandLogo={coBrandLogo}>
         <div className="flex items-center justify-center min-h-screen">
           <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
         </div>
@@ -1141,7 +1161,7 @@ const ParticipantEvaluationPage = () => {
 
   if (error) {
     return (
-      <ParticipantLayout>
+      <ParticipantLayout coBrandLogo={coBrandLogo}>
         <div className="max-w-2xl mx-auto mt-8">
           <div className="bg-red-50 border border-red-200 rounded-lg p-6">
             <h2 className="text-lg font-medium text-red-800 mb-2">Error</h2>
@@ -1162,7 +1182,7 @@ const ParticipantEvaluationPage = () => {
 
   if (!participant) {
     return (
-      <ParticipantLayout>
+      <ParticipantLayout coBrandLogo={coBrandLogo}>
         <div className="max-w-2xl mx-auto mt-8">
           <div className="bg-red-50 border border-red-200 rounded-lg p-6">
             <h2 className="text-lg font-medium text-red-800 mb-2">Error</h2>
@@ -1183,7 +1203,7 @@ const ParticipantEvaluationPage = () => {
     // Rechazó: pantalla de salida, con la puerta abierta a cambiar de opinión.
     if (consentDeclined) {
       return (
-        <ParticipantLayout>
+        <ParticipantLayout coBrandLogo={coBrandLogo}>
           <div className="max-w-md mx-auto px-4 py-12">
             <div className="rounded-2xl border border-gray-200 bg-white p-6 text-center shadow-sm">
               <h2 className="text-lg font-semibold text-gray-900">Registramos tu decisión</h2>
@@ -1207,7 +1227,7 @@ const ParticipantEvaluationPage = () => {
     }
 
     return (
-      <ParticipantLayout>
+      <ParticipantLayout coBrandLogo={coBrandLogo}>
         <div className="min-h-screen bg-gray-50 py-6">
           <div className="max-w-2xl mx-auto px-4">
             <div className="mb-5">
@@ -1281,7 +1301,7 @@ const ParticipantEvaluationPage = () => {
     // control que la empresa contrató.
     if (!faceAvailable) {
       return (
-        <ParticipantLayout>
+        <ParticipantLayout coBrandLogo={coBrandLogo}>
           <div className="max-w-md mx-auto px-4 py-10">
             <div className="rounded-2xl border border-amber-200 bg-amber-50 p-6 text-center">
               <ShieldAlert className="mx-auto mb-3 text-amber-500" size={44} />
@@ -1299,7 +1319,7 @@ const ParticipantEvaluationPage = () => {
     const esEnrolamiento = !faceEnrolled;
 
     return (
-      <ParticipantLayout>
+      <ParticipantLayout coBrandLogo={coBrandLogo}>
         <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 py-8">
           <div className="max-w-md mx-auto px-4">
             <button
@@ -1740,7 +1760,7 @@ const ParticipantEvaluationPage = () => {
   // Hub: selección de cuestionarios
   // ---------------------------------------------------------------------------
   return (
-    <ParticipantLayout>
+    <ParticipantLayout coBrandLogo={coBrandLogo}>
       {BRAND.introVideo && showIntroVideo && (
         <IntroVideoModal
           src={BRAND.introVideo}

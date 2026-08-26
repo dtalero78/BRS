@@ -237,7 +237,7 @@ Dimensiones con sufijo `_total` son totales de dominio.
 
 ### Acceso Participante (`/api/participant-access`)
 - `POST /lookup` - **Puerta general**: `{documentNumber}` → lista de tokens de esa persona. Público, con límite de intentos fallidos.
-- `POST /token/validate` - Validar token de acceso
+- `POST /token/validate` - Validar token de acceso (devuelve `company: {name, logoUrl}` para la co-marca)
 - `GET /token/:token/questionnaires` - Cuestionarios disponibles
 - `POST /token/:token/responses` - Guardar respuestas
 - `GET /:token/consent` - Texto del consentimiento + si ya aceptó/rechazó
@@ -341,6 +341,22 @@ El `returnUrl` se sigue guardando y exponiendo en el API, pero el frontend **ya 
 
 ### Env vars de integración
 `BRS_INTEGRATION_API_KEY` (requerida), `BRS_WEBHOOK_SECRET` (requerida para webhooks), `BRS_PUBLIC_URL` (base de la URL del token), `BRS_INTEGRATION_DEFAULT_EVALUATOR`, `BRS_INTEGRATION_DEFAULT_COMPANY` (fallbacks).
+
+## CO-MARCA POR EMPRESA (logo en la pantalla del participante)
+
+`companies.logo_url` guarda el logo de la empresa, que se muestra **junto** al de la plataforma en el header del participante. NULL = solo la plataforma (comportamiento de siempre).
+
+**Es distinto de `config/brand.ts`.** Esa marca es de la INSTANCIA y se hornea en build (`NEXT_PUBLIC_BRAND`), así que no sirve aquí: dentro de una misma instancia cada empresa necesita su propio logo. Por eso va en la base y no en una env var.
+
+- Se guarda una **ruta o URL**, no la imagen. Los assets propios viven en `frontend/public/brand/<marca>/`.
+- El backend lo devuelve en `GET /api/participant-access/validate/:token` como `company: { name, logoUrl }`.
+- Lo pinta `ParticipantLayout` en `participant/evaluation/[token].tsx`, con un separador y `rounded` — el archivo de REGIS trae su propio fondo sólido y sin esquinas se ve como una calcomanía pegada al header.
+- El `alt` va **vacío a propósito**: el logotipo trae su propia razón social, que no tiene por qué coincidir con `companies.name` (en el caso de Manuela Beltrán el logo es de la consultora que aplica la medición, no de la empresa evaluada). Un alt armado con el nombre de la base leería mal.
+- **No aparece en la barra del cuestionario a pantalla completa** ni en `/acceso`: en la primera no hay logo de nadie (es back + nombre + progreso) y en la segunda todavía no se sabe de qué empresa es la persona.
+
+> ⚠️ **Todavía no hay UI para asignarlo.** Se setea por SQL: `UPDATE companies SET logo_url = '/brand/<marca>/logo.jpeg' WHERE nit = '<nit>'`. Usar el **NIT** y no el id: el mismo id es otra empresa distinta en cada instancia.
+
+Hoy configurado: `Universidad Manuela Beltran` (NIT 860.517.647-5) → `/brand/regis/logo.jpeg`.
 
 ## PUERTA GENERAL DE ACCESO (`/acceso`)
 
@@ -674,6 +690,7 @@ git push origin main
 - [x] **Integración server-to-server** — `POST /api/integration/participant` (auth `X-Api-Key`, idempotente por `externalRef`) + webhook `evaluation.completed` firmado con HMAC
 - [x] **Auto-redirect de retorno desactivado** — el participante ya no es redirigido a la app externa al terminar; se queda en la pantalla de éxito de BRS (webhook sigue notificando)
 - [x] **Consentimiento informado del participante** — pantalla bloqueante antes del menú, en todas las instancias; registro de aceptación/rechazo con IP y snapshot del texto; editable por evaluación
+- [x] **Co-marca por empresa** — `companies.logo_url` pinta el logo de la empresa junto al de la plataforma en la pantalla del participante (hoy: REGIS en Universidad Manuela Beltrán); sin UI todavía, se asigna por SQL
 - [x] **Puerta general de acceso** — enlace único `/acceso` donde el participante entra con su número de documento, sin repartir enlaces individuales; límite de intentos fallidos por IP que se reinicia con cada acierto
 - [x] **Verificación facial del participante** (AWS Rekognition, opt-in por instancia vía `FACE_VERIFICATION_ENABLED`, hoy solo `brs-shaddai`) — auto-enrolamiento + verificación bloqueante, guard en el backend, bitácora de intentos y reinicio desde la UI del evaluador
 
