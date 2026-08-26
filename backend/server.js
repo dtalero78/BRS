@@ -59,6 +59,11 @@ function redactAccessToken(url) {
   if (!url) return url;
   return url
     .replace(/(\/participant\/evaluation\/)[^/?#]+/g, '$1<redacted>')
+    // OJO: en '/participant-access/validate/<token>' el token va en el SEGUNDO
+    // segmento. La regla de abajo solo tapa el primero, que ahi es 'validate',
+    // asi que sin esta linea el token quedaba en claro en el log — y validate
+    // es justo la primera llamada que hace toda persona que abre su bateria.
+    .replace(/(\/participant-access\/validate\/)[^/?#]+/g, '$1<redacted>')
     .replace(/(\/participant-access\/)[^/?#]+/g, '$1<redacted>');
 }
 morgan.token('url-redacted', (req) => redactAccessToken(req.originalUrl || req.url));

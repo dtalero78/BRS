@@ -236,6 +236,7 @@ Dimensiones con sufijo `_total` son totales de dominio.
 - `POST /organizational` - PDF organizacional (`{evaluationId}`)
 
 ### Acceso Participante (`/api/participant-access`)
+- `POST /lookup` - **Puerta general**: `{documentNumber}` → lista de tokens de esa persona. Público, con límite de intentos fallidos.
 - `POST /token/validate` - Validar token de acceso
 - `GET /token/:token/questionnaires` - Cuestionarios disponibles
 - `POST /token/:token/responses` - Guardar respuestas
@@ -340,6 +341,33 @@ El `returnUrl` se sigue guardando y exponiendo en el API, pero el frontend **ya 
 
 ### Env vars de integración
 `BRS_INTEGRATION_API_KEY` (requerida), `BRS_WEBHOOK_SECRET` (requerida para webhooks), `BRS_PUBLIC_URL` (base de la URL del token), `BRS_INTEGRATION_DEFAULT_EVALUATOR`, `BRS_INTEGRATION_DEFAULT_COMPANY` (fallbacks).
+
+## PUERTA GENERAL DE ACCESO (`/acceso`)
+
+Un solo enlace público para toda la instancia: la persona escribe su número de documento y entra a su batería. Evita tener que repartir cientos de enlaces individuales por WhatsApp o correo.
+
+`POST /api/participant-access/lookup` resuelve el documento contra los `participant_evaluations` que esa persona ya tiene. **No crea nada**: si el documento no está en la lista que importó el evaluador, no entra.
+
+### Qué devuelve y qué no
+- Devuelve una **lista** de coincidencias, no un solo token: la misma persona puede estar en dos evaluaciones abiertas a la vez (dos empresas, o una repetición anual) y el frontend le pregunta a cuál quiere entrar. Adivinar la metería a contestar la batería equivocada.
+- **No devuelve el nombre** de la persona. Con el documento como única llave, devolverlo convertiría la puerta en un directorio de "quién trabaja dónde". El nombre lo ve en la pantalla siguiente, que ya exige el token.
+- Distingue `404 NOT_FOUND` (ese documento no está en ninguna lista) de `409 NOT_AVAILABLE` (existe, pero su evaluación no está `active`). Mandan a la persona a resolver cosas distintas.
+- Solo considera evaluaciones `active`. Las baterías ya `completed` **sí** siguen siendo alcanzables: el Brief COPE se responde después de terminar (nota 12).
+
+### Tokens vencidos: se renueva la fecha, no el token
+Si el `access_token` está vencido, se corre `token_expires_at` 90 días en vez de generar uno nuevo — regenerarlo dejaría en 404 el enlace individual que ya se había enviado. A los PE anteriores a la columna `access_token` se les emite uno en ese momento, o esa persona no podría entrar por ningún medio.
+
+### El límite de intentos es lo único que protege esta puerta
+El documento **no es un secreto**: va en cualquier planilla de nómina. Se aceptó ese riesgo a cambio de que nadie quede varado sin su enlace.
+
+Cuentan solo los intentos **fallidos** (`skipSuccessfulRequests`) y, además, un acierto **borra** los fallos acumulados de esa IP (`lookupLimiter.resetKey`). Las dos cosas apuntan a lo mismo: una empresa entera responde desde una sola IP de oficina, así que un contador limpio por IP se llenaría con los errores de tipeo de los primeros y bloquearía a los cientos restantes — justo el modo de falla que este enlace existe para evitar.
+
+> ⚠️ El precio, sin adornos: quien ya conozca **una** cédula válida puede intercalar un acierto para limpiar el contador y seguir barriendo. Frena al curioso, no al decidido. La defensa de fondo sería pedir un segundo dato — el año de nacimiento ya viene en `demographic_data` de toda planilla importada.
+
+### Archivos
+- `backend/routes/participant-access.js` — `POST /lookup` + `lookupLimiter`
+- `backend/migrations/20260826000001_add_document_number_index.js` — índice de expresión sobre `demographic_data->>'documentNumber'` (sin él cada ingreso escanea toda la tabla, y con este enlace la empresa entera entra a la vez)
+- `frontend/pages/acceso.tsx` — formulario + selector cuando hay más de una evaluación
 
 ## CONSENTIMIENTO INFORMADO DEL PARTICIPANTE
 
@@ -536,6 +564,9 @@ No usa FlowLayout ni ParticipantLayout: es un contenedor propio de tres zonas fi
 - Cuestionarios → `/participant/questionnaires`
 - Mis Resultados → `/participant/results`
 
+### Público
+- Puerta general del participante → `/acceso` (entra con el número de documento)
+
 ### Auth
 - Login → `/auth/login`
 - Registro → `/auth/register` (auto-registro de evaluadores)
@@ -600,7 +631,8 @@ git push origin main
 13. **Deriva de esquema: `coping` en las CHECK constraints**. El Brief COPE se añadió a la app pero la constraint de `responses`/`results` solo se amplió A MANO en la base de BRS principal. Toda base creada desde migraciones (shaddai y cualquier licenciatario nuevo) se quedó sin `coping`, así que el participante perdía sus 28 respuestas con un 500 al guardar. Corregido en la migración `20260731000002`. **Antes de entregar una instancia nueva, diffear el esquema real contra el que producen las migraciones** — este no tiene por qué ser el único caso.
 14. **Tablas con scroll fijo**: Para tablas largas, usar `<div className="overflow-auto h-[calc(100vh-260px)] min-h-[300px]">` con `<thead className="sticky top-0 z-10 bg-gray-50 shadow-sm">`. `max-h-[Nvh]` permite que la página crezca y deja el scrollbar fuera del viewport.
 15. **Paginación con `LIMIT/OFFSET` necesita un ORDER BY único**: `participants.created_at` NO es único — una importación de Excel inserta cientos de filas con el mismo timestamp (en shaddai ~700 comparten uno solo). Ante empates Postgres no garantiza orden estable entre consultas, y el frontend pide las páginas **en paralelo**: las páginas se solapaban, de 945 filas traídas llegaban 821 participantes distintos (124 repetidos, otros 124 invisibles). Siempre desempatar con `.orderBy('<tabla>.id', 'desc')`.
-16. **La `key` de una fila de participante es (participante, evaluación), no el id**: un participante puede estar en dos evaluaciones y el JOIN devuelve una fila por cada una. Con `key={p.id}` duplicada, React deja **filas fantasma** en el DOM al filtrar — la tabla mostraba 125 filas mientras el contador decía "1 resultado(s)", que se lee como "el buscador no filtra".
+16. **Redacción del token en los logs, caso `/validate`**: `redactAccessToken()` en `server.js` tapaba el primer segmento después de `/participant-access/`, pero en `GET /api/participant-access/validate/<token>` ese segmento es `validate` y el token quedaba **en claro** en los logs de producción. Es la primera llamada que hace toda persona al abrir su batería, así que con la puerta general serían cientos de tokens vivos impresos. Corregido con una regla propia para `/validate/`. Al agregar rutas nuevas con el token en otra posición, revisar esa función.
+17. **La `key` de una fila de participante es (participante, evaluación), no el id**: un participante puede estar en dos evaluaciones y el JOIN devuelve una fila por cada una. Con `key={p.id}` duplicada, React deja **filas fantasma** en el DOM al filtrar — la tabla mostraba 125 filas mientras el contador decía "1 resultado(s)", que se lee como "el buscador no filtra".
 
 ## ESTADO DEL PROYECTO
 
@@ -642,6 +674,7 @@ git push origin main
 - [x] **Integración server-to-server** — `POST /api/integration/participant` (auth `X-Api-Key`, idempotente por `externalRef`) + webhook `evaluation.completed` firmado con HMAC
 - [x] **Auto-redirect de retorno desactivado** — el participante ya no es redirigido a la app externa al terminar; se queda en la pantalla de éxito de BRS (webhook sigue notificando)
 - [x] **Consentimiento informado del participante** — pantalla bloqueante antes del menú, en todas las instancias; registro de aceptación/rechazo con IP y snapshot del texto; editable por evaluación
+- [x] **Puerta general de acceso** — enlace único `/acceso` donde el participante entra con su número de documento, sin repartir enlaces individuales; límite de intentos fallidos por IP que se reinicia con cada acierto
 - [x] **Verificación facial del participante** (AWS Rekognition, opt-in por instancia vía `FACE_VERIFICATION_ENABLED`, hoy solo `brs-shaddai`) — auto-enrolamiento + verificación bloqueante, guard en el backend, bitácora de intentos y reinicio desde la UI del evaluador
 
 ### Pendiente

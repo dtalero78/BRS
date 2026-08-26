@@ -1,4 +1,5 @@
 const express = require('express');
+const crypto = require('crypto');
 const rateLimit = require('express-rate-limit');
 const router = express.Router();
 const db = require('../config/database');
@@ -14,6 +15,169 @@ const {
   FACE_MATCH_THRESHOLD,
 } = require('../utils/rekognition');
 const { buildDefaultConsentText } = require('../utils/consent-template');
+
+// ---------------------------------------------------------------------------
+// Puerta general: entrar con el número de documento
+// ---------------------------------------------------------------------------
+// Un solo enlace público (/acceso) para toda la instancia, en vez de repartir
+// cientos de enlaces individuales. La persona escribe su documento y el backend
+// le devuelve el token que ya tenía asignado.
+//
+// El documento NO es un secreto: va en cualquier planilla de nómina. Esta
+// puerta se abre entonces con un dato público, y lo único que la separa de un
+// barrido de cédulas es el límite de intentos de abajo. Se eligió así a
+// sabiendas, priorizando que nadie quede varado sin su enlace. Si una instancia
+// necesita más, el paso natural es pedir un segundo dato: el año de nacimiento
+// ya viene en el demographic_data de toda planilla importada.
+
+const LOOKUP_TOKEN_TTL_DAYS = 90;
+
+// Solo cuentan los intentos FALLIDOS (skipSuccessfulRequests) y, además, un
+// acierto BORRA los fallos ya acumulados de esa IP (el resetKey del handler).
+// Las dos cosas apuntan a lo mismo: una empresa entera responde desde una sola
+// IP de oficina, así que un contador limpio por IP se llenaría con los errores
+// de tipeo de los primeros y dejaría bloqueados a los 500 restantes — que es
+// justo el modo de falla que este enlace existe para evitar.
+//
+// El precio, sin adornos: quien ya conozca UNA cédula válida puede intercalar
+// un acierto de vez en cuando para limpiar el contador y seguir barriendo.
+// Esto frena al curioso, no al decidido. Con el documento como única llave de
+// entrada no da para más; la defensa de fondo sería pedir un segundo dato (el
+// año de nacimiento ya viene en demographic_data de toda planilla importada).
+const lookupLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  skipSuccessfulRequests: true,
+  message: {
+    error: 'Demasiados intentos fallidos. Espera unos minutos e intenta de nuevo.',
+    code: 'RATE_LIMITED',
+  },
+  validate: { trustProxy: false },
+});
+
+/** La gente escribe "1.020.717.226" o "1 020 717 226". */
+function onlyDigits(value) {
+  return String(value ?? '').replace(/\D/g, '');
+}
+
+function lookupQuery() {
+  return db('participant_evaluations')
+    .join('participants', 'participant_evaluations.participant_id', 'participants.id')
+    .join('evaluations', 'participant_evaluations.evaluation_id', 'evaluations.id')
+    .join('companies', 'evaluations.company_id', 'companies.id')
+    .select(
+      'participant_evaluations.id as pe_id',
+      'participant_evaluations.access_token',
+      'participant_evaluations.token_expires_at',
+      'participant_evaluations.status',
+      'evaluations.id as evaluation_id',
+      'evaluations.name as evaluation_name',
+      'evaluations.status as evaluation_status',
+      'companies.name as company_name'
+    );
+}
+
+/**
+ * POST /lookup  →  { documentNumber }  ⇒  { matches: [{ token, url, ... }] }
+ *
+ * Devuelve una lista y no un solo token porque una misma persona puede estar
+ * en dos evaluaciones abiertas a la vez (dos empresas, o una repetición anual).
+ * En ese caso el frontend le pregunta a cuál quiere entrar.
+ */
+router.post('/lookup', lookupLimiter, async (req, res) => {
+  try {
+    const raw = String(req.body?.documentNumber ?? '').trim();
+    const digits = onlyDigits(raw);
+    if (digits.length < 4) {
+      return res.status(400).json({
+        error: 'Escribe tu número de documento.',
+        code: 'INVALID_DOCUMENT',
+      });
+    }
+
+    // Igualdad exacta primero: así entra por el índice de expresión sobre
+    // demographic_data->>'documentNumber' (migración 20260826000001).
+    let rows = await lookupQuery()
+      .whereRaw("participants.demographic_data->>'documentNumber' IN (?, ?)", [raw, digits]);
+
+    if (rows.length === 0) {
+      // El documento guardado puede traer puntos o espacios si el participante
+      // se creó a mano desde el formulario. Normalizarlo en SQL obliga a un
+      // escaneo secuencial, por eso solo se intenta cuando la búsqueda
+      // indexada no encontró nada.
+      rows = await lookupQuery().whereRaw(
+        "regexp_replace(coalesce(participants.demographic_data->>'documentNumber', ''), '[^0-9]', '', 'g') = ?",
+        [digits]
+      );
+    }
+
+    if (rows.length === 0) {
+      return res.status(404).json({
+        error: 'No encontramos ese número de documento. Verifícalo o comunícate con el área de gestión humana de tu empresa.',
+        code: 'NOT_FOUND',
+      });
+    }
+
+    // Una batería de una evaluación cerrada no se puede contestar. Se responde
+    // distinto de NOT_FOUND a propósito: "tu empresa todavía no la abrió" y
+    // "ese documento no está en la lista" mandan a la persona a resolver cosas
+    // distintas.
+    const open = rows.filter((row) => row.evaluation_status === 'active');
+    if (open.length === 0) {
+      return res.status(409).json({
+        error: 'Tu evaluación no está abierta en este momento. Comunícate con el área de gestión humana de tu empresa.',
+        code: 'NOT_AVAILABLE',
+      });
+    }
+
+    const now = new Date();
+    const expiry = new Date(now.getTime() + LOOKUP_TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000);
+    const matches = [];
+
+    for (const row of open) {
+      let token = row.access_token;
+
+      if (!token) {
+        // PE anterior a la columna access_token: se le emite uno ahora, si no
+        // esa persona nunca podría entrar por ningún medio.
+        token = crypto.randomBytes(32).toString('hex');
+        await db('participant_evaluations')
+          .where('id', row.pe_id)
+          .update({ access_token: token, token_expires_at: expiry });
+      } else if (!row.token_expires_at || new Date(row.token_expires_at) <= now) {
+        // Vencido: se corre la fecha en vez de generar un token nuevo, porque
+        // regenerarlo dejaría en 404 el enlace individual que ya se había
+        // enviado por WhatsApp.
+        await db('participant_evaluations')
+          .where('id', row.pe_id)
+          .update({ token_expires_at: expiry });
+      }
+
+      matches.push({
+        token,
+        url: `/participant/evaluation/${token}`,
+        evaluationId: row.evaluation_id,
+        evaluationName: row.evaluation_name,
+        companyName: row.company_name,
+        status: row.status,
+      });
+    }
+
+    // Ver la nota del limitador: un acierto limpia los fallos previos de esa
+    // IP, para que los errores de tipeo de una oficina no terminen bloqueando
+    // a los compañeros que todavía no han entrado.
+    lookupLimiter.resetKey(req.ip);
+
+    // No se devuelve el nombre de la persona. Con el documento como única
+    // llave, devolverlo convertiría esta puerta en un directorio de "quién
+    // trabaja dónde". Quien entra ve su nombre en la pantalla siguiente, que
+    // ya exige el token.
+    res.json({ matches });
+  } catch (error) {
+    console.error('Participant lookup error:', error);
+    res.status(500).json({ error: 'Error interno del servidor' });
+  }
+});
 
 // ---------------------------------------------------------------------------
 // Consentimiento informado (obligatorio en TODAS las instancias)
