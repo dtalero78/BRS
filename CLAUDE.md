@@ -541,7 +541,7 @@ No usa FlowLayout ni ParticipantLayout: es un contenedor propio de tres zonas fi
 - **Pregunta anclada arriba** (`items-start`), no centrada: con centrado vertical el título salta de posición entre preguntas de distinta altura.
 - **CTA único** (`handleContinue`): avanza, o finaliza en la última. Si al finalizar faltan respuestas, salta a la primera pendiente con un toast en vez de quedarse bloqueado sin explicación.
 - **Rama demográfica vs escala**: se decide por `questionnaire.campos` (el cuestionario), no por el campo. Un campo de ficha sin `tipo` ni `opciones` caía antes en el render de escala Likert.
-- Campos de opciones: ≤ 8 opciones → tarjetas de un toque; > 8 → `<select>` nativo.
+- Campos de opciones: ≤ 12 opciones → tarjetas de un toque; > 12 → `<select>` nativo. El umbral era 8, y con eso **"Último nivel de estudios" (12 opciones) era el único campo de la ficha que caía en el desplegable nativo**: en pantallas chicas el popup se corta y las últimas opciones (Carrera militar / policía, Posgrado incompleto/completo) parecían no existir. Hoy los 10 campos con opciones de la ficha se pintan igual.
 
 ### Patrón de uso
 ```tsx

@@ -1479,14 +1479,18 @@ const ParticipantEvaluationPage = () => {
         );
       }
 
-      // Opciones: pocas → tarjetas de un toque; muchas → select nativo
+      // Opciones: tarjetas de un toque. El umbral cubre las 12 del nivel de
+      // estudios a propósito: era el ÚNICO campo de la ficha que caía en el
+      // <select> nativo, y en pantallas chicas el popup se corta — una psicóloga
+      // reportó que "Carrera militar / policía" y los Posgrado (las últimas de
+      // la lista) "no aparecían". Con tarjetas todo se ve en el scroll normal.
       if (question.opciones && question.opciones.length > 0) {
         const selectedOption = responses[key];
         const needsYears = selectedOption?.toString().includes('más de un año');
 
         return (
           <div className="space-y-5">
-            {question.opciones.length <= 8 ? (
+            {question.opciones.length <= 12 ? (
               <div className="space-y-2.5">
                 {question.opciones.map((opcion: string, index: number) => {
                   // Comparación por string: hay respuestas viejas guardadas como
