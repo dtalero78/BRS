@@ -144,6 +144,16 @@ function parseIntegrationMeta(raw) {
  * 'in_progress' para siempre → "Completo sin estado" en el panel del evaluador.
  */
 async function finalizePeStatus(trx, peId, formType, integrationMetaRaw) {
+  // El Brief COPE es opcional por evaluación (evaluations.include_coping): si
+  // esta campaña no lo aplica, no puede exigirse para dar la batería por
+  // terminada — el participante nunca lo ve.
+  const evalRow = await trx('participant_evaluations as pe')
+    .join('evaluations as e', 'e.id', 'pe.evaluation_id')
+    .where('pe.id', peId)
+    .select('e.include_coping')
+    .first();
+  const aplicaCoping = evalRow ? evalRow.include_coping !== false : true;
+
   const allResponses = await trx('responses')
     .where('participant_evaluation_id', peId)
     .select('questionnaire_type', 'completed_at');
@@ -160,7 +170,7 @@ async function finalizePeStatus(trx, peId, formType, integrationMetaRaw) {
   const integrationMeta = parseIntegrationMeta(integrationMetaRaw);
   const esIntegracion = !!(integrationMeta && integrationMeta.source);
   const requiredQuestionnaires = esIntegracion
-    ? ['ficha_datos', ...baseRequired, 'coping']
+    ? ['ficha_datos', ...baseRequired, ...(aplicaCoping ? ['coping'] : [])]
     : baseRequired;
 
   const isCompleted = requiredQuestionnaires.every(type => finishedTypes.includes(type));

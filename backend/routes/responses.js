@@ -33,7 +33,7 @@ router.post('/', auth, async (req, res) => {
       .leftJoin('evaluations', 'pe.evaluation_id', 'evaluations.id')
       .where('participants.id', participantId)
       .whereIn('participants.company_id', await getOwnedCompanyIds(req.user.userId))
-      .select('participants.*', 'pe.id as pe_id', 'pe.status as pe_status', 'evaluations.name as evaluation_name')
+      .select('participants.*', 'pe.id as pe_id', 'pe.status as pe_status', 'evaluations.name as evaluation_name', 'evaluations.include_coping')
       .first();
 
     if (!participantEvaluation) {
@@ -42,6 +42,13 @@ router.post('/', auth, async (req, res) => {
 
     if (!participantEvaluation.pe_id) {
       return res.status(400).json({ error: 'Participante no asignado a evaluación' });
+    }
+
+    // El Brief COPE es opcional por evaluación: si esta campaña no lo aplica,
+    // tampoco se le pueden cargar respuestas por esta vía, o el informe
+    // terminaría con una sección que la evaluación no contrató.
+    if (questionnaireType === 'coping' && participantEvaluation.include_coping === false) {
+      return res.status(400).json({ error: 'Esta evaluación no aplica el Brief COPE' });
     }
 
     const thisQuestionnaireDone = isQuestionnaireComplete(questionnaireType, responses);

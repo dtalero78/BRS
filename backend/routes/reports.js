@@ -36,6 +36,7 @@ router.post('/individual', auth, async (req, res) => {
         'e.name as evaluation_name',
         'e.description as evaluation_description',
         'e.paid as evaluation_paid',
+        'e.include_coping as evaluation_include_coping',
         'c.name as company_name',
         'c.nit as company_nit'
       );
@@ -57,11 +58,17 @@ router.post('/individual', auth, async (req, res) => {
       });
     }
 
-    // Get pre-calculated results from DB
-    const resultRows = await db('results')
+    // Get pre-calculated results from DB.
+    // Si la evaluación no aplica el Brief COPE, sus resultados no entran al
+    // informe aunque existan en la base: pudieron quedar de antes de apagar la
+    // bandera, y el informe debe reflejar el alcance contratado. Apagarla no
+    // borra nada — volver a encenderla los reimprime.
+    const incluyeCoping = participant.evaluation_include_coping !== false;
+    const resultRows = (await db('results')
       .where('participant_evaluation_id', participantEvaluationId)
       .orderBy('questionnaire_type')
-      .select('*');
+      .select('*'))
+      .filter(row => incluyeCoping || row.questionnaire_type !== 'coping');
 
     if (resultRows.length === 0) {
       return res.status(400).json({ error: 'No hay resultados calculados. Primero calcule los resultados del participante.' });
@@ -142,6 +149,7 @@ router.post('/organizational', auth, async (req, res) => {
       .where('e.id', evaluationId)
       .select(
         'e.id', 'e.name', 'e.description', 'e.start_date', 'e.end_date', 'e.status', 'e.paid',
+        'e.include_coping',
         'e.report_text_overrides',
         'c.name as company_name', 'c.nit as company_nit'
       );
@@ -163,12 +171,16 @@ router.post('/organizational', auth, async (req, res) => {
       return res.status(404).json({ error: 'Evaluación no encontrada' });
     }
 
-    // Get all results for all participants in this evaluation
-    const allResults = await db('results')
+    // Get all results for all participants in this evaluation.
+    // El Brief COPE queda fuera si la evaluación no lo aplica: sin sus filas,
+    // el agregador no cuenta nada y la sección del informe no se dibuja.
+    const incluyeCoping = evaluation.include_coping !== false;
+    const allResults = (await db('results')
       .join('participant_evaluations as pe', 'results.participant_evaluation_id', 'pe.id')
       .join('participants as p', 'pe.participant_id', 'p.id')
       .where('pe.evaluation_id', evaluationId)
-      .select('results.*', 'p.demographic_data', 'p.email');
+      .select('results.*', 'p.demographic_data', 'p.email'))
+      .filter(row => incluyeCoping || row.questionnaire_type !== 'coping');
 
     // Fetch per-participant data only if individual summaries are requested
     let participantSummaries = [];
@@ -187,9 +199,10 @@ router.post('/organizational', auth, async (req, res) => {
         );
 
       for (const pe of completedPEs) {
-        const resultRows = await db('results')
+        const resultRows = (await db('results')
           .where('participant_evaluation_id', pe.pe_id)
-          .select('*');
+          .select('*'))
+          .filter(row => incluyeCoping || row.questionnaire_type !== 'coping');
         if (resultRows.length === 0) continue;
         const resultsByType = {};
         resultRows.forEach(row => {

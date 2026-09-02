@@ -288,6 +288,22 @@ async function hasConsent(peId) {
 }
 
 // ---------------------------------------------------------------------------
+// Brief COPE opcional por evaluación (evaluations.include_coping)
+// ---------------------------------------------------------------------------
+
+/**
+ * ¿La evaluación de este PE aplica el Brief COPE?
+ *
+ * Recibe una fila que ya trae `evaluations.include_coping` del JOIN. Se lee en
+ * positivo (`!== false`) para que la ausencia del dato signifique "sí": el
+ * default de la columna es `true` y el modo de falla seguro aquí es seguir
+ * ofreciendo el cuestionario, no hacerlo desaparecer en silencio.
+ */
+function copingIncluded(row) {
+  return !row || row.include_coping !== false;
+}
+
+// ---------------------------------------------------------------------------
 // Verificación facial (opt-in por instancia vía FACE_VERIFICATION_ENABLED)
 // ---------------------------------------------------------------------------
 
@@ -669,13 +685,20 @@ router.get('/:token/questionnaire/:type', async (req, res) => {
     // Find participant by token
     const participantEvaluation = await db('participant_evaluations')
       .join('participants', 'participant_evaluations.participant_id', 'participants.id')
+      .join('evaluations', 'evaluations.id', 'participant_evaluations.evaluation_id')
       .where('participant_evaluations.access_token', token)
       .where('participant_evaluations.token_expires_at', '>', new Date())
-      .select('participants.*')
+      .select('participants.*', 'evaluations.include_coping')
       .first();
 
     if (!participantEvaluation) {
       return res.status(404).json({ error: 'Token inválido o expirado' });
+    }
+
+    // Una evaluación que no aplica el Brief COPE tampoco lo sirve por URL
+    // directa: el hub deja de listarlo, pero la ruta es pública y adivinable.
+    if (type === 'coping' && !copingIncluded(participantEvaluation)) {
+      return res.status(404).json({ error: 'Cuestionario no disponible en esta evaluación' });
     }
 
     // Load questionnaire data
@@ -765,12 +788,14 @@ router.get('/:token/questionnaires', async (req, res) => {
     // Find participant by token
     const participantEvaluation = await db('participant_evaluations')
       .join('participants', 'participant_evaluations.participant_id', 'participants.id')
+      .join('evaluations', 'evaluations.id', 'participant_evaluations.evaluation_id')
       .where('participant_evaluations.access_token', token)
       .where('participant_evaluations.token_expires_at', '>', new Date())
       .select(
         'participants.*',
         'participant_evaluations.id as participant_evaluation_id',
-        'participant_evaluations.integration_metadata'
+        'participant_evaluations.integration_metadata',
+        'evaluations.include_coping'
       )
       .first();
 
@@ -883,13 +908,18 @@ router.get('/:token/questionnaires', async (req, res) => {
       completed: completedTypes.includes(idToType['estres']),
     });
 
-    available.push({
-      id: 'coping',
-      name: questionnairesData.cuestionarios.coping?.nombre || 'Brief COPE - Estrategias de Afrontamiento',
-      description: 'Estrategias de afrontamiento al estrés',
-      totalQuestions: questionnairesData.cuestionarios.coping?.total_preguntas || 28,
-      completed: completedTypes.includes(idToType['coping']),
-    });
+    // El Brief COPE solo si la evaluación lo contrató. No es parte de la
+    // batería oficial del Ministerio: ofrecerlo siempre le sumaba 28 preguntas
+    // a participantes de campañas que nunca lo pidieron.
+    if (copingIncluded(participantEvaluation)) {
+      available.push({
+        id: 'coping',
+        name: questionnairesData.cuestionarios.coping?.nombre || 'Brief COPE - Estrategias de Afrontamiento',
+        description: 'Estrategias de afrontamiento al estrés',
+        totalQuestions: questionnairesData.cuestionarios.coping?.total_preguntas || 28,
+        completed: completedTypes.includes(idToType['coping']),
+      });
+    }
 
     res.json({
       participant: {
@@ -932,18 +962,32 @@ router.post('/:token/responses', async (req, res) => {
     // Find participant by token
     const participantEvaluation = await db('participant_evaluations')
       .join('participants', 'participant_evaluations.participant_id', 'participants.id')
+      .join('evaluations', 'evaluations.id', 'participant_evaluations.evaluation_id')
       .where('participant_evaluations.access_token', token)
       .where('participant_evaluations.token_expires_at', '>', new Date())
       .select(
         'participants.*',
         'participant_evaluations.id as pe_id',
         'participant_evaluations.status as pe_status',
-        'participant_evaluations.integration_metadata as pe_integration_metadata'
+        'participant_evaluations.integration_metadata as pe_integration_metadata',
+        'evaluations.include_coping'
       )
       .first();
 
     if (!participantEvaluation) {
       return res.status(404).json({ error: 'Token inválido o expirado' });
+    }
+
+    // El bloqueo del COPE apagado se aplica AQUÍ, no solo ocultándolo del hub:
+    // el endpoint es público y sin este chequeo un POST directo metería
+    // respuestas de un instrumento que esta campaña no aplica, y con ellas una
+    // sección al informe.
+    const evaluacionAplicaCoping = copingIncluded(participantEvaluation);
+    if (questionnaireType === 'coping' && !evaluacionAplicaCoping) {
+      return res.status(403).json({
+        error: 'Este cuestionario no forma parte de tu evaluación.',
+        code: 'COPING_NOT_INCLUDED'
+      });
     }
 
     // Una batería ya completada no admite SOBRESCRIBIR lo ya respondido: el
@@ -1063,8 +1107,11 @@ router.post('/:token/responses', async (req, res) => {
         try { integrationMeta = JSON.parse(integrationMeta); } catch (e) { integrationMeta = null; }
       }
       const esIntegracion = !!(integrationMeta && integrationMeta.source);
+      // Si la evaluación no aplica el COPE, no puede exigirse para cerrar la
+      // batería: el participante nunca lo ve, así que pedirlo dejaría al PE
+      // atascado en 'in_progress' para siempre y sin webhook de finalización.
       const requiredQuestionnaires = esIntegracion
-        ? ['ficha_datos', ...baseRequired, 'coping']
+        ? ['ficha_datos', ...baseRequired, ...(evaluacionAplicaCoping ? ['coping'] : [])]
         : baseRequired;
 
       isCompleted = requiredQuestionnaires.every(type => finishedTypes.includes(type));

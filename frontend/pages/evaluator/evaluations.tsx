@@ -38,6 +38,7 @@ interface Evaluation {
   endDate: string;
   status: 'active' | 'completed' | 'cancelled';
   paid: boolean;
+  includeCoping: boolean;
   totalParticipants: number;
   completedParticipants: number;
   progress: number;
@@ -56,7 +57,10 @@ export default function EvaluatorEvaluations() {
     description: '',
     startDate: '',
     endDate: '',
-    companyId: ''
+    companyId: '',
+    // El Brief COPE viene marcado por defecto para no cambiarle el alcance a
+    // quien ya lo venia aplicando; se desmarca en la campana que no lo contrato.
+    includeCoping: true
   });
 
   // Excel import state
@@ -147,7 +151,8 @@ export default function EvaluatorEvaluations() {
             name: formData.name,
             description: formData.description,
             startDate: formData.startDate,
-            endDate: formData.endDate || null
+            endDate: formData.endDate || null,
+            includeCoping: formData.includeCoping
           }
         : { ...formData, endDate: formData.endDate || null };
 
@@ -168,7 +173,7 @@ export default function EvaluatorEvaluations() {
         );
         setShowModal(false);
         setEditingEvaluation(null);
-        setFormData({ name: '', description: '', startDate: '', endDate: '', companyId: '' });
+        setFormData({ name: '', description: '', startDate: '', endDate: '', companyId: '', includeCoping: true });
         fetchEvaluations();
       } else {
         const errorData = await response.json();
@@ -235,7 +240,8 @@ export default function EvaluatorEvaluations() {
       description: evaluation.description,
       startDate: evaluation.startDate.split('T')[0],
       endDate: evaluation.endDate ? evaluation.endDate.split('T')[0] : '',
-      companyId: String(evaluation.companyId)
+      companyId: String(evaluation.companyId),
+      includeCoping: evaluation.includeCoping !== false
     });
     setShowModal(true);
   };
@@ -415,7 +421,7 @@ export default function EvaluatorEvaluations() {
             <button
               onClick={() => {
                 setEditingEvaluation(null);
-                setFormData({ name: '', description: '', startDate: '', endDate: '', companyId: '' });
+                setFormData({ name: '', description: '', startDate: '', endDate: '', companyId: '', includeCoping: true });
                 setShowModal(true);
               }}
               className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
@@ -524,7 +530,7 @@ export default function EvaluatorEvaluations() {
                 <button
                   onClick={() => {
                     setEditingEvaluation(null);
-                    setFormData({ name: '', description: '', startDate: '', endDate: '', companyId: '' });
+                    setFormData({ name: '', description: '', startDate: '', endDate: '', companyId: '', includeCoping: true });
                     setShowModal(true);
                   }}
                   className="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
@@ -562,6 +568,15 @@ export default function EvaluatorEvaluations() {
                               {evaluation.paid ? 'Pagada' : 'Pendiente de pago'}
                             </span>
                           </div>
+                          {/* Solo se marca cuando el COPE esta activo: es el caso
+                              que agrega 28 preguntas al participante. */}
+                          {evaluation.includeCoping && (
+                            <div className="ml-2">
+                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800">
+                                Con Brief COPE
+                              </span>
+                            </div>
+                          )}
                         </div>
                         <div className="text-sm text-gray-500">
                           {evaluation.description}
@@ -732,13 +747,41 @@ export default function EvaluatorEvaluations() {
                   />
                 </div>
 
+                {/* Pruebas adicionales a la bateria oficial */}
+                <div className="rounded-md border border-gray-200 bg-gray-50 p-3">
+                  <label className="flex items-start gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={formData.includeCoping}
+                      onChange={(e) => setFormData({ ...formData, includeCoping: e.target.checked })}
+                      className="mt-0.5 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    />
+                    <span className="text-sm">
+                      <span className="font-medium text-gray-800">
+                        Aplicar Brief COPE (28 preguntas)
+                      </span>
+                      <span className="block text-xs text-gray-500 mt-0.5">
+                        Estrategias de afrontamiento. No hace parte de la bateria oficial del
+                        Ministerio: si lo desactivas, los participantes no veran este
+                        cuestionario y su seccion no aparecera en el informe.
+                      </span>
+                    </span>
+                  </label>
+                  {editingEvaluation && !formData.includeCoping && editingEvaluation.includeCoping && (
+                    <p className="mt-2 text-xs text-amber-700">
+                      Las respuestas del Brief COPE ya guardadas no se borran; solo dejan de
+                      ofrecerse y de imprimirse. Si vuelves a activarlo, reaparecen.
+                    </p>
+                  )}
+                </div>
+
                 <div className="flex justify-end space-x-3 pt-4">
                   <button
                     type="button"
                     onClick={() => {
                       setShowModal(false);
                       setEditingEvaluation(null);
-                      setFormData({ name: '', description: '', startDate: '', endDate: '', companyId: '' });
+                      setFormData({ name: '', description: '', startDate: '', endDate: '', companyId: '', includeCoping: true });
                     }}
                     className="px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
                   >

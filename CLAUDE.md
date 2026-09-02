@@ -63,7 +63,8 @@ BRS/
 │   │   ├── 20260526000001_add_integration_metadata_to_participant_evaluations.js
 │   │   ├── 20260730000001_add_face_verification.js  # foto de referencia + bitácora de intentos
 │   │   ├── 20260731000001_add_questionnaire_type_to_face_verifications.js  # verificación por cuestionario
-│   │   └── 20260731000002_allow_coping_questionnaire_type.js  # deriva: coping faltaba en las CHECK
+│   │   ├── 20260731000002_allow_coping_questionnaire_type.js  # deriva: coping faltaba en las CHECK
+│   │   └── 20260902000001_add_include_coping_to_evaluations.js  # Brief COPE opcional por evaluación
 │   ├── routes/
 │   │   ├── auth.js           # Login, register (self-service evaluador), refresh, logout
 │   │   ├── companies.js      # CRUD empresas (admin + evaluador con ownership)
@@ -206,8 +207,8 @@ Dimensiones con sufijo `_total` son totales de dominio.
 
 ### Evaluaciones (`/api/evaluations`)
 - `GET /` - Listar (filtrado por ownership para evaluadores)
-- `POST /` - Crear (requiere `companyId` en body, evaluador elige empresa)
-- `PUT /:id` | `POST /:id/assign`
+- `POST /` - Crear (requiere `companyId` en body, evaluador elige empresa; `includeCoping` opcional, default `true`)
+- `PUT /:id` (acepta `includeCoping`) | `POST /:id/assign`
 - `GET /:id/consent-text` | `PUT /:id/consent-text` - Texto del consentimiento informado por evaluación
 - `POST /:id/preview-excel` - Analiza el Excel y devuelve layout detectado + muestra de filas, sin persistir nada (multipart `file`)
 - `POST /:id/import-excel` - Crea participantes + respuestas + resultados desde Excel (multipart `file`, máx 10MB)
@@ -389,6 +390,42 @@ De paso, el fallback de `server.js` ahora resuelve la ruta **sin el query string
 - `backend/routes/participant-access.js` — `POST /lookup` + `lookupLimiter`
 - `backend/migrations/20260826000001_add_document_number_index.js` — índice de expresión sobre `demographic_data->>'documentNumber'` (sin él cada ingreso escanea toda la tabla, y con este enlace la empresa entera entra a la vez)
 - `frontend/pages/acceso.tsx` — formulario + selector cuando hay más de una evaluación
+
+## BRIEF COPE OPCIONAL POR EVALUACIÓN
+
+El COPE-28 **no hace parte de la batería oficial** del Ministerio (Resolución 2646/2008): es un instrumento adicional que algunos clientes contratan y otros no. Hasta ahora se le ofrecía a todo participante de toda instancia, así que quien no lo había contratado igual veía 28 preguntas extra y su informe podía traer una sección que nadie pidió.
+
+`evaluations.include_coping` (boolean, NOT NULL, **default `true`**) decide si la campaña lo aplica. Se marca/desmarca en el modal de crear o editar evaluación en `/evaluator/evaluations`.
+
+### Por qué el default es `true`
+Las evaluaciones que ya existen vienen aplicándolo y sus participantes pueden tener respuestas guardadas. Un default `false` habría hecho desaparecer del informe datos ya recogidos, en silencio y en el momento del deploy.
+
+### Apagarlo no borra nada
+Las `responses` y `results` de `coping` que ya estén en la base se quedan ahí: solo dejan de ofrecerse y de imprimirse. Volver a encender la bandera los recupera. Por eso el filtro del informe es por bandera y no por presencia de datos — una campaña que lo apagó después de recoger algunas respuestas no debe imprimir una sección con la mitad de la población.
+
+### El bloqueo vive en el backend, no en la UI
+Ocultarlo del hub no basta: `GET /:token/questionnaire/:type` y `POST /:token/responses` son públicos y la ruta es adivinable. Ambos responden por su cuenta (`404` y `403 COPING_NOT_INCLUDED`). `POST /api/responses` (carga por el evaluador) responde `400`.
+
+### La completitud del PE también depende de la bandera
+Para los participantes provisionados por integración los 5 cuestionarios son obligatorios, COPE incluido. Si la evaluación no lo aplica, **no** puede exigirse: el participante nunca lo ve, así que el PE quedaría atascado en `in_progress` para siempre y sin webhook de finalización. La lógica está duplicada en `participant-access.js` y en `finalizePeStatus()` de `photo-import.js` — al tocar una hay que tocar la otra.
+
+### Informes
+El filtro se aplica al leer la tabla `results`, antes de agregar:
+- **Individual** (`POST /reports/individual`) — se descartan las filas `coping`, así que no se dibuja su página.
+- **Organizacional** (`POST /reports/organizational`) — se descartan de `allResults` y de los resúmenes individuales embebidos; el agregador cuenta 0 y la sección "ESTRATEGIAS DE AFRONTAMIENTO" no se dibuja (ya era condicional a `copingTotal > 0`).
+
+Los textos estáticos del informe organizacional no mencionan el COPE (describen solo la batería oficial), así que no hubo que condicionarlos.
+
+### Archivos
+- `backend/migrations/20260902000001_add_include_coping_to_evaluations.js`
+- `backend/routes/evaluations.js` — `includeCoping` en los schemas Joi y en las respuestas del API
+- `backend/routes/participant-access.js` — helper `copingIncluded()` + guards
+- `backend/routes/photo-import.js` — `finalizePeStatus()`
+- `backend/routes/responses.js` — guard de la carga por el evaluador
+- `backend/routes/reports.js` — filtro de las filas `coping`
+- `frontend/pages/evaluator/evaluations.tsx` — casilla en el modal + insignia "Con Brief COPE" en la lista
+
+> El frontend del participante no necesitó cambios: el hub se dibuja a partir de la lista que devuelve el backend, y las barras de progreso ya toleraban la ausencia del COPE.
 
 ## CONSENTIMIENTO INFORMADO DEL PARTICIPANTE
 
@@ -648,7 +685,7 @@ git push origin main
 9. **FlowLayout maxWidth**: Hub pages usan `"3xl"` (gradiente), data pages usan `"full"` (bg-gray-50 neutro). No mezclar — las cards blancas se ven mal sobre gradiente en full-width.
 10. **Font ibrand**: Cargada via `@font-face` en `globals.css` desde `frontend/public/fonts/ibrand.otf`. Clase Tailwind: `font-ibrand` (configurada en `tailwind.config.js`).
 11. **audit_logs columnas**: La tabla en producción usa `table_name`, `record_id`, `old_values`, `new_values` (NO `entity_type`/`entity_id`/`details`). Hay endpoints viejos con los nombres equivocados que fallan el insert silenciosamente y devuelven 500 al usuario aunque la operación principal sí completó. Buscar en logs por `column "details"` para detectarlos.
-12. **El Brief COPE se responde DESPUÉS de completada la batería**. `coping` no cuenta para marcar el PE como `completed` (solo ficha/intralaboral/extralaboral/estrés), pero el hub lo sigue ofreciendo. El guard de `POST /:token/responses` bloqueaba por estado del PE, así que quien dejaba el COPE de último perdía sus 28 respuestas con un 409 que el frontend mostraba como "revisa tu conexión". Ahora el 409 es **por cuestionario**: se puede terminar uno que nunca se terminó, no rehacer uno ya completado. El webhook de finalización solo se emite en la transición, para no re-notificar al guardar el COPE tardío.
+12. **El Brief COPE se responde DESPUÉS de completada la batería**. `coping` no cuenta para marcar el PE como `completed` (solo ficha/intralaboral/extralaboral/estrés), pero el hub lo sigue ofreciendo (si la evaluación lo aplica — ver *Brief COPE opcional*). El guard de `POST /:token/responses` bloqueaba por estado del PE, así que quien dejaba el COPE de último perdía sus 28 respuestas con un 409 que el frontend mostraba como "revisa tu conexión". Ahora el 409 es **por cuestionario**: se puede terminar uno que nunca se terminó, no rehacer uno ya completado. El webhook de finalización solo se emite en la transición, para no re-notificar al guardar el COPE tardío.
 13. **Deriva de esquema: `coping` en las CHECK constraints**. El Brief COPE se añadió a la app pero la constraint de `responses`/`results` solo se amplió A MANO en la base de BRS principal. Toda base creada desde migraciones (shaddai y cualquier licenciatario nuevo) se quedó sin `coping`, así que el participante perdía sus 28 respuestas con un 500 al guardar. Corregido en la migración `20260731000002`. **Antes de entregar una instancia nueva, diffear el esquema real contra el que producen las migraciones** — este no tiene por qué ser el único caso.
 14. **Tablas con scroll fijo**: Para tablas largas, usar `<div className="overflow-auto h-[calc(100vh-260px)] min-h-[300px]">` con `<thead className="sticky top-0 z-10 bg-gray-50 shadow-sm">`. `max-h-[Nvh]` permite que la página crezca y deja el scrollbar fuera del viewport.
 15. **Paginación con `LIMIT/OFFSET` necesita un ORDER BY único**: `participants.created_at` NO es único — una importación de Excel inserta cientos de filas con el mismo timestamp (en shaddai ~700 comparten uno solo). Ante empates Postgres no garantiza orden estable entre consultas, y el frontend pide las páginas **en paralelo**: las páginas se solapaban, de 945 filas traídas llegaban 821 participantes distintos (124 repetidos, otros 124 invisibles). Siempre desempatar con `.orderBy('<tabla>.id', 'desc')`.
@@ -694,6 +731,7 @@ git push origin main
 - [x] **Tabla de participantes con scroll fijo** — `h-[calc(100vh-260px)]` + sticky header
 - [x] **Integración server-to-server** — `POST /api/integration/participant` (auth `X-Api-Key`, idempotente por `externalRef`) + webhook `evaluation.completed` firmado con HMAC
 - [x] **Auto-redirect de retorno desactivado** — el participante ya no es redirigido a la app externa al terminar; se queda en la pantalla de éxito de BRS (webhook sigue notificando)
+- [x] **Brief COPE opcional por evaluación** — `evaluations.include_coping` decide si la campaña aplica el COPE-28; si no, el participante no lo ve y su sección no sale en el informe
 - [x] **Consentimiento informado del participante** — pantalla bloqueante antes del menú, en todas las instancias; registro de aceptación/rechazo con IP y snapshot del texto; editable por evaluación
 - [x] **Co-marca por empresa** — `companies.logo_url` pinta el logo de la empresa junto al de la plataforma en la pantalla del participante (hoy: REGIS en Universidad Manuela Beltrán); sin UI todavía, se asigna por SQL
 - [x] **Puerta general de acceso** — enlace único `/acceso` donde el participante entra con su número de documento, sin repartir enlaces individuales; límite de intentos fallidos por IP que se reinicia con cada acierto
