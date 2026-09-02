@@ -488,12 +488,19 @@ const ParticipantEvaluationPage = () => {
       }
 
       // Load existing responses and merge with pre-filled data
-      const mergedResponses = await loadExistingResponses(questionnaireId, initialResponses, data.questionnaire);
+      const { responses: mergedResponses, answered } = await loadExistingResponses(
+        questionnaireId, initialResponses, data.questionnaire,
+      );
 
-      // Resume on the first unanswered question
+      // Reanudar en la primera sin responder, contando SOLO lo que la persona
+      // guardó — no lo pre-llenado. La ficha llega con los datos que cargó el
+      // evaluador (nombre, sexo, año, estudios…), así que tomarlos por
+      // respondidos abría la ficha en la pregunta 6 y la persona nunca veía
+      // ni podía corregir su nivel de estudios, que además puede venir
+      // deformado del Excel importado.
       const questions = getQuestionsFromData(data.questionnaire);
-      if (questions.length > 0 && mergedResponses && Object.keys(mergedResponses).length > 0) {
-        const firstUnanswered = questions.findIndex(q => mergedResponses[`q_${q.numero}`] === undefined);
+      if (questions.length > 0 && answered.size > 0) {
+        const firstUnanswered = questions.findIndex(q => !answered.has(`q_${q.numero}`));
         if (firstUnanswered > 0) {
           setCurrentQuestionIndex(firstUnanswered);
         }
@@ -506,8 +513,16 @@ const ParticipantEvaluationPage = () => {
     }
   };
 
-  const loadExistingResponses = async (questionnaireId: string, preFilledResponses = {}, questionnaireData: any = null) => {
-    if (!token || typeof token !== 'string') return preFilledResponses;
+  /**
+   * Devuelve las respuestas a pintar (pre-llenado + guardado) y, aparte, las
+   * claves que SÍ están guardadas (servidor o respaldo local). Quien decide
+   * dónde reanudar necesita esa distinción: lo pre-llenado se muestra, pero no
+   * cuenta como contestado por la persona.
+   */
+  const loadExistingResponses = async (
+    questionnaireId: string, preFilledResponses = {}, questionnaireData: any = null,
+  ): Promise<{ responses: {[key: string]: any}; answered: Set<string> }> => {
+    if (!token || typeof token !== 'string') return { responses: preFilledResponses, answered: new Set() };
 
     try {
       const questionnaireTypeMap: {[key: string]: string} = {
@@ -537,6 +552,9 @@ const ParticipantEvaluationPage = () => {
         });
 
         let finalResponses: {[key: string]: any} = {};
+        // Lo contestado por la persona: lo que ya está en el servidor o en el
+        // respaldo local de este navegador. El pre-llenado queda fuera.
+        let answeredKeys = new Set(Object.keys(responseMap));
 
         // Merge with backup if exists and has more responses
         if (backupData) {
@@ -544,6 +562,7 @@ const ParticipantEvaluationPage = () => {
           if (Object.keys(backupResponses).length > Object.keys(responseMap).length) {
             console.log('Recovering responses from localStorage backup');
             finalResponses = backupResponses;
+            answeredKeys = new Set(Object.keys(backupResponses));
             setResponses(backupResponses);
             // Try to save the backup to server
             saveResponsesWithRetry(backupResponses);
@@ -564,12 +583,12 @@ const ParticipantEvaluationPage = () => {
         const progressValue = totalQuestionsCount > 0 ? (finalResponseCount / totalQuestionsCount) * 100 : 0;
         setProgress(progressValue);
 
-        return finalResponses;
+        return { responses: finalResponses, answered: answeredKeys };
       }
     } catch (err) {
       console.error('Error loading existing responses:', err);
     }
-    return preFilledResponses;
+    return { responses: preFilledResponses, answered: new Set() };
   };
 
   // Build the question list directly from questionnaire data (without depending on currentQuestionnaire state)
