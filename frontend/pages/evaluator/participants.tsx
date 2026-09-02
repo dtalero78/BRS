@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/router';
+import Link from 'next/link';
 import FlowLayout from '../../components/FlowLayout';
 import { BRAND } from '../../config/brand';
 import {
@@ -62,7 +63,9 @@ interface Participant {
   phone?: string;
   evaluationId: string;
   evaluationName?: string;
+  /** Liberada: pagada por prueba (Wompi) o evaluacion liberada por el admin. */
   evaluationPaid?: boolean;
+  paidAt?: string | null;
   evaluationUrl?: string;
   /** ISO de cuando se envio la invitacion por WhatsApp. null = nunca se envio. */
   whatsappSentAt?: string | null;
@@ -536,7 +539,7 @@ export default function EvaluatorParticipants() {
     const excluded = filteredParticipants.length - exportable.length;
 
     if (exportable.length === 0) {
-      toast.error('La exportación no está habilitada: ninguna de las evaluaciones tiene el pago registrado.');
+      toast.error('La exportación no está habilitada: ninguna de estas pruebas está pagada. Págalas en el menú Pagos.');
       return;
     }
 
@@ -1238,6 +1241,16 @@ export default function EvaluatorParticipants() {
                                 <div className="text-sm font-medium text-gray-900">
                                   {participant.firstName} {participant.lastName}
                                 </div>
+                                {participant.status === 'completed' && participant.evaluationPaid === false && (
+                                  <Link
+                                    href="/evaluator/payments"
+                                    onClick={(e) => e.stopPropagation()}
+                                    title="Prueba completada sin pagar: el informe queda bloqueado hasta pagarla"
+                                    className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 hover:bg-amber-200"
+                                  >
+                                    Sin pagar
+                                  </Link>
+                                )}
                                 {participant.consentDeclinedAt && (
                                   <span
                                     title={`No autorizo participar el ${new Date(participant.consentDeclinedAt).toLocaleString('es-CO')}`}

@@ -64,7 +64,8 @@ BRS/
 │   │   ├── 20260730000001_add_face_verification.js  # foto de referencia + bitácora de intentos
 │   │   ├── 20260731000001_add_questionnaire_type_to_face_verifications.js  # verificación por cuestionario
 │   │   ├── 20260731000002_allow_coping_questionnaire_type.js  # deriva: coping faltaba en las CHECK
-│   │   └── 20260902000001_add_include_coping_to_evaluations.js  # Brief COPE opcional por evaluación
+│   │   ├── 20260902000001_add_include_coping_to_evaluations.js  # Brief COPE opcional por evaluación
+│   │   └── 20260903000001_add_wompi_payments.js  # payments + payment_items + PE.paid_at (pago por prueba)
 │   ├── routes/
 │   │   ├── auth.js           # Login, register (self-service evaluador), refresh, logout
 │   │   ├── companies.js      # CRUD empresas (admin + evaluador con ownership)
@@ -77,9 +78,11 @@ BRS/
 │   │   ├── responses.js      # Guardar/recuperar respuestas
 │   │   ├── results.js        # Calcular y consultar resultados (filtrado por ownership)
 │   │   ├── reports.js        # Generación de PDF (PDFKit)
+│   │   ├── payments.js       # Pago por prueba con Wompi (pendientes, checkout, verify, webhook)
 │   │   └── system.js         # Config, health, baremos
 │   ├── services/
-│   │   └── webhook-emitter.js # Webhook evaluation.completed (HMAC-SHA256) a sistemas externos
+│   │   ├── webhook-emitter.js # Webhook evaluation.completed (HMAC-SHA256) a sistemas externos
+│   │   └── wompi.js           # Firma de integridad, checksum de eventos, consulta y aplicación de transacciones
 │   └── utils/
 │       ├── rekognition.js            # Verificación facial AWS (DetectFaces + CompareFaces)
 │       ├── calculate-results.js      # Motor de cálculo BRS oficial
@@ -128,6 +131,8 @@ BRS/
 │   │   │   ├── results/[participantId].tsx # Resultados detallados por participante
 │   │   │   ├── results-dashboard/       # Dashboard visual de resultados
 │   │   │   ├── organizational-dashboard/ # Dashboard organizacional
+│   │   │   ├── payments.tsx             # Pruebas pendientes de pago + checkout Wompi + historial
+│   │   │   ├── payments/result.tsx      # Retorno de Wompi: verifica la transacción y muestra el estado
 │   │   │   └── reports.tsx              # Generador de reportes PDF
 │   │   └── participant/
 │   │       ├── questionnaires.tsx       # Lista de cuestionarios
@@ -153,6 +158,12 @@ participant_evaluations (id, evaluation_id, participant_id, status, assigned_at,
 -- Respuestas y resultados
 responses (id, participant_evaluation_id, questionnaire_type, responses, completed_at, created_at)
 results (id, participant_evaluation_id, questionnaire_type, results, calculated_at, created_at)
+
+-- Pagos por prueba (Wompi)
+payments (id, user_id, reference [unique], amount_in_cents, currency, unit_price_in_cents, quantity, status, wompi_transaction_id, payment_method, wompi_payload, approved_at, created_at, updated_at)
+payment_items (id, payment_id, participant_evaluation_id)
+-- participant_evaluations también tiene paid_at + payment_id (prueba liberada)
+-- evaluations tiene paid/paid_at/paid_by (interruptor manual del admin para toda la evaluación)
 
 -- Configuración del sistema
 system_configs (id, config_key, config_value, description, updated_at)
@@ -245,6 +256,14 @@ Dimensiones con sufijo `_total` son totales de dominio.
 - `POST /:token/consent` - Registra la decisión (`{accepted: boolean}`)
 - `GET /:token/face-status` - ¿Esta instancia exige verificación facial? ¿ya está enrolado/verificado?
 - `POST /:token/face` - Enrola (1er ingreso) o verifica la selfie. Rate limit por token.
+
+### Pagos (`/api/payments`) - Evaluador
+- `GET /config` - ¿Está activo el cobro? precio por prueba, ambiente (sandbox/producción)
+- `GET /pending` - Pruebas sin pagar de sus empresas (agrupables por evaluación) + totales
+- `POST /checkout` - `{participantEvaluationIds}` → crea la orden y devuelve `checkoutUrl` de Wompi con el monto firmado
+- `POST /verify` - `{transactionId}` (tras el redirect) o `{reference}` → consulta a Wompi y aplica el estado
+- `GET /` - Historial de órdenes | `GET /:reference` - Detalle con las pruebas incluidas
+- `POST /wompi/events` - **Webhook público** de Wompi (verifica el checksum con `WOMPI_EVENTS_SECRET`)
 
 ### Integración server-to-server (`/api/integration`) - Auth por `X-Api-Key`
 - `POST /participant` - Provisiona participant + participant_evaluation y devuelve token de acceso + URL. Idempotente por `externalRef`.
@@ -342,6 +361,50 @@ El `returnUrl` se sigue guardando y exponiendo en el API, pero el frontend **ya 
 
 ### Env vars de integración
 `BRS_INTEGRATION_API_KEY` (requerida), `BRS_WEBHOOK_SECRET` (requerida para webhooks), `BRS_PUBLIC_URL` (base de la URL del token), `BRS_INTEGRATION_DEFAULT_EVALUATOR`, `BRS_INTEGRATION_DEFAULT_COMPANY` (fallbacks).
+
+## PAGO POR PRUEBA CON WOMPI
+
+El evaluador paga por su cuenta las pruebas que aplicó y con eso se liberan los informes. Antes el único mecanismo era que el admin marcara `evaluations.paid` a mano desde `/evaluator/admin-clients`; ese interruptor **sigue existiendo** como cortesía/convenio y libera la evaluación completa aunque ninguna prueba tenga pago.
+
+### La unidad de cobro es la prueba, no la evaluación
+Una "prueba" es un `participant_evaluation` (una persona en una evaluación). El precio es único por instancia (`BRS_TEST_PRICE_COP`, o `system_configs.wompi_unit_price_cop` que manda sobre la env var para cambiarlo sin redeploy). El total del checkout es `precio × pruebas seleccionadas`, y lo fija el backend: el frontend nunca manda un monto.
+
+### Qué se bloquea sin pago (con `BRAND_REQUIRE_PAID_EVALUATION` activo)
+- **Informe individual** (`POST /reports/individual`): `403 payment_required` si la prueba no tiene `paid_at` y la evaluación no está `paid`.
+- **Informe organizacional** (`POST /reports/organizational`): `403` mientras exista alguna prueba **con resultados** sin pagar. Las pruebas sin resultados no cuentan: no aportan nada al informe.
+- **Exportación CSV** de participantes: `evaluationPaid` por fila ahora significa "pagada por prueba **o** evaluación liberada por el admin".
+- Responder la batería **nunca** se bloquea: el participante no es quien paga, y la campaña no puede depender de que el evaluador pague antes.
+- Super-admin y las instancias con `BRAND_REQUIRE_PAID_EVALUATION=false` (licenciatarios) pasan siempre; en esas el menú "Pagos" ni se muestra (`paymentsEnabled` en el dashboard).
+
+### Flujo
+1. `/evaluator/payments` lista las pruebas sin pagar agrupadas por evaluación. Por defecto quedan marcadas las **completadas** (son las que bloquean) con filtro "Solo completadas"; se pueden agregar las demás para pagar por adelantado.
+2. `POST /checkout` valida que **todas** las pruebas sean del usuario y sigan sin pagar (si alguna no, `409 ITEMS_NOT_PAYABLE` y se recarga la lista: cobrar de menos en silencio dejaría al evaluador creyendo que pagó algo que sigue bloqueado). Crea la orden `payments` con referencia `BRS-<userId>-<ts36>-<hex>` **antes** de redirigir: el webhook la busca por esa referencia.
+3. Redirige al Web Checkout (`https://checkout.wompi.co/p/`) con `amount-in-cents`, `reference`, `signature:integrity` = SHA256(`ref+monto+moneda+WOMPI_INTEGRITY_SECRET`) y `redirect-url` = `<BRS_PUBLIC_URL>/evaluator/payments/result/`. Sin la firma cualquiera editaría el monto en la URL.
+4. Dos caminos confirman, y ambos terminan en `applyTransaction()` (idempotente):
+   - **Webhook** `POST /api/payments/wompi/events`: verifica el checksum (SHA256 de los `signature.properties` + `timestamp` + `WOMPI_EVENTS_SECRET`, comparación en tiempo constante). Firma inválida → `401` (Wompi **no** reintenta); error de DB → `500` (Wompi reintenta a los 30 min, 3 h y 24 h).
+   - **Verificación post-redirect**: Wompi vuelve con `?id=<transacción>`; `POST /verify` consulta esa transacción **directamente a Wompi** (`GET /v1/transactions/:id`) y la aplica. Nunca se confía en lo que trae el navegador. Es la red cuando el webhook aún no llegó o no está configurado. La página reintenta 6 veces cada 5 s (PSE tarda) y deja un botón manual.
+5. `APPROVED` con monto y moneda iguales a la orden → `paid_at` + `payment_id` en cada prueba de `payment_items`. Si el monto **no** cuadra, la orden queda en `error` con el payload guardado y **no** libera: es el caso de un checkout manipulado que Wompi igual cobró.
+6. Una orden `approved` no retrocede (los eventos pueden llegar fuera de orden). Una orden `pending` abandonada se queda así; la misma prueba puede aparecer en varias órdenes pendientes y se libera con la primera que se apruebe.
+
+### Sandbox vs producción
+Lo decide el **prefijo de la llave pública**: `pub_test_` → `https://sandbox.wompi.co/v1`, `pub_prod_` → `https://production.wompi.co/v1`. No hay una env var aparte para el ambiente: con dos variables la app podría firmar con el secreto de un ambiente y cobrar en el otro. La UI muestra una insignia morada "sandbox" cuando aplica.
+
+### Configuración en el dashboard de Wompi
+- **URL de eventos**: `https://<dominio>/api/payments/wompi/events`.
+- Copiar de allí `WOMPI_PUBLIC_KEY`, `WOMPI_INTEGRITY_SECRET` (firma de integridad) y `WOMPI_EVENTS_SECRET` (secreto de eventos). La llave privada **no** hace falta: el checkout y la consulta de transacciones no la usan.
+- Sin `WOMPI_PUBLIC_KEY`, `WOMPI_INTEGRITY_SECRET` o precio, `GET /config` devuelve `enabled: false`, la página lo explica y `POST /checkout` responde `503` (fail-closed).
+
+### Env vars
+`WOMPI_PUBLIC_KEY`, `WOMPI_INTEGRITY_SECRET`, `WOMPI_EVENTS_SECRET`, `BRS_TEST_PRICE_COP` (entero en pesos), `BRS_PUBLIC_URL` (base del `redirect-url`; fallback `FRONTEND_URL` y luego el host del request).
+
+### Archivos
+- `backend/migrations/20260903000001_add_wompi_payments.js`
+- `backend/services/wompi.js` — firmas, consulta a Wompi, `applyTransaction()`
+- `backend/routes/payments.js` — rutas + webhook
+- `backend/routes/reports.js`, `participants.js`, `evaluations.js` — guardas y campos `paidAt` / `paidParticipants` / `unpaidCompletedParticipants`
+- `backend/tests/wompi.test.js` — firma de integridad (ejemplo oficial de la doc) y checksum de eventos
+- `frontend/pages/evaluator/payments.tsx`, `payments/result.tsx`, `components/PaymentShared.tsx`
+- `frontend/pages/evaluator/dashboard.tsx` (opción G "Pagos" con "N por pagar"), `evaluations.tsx` (insignia por evaluación), `participants.tsx` (insignia "Sin pagar" en completadas)
 
 ## CO-MARCA POR EMPRESA (logo en la pantalla del participante)
 
@@ -616,6 +679,7 @@ No usa FlowLayout ni ParticipantLayout: es un contenedor propio de tres zonas fi
 - Dashboard Resultados → `/evaluator/results-dashboard`
 - Dashboard Organizacional → `/evaluator/organizational-dashboard`
 - Reportes → `/evaluator/reports`
+- Pagos → `/evaluator/payments` (pruebas pendientes + checkout Wompi; retorno en `/evaluator/payments/result`)
 
 ### Participante
 - Dashboard → `/participant/dashboard`
@@ -735,6 +799,7 @@ git push origin main
 - [x] **Consentimiento informado del participante** — pantalla bloqueante antes del menú, en todas las instancias; registro de aceptación/rechazo con IP y snapshot del texto; editable por evaluación
 - [x] **Co-marca por empresa** — `companies.logo_url` pinta el logo de la empresa junto al de la plataforma en la pantalla del participante (hoy: REGIS en Universidad Manuela Beltrán); sin UI todavía, se asigna por SQL
 - [x] **Puerta general de acceso** — enlace único `/acceso` donde el participante entra con su número de documento, sin repartir enlaces individuales; límite de intentos fallidos por IP que se reinicia con cada acierto
+- [x] **Pago por prueba con Wompi** — el evaluador elige las pruebas sin pagar, paga el total en el Web Checkout y al aprobarse (webhook firmado + verificación directa contra Wompi) quedan marcadas como pagadas y liberan informes/exportación; el interruptor manual del admin (`evaluations.paid`) sigue vigente
 - [x] **Verificación facial del participante** (AWS Rekognition, opt-in por instancia vía `FACE_VERIFICATION_ENABLED`, hoy solo `brs-shaddai`) — auto-enrolamiento + verificación bloqueante, guard en el backend, bitácora de intentos y reinicio desde la UI del evaluador
 
 ### Pendiente

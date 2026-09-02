@@ -36,6 +36,7 @@ router.post('/individual', auth, async (req, res) => {
         'e.name as evaluation_name',
         'e.description as evaluation_description',
         'e.paid as evaluation_paid',
+        'pe.paid_at as pe_paid_at',
         'e.include_coping as evaluation_include_coping',
         'c.name as company_name',
         'c.nit as company_nit'
@@ -51,10 +52,12 @@ router.post('/individual', auth, async (req, res) => {
       return res.status(404).json({ error: 'Participante no encontrado' });
     }
 
-    if (REQUIRE_PAID_EVALUATION && !participant.evaluation_paid && !isSuperAdmin(req.user)) {
+    // Liberada si la prueba se pago por Wompi (pe.paid_at) O si el admin
+    // libero la evaluacion completa a mano (e.paid).
+    if (REQUIRE_PAID_EVALUATION && !participant.evaluation_paid && !participant.pe_paid_at && !isSuperAdmin(req.user)) {
       return res.status(403).json({
         error: 'payment_required',
-        message: 'Esta evaluación no está habilitada para descarga. Contacta al administrador.'
+        message: 'Esta prueba está pendiente de pago. Págala en el menú "Pagos" para descargar el informe.'
       });
     }
 
@@ -160,11 +163,25 @@ router.post('/organizational', auth, async (req, res) => {
 
     const evaluation = await evaluationQuery.first();
 
+    // El informe organizacional agrega TODAS las pruebas con resultados, asi
+    // que se libera cuando ninguna de esas sigue sin pagar (o el admin libero
+    // la evaluacion completa). Las pruebas sin resultados no cuentan: no
+    // aportan nada al informe y no tiene sentido cobrarlas para verlo.
     if (REQUIRE_PAID_EVALUATION && evaluation && !evaluation.paid && !isSuperAdmin(req.user)) {
-      return res.status(403).json({
-        error: 'payment_required',
-        message: 'Esta evaluación no está habilitada para descarga. Contacta al administrador.'
-      });
+      const unpaidRow = await db('participant_evaluations as pe')
+        .where('pe.evaluation_id', evaluation.id)
+        .whereNull('pe.paid_at')
+        .whereExists(db('results as r').whereRaw('r.participant_evaluation_id = pe.id'))
+        .count('* as c')
+        .first();
+      const unpaid = parseInt(unpaidRow.c) || 0;
+      if (unpaid > 0) {
+        return res.status(403).json({
+          error: 'payment_required',
+          unpaidCount: unpaid,
+          message: `Esta evaluación tiene ${unpaid} prueba(s) con resultados pendientes de pago. Págalas en el menú "Pagos" para descargar el informe.`
+        });
+      }
     }
 
     if (!evaluation) {
