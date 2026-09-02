@@ -264,6 +264,7 @@ router.get('/', auth, async (req, res) => {
         'evaluations.name as evaluation_name',
         'evaluations.id as evaluation_id',
         'evaluations.paid as evaluation_paid',
+        'pe.paid_at as pe_paid_at',
         'pe.status as evaluation_status',
         'pe.assigned_at',
         'pe.completed_at',
@@ -359,7 +360,9 @@ router.get('/', auth, async (req, res) => {
         // En instancias sin cobro por evaluacion todo cuenta como habilitado:
         // asi las guardas del frontend (exportar, descargar) dejan de aplicar
         // sin duplicar la regla alla.
-        evaluationPaid: (!REQUIRE_PAID_EVALUATION || superAdmin) ? true : !!p.evaluation_paid,
+        // Liberada por prueba (Wompi, pe.paid_at) o por evaluacion (admin).
+        evaluationPaid: (!REQUIRE_PAID_EVALUATION || superAdmin) ? true : (!!p.evaluation_paid || !!p.pe_paid_at),
+        paidAt: p.pe_paid_at || null,
         companyName: p.company_name || '',
         status: p.evaluation_status || 'pending',
         completionPercentage: completionPercentage,

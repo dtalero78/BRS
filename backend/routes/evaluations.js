@@ -68,7 +68,9 @@ router.get('/', auth, async (req, res) => {
         'evaluations.*',
         'companies.name as company_name',
         db.raw('(SELECT COUNT(*) FROM participant_evaluations pe WHERE pe.evaluation_id = evaluations.id) as total_participants'),
-        db.raw("(SELECT COUNT(*) FROM participant_evaluations pe WHERE pe.evaluation_id = evaluations.id AND pe.status = 'completed') as completed_participants")
+        db.raw("(SELECT COUNT(*) FROM participant_evaluations pe WHERE pe.evaluation_id = evaluations.id AND pe.status = 'completed') as completed_participants"),
+        db.raw('(SELECT COUNT(*) FROM participant_evaluations pe WHERE pe.evaluation_id = evaluations.id AND pe.paid_at IS NOT NULL) as paid_participants'),
+        db.raw("(SELECT COUNT(*) FROM participant_evaluations pe WHERE pe.evaluation_id = evaluations.id AND pe.paid_at IS NULL AND pe.status = 'completed') as unpaid_completed_participants")
       );
 
     // Get total count
@@ -96,6 +98,11 @@ router.get('/', auth, async (req, res) => {
           endDate: evaluation.end_date,
           status: evaluation.status,
           paid: !!evaluation.paid,
+          // Pagos por prueba (Wompi): cuantas pruebas estan liberadas y
+          // cuantas completadas siguen sin pagar. `paid` sigue siendo el
+          // interruptor del admin para la evaluacion completa.
+          paidParticipants: parseInt(evaluation.paid_participants) || 0,
+          unpaidCompletedParticipants: parseInt(evaluation.unpaid_completed_participants) || 0,
           includeCoping: evaluation.include_coping !== false,
           totalParticipants: total,
           completedParticipants: completed,

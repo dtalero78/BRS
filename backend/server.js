@@ -240,6 +240,22 @@ app.get('/api/evaluator/dashboard', require('./middleware/auth').auth, async (re
       .orderBy('participant_evaluations.completed_at', 'desc')
       .limit(10);
 
+    // Pruebas ya respondidas que siguen sin pagar: son las que bloquean los
+    // informes, y el numero que ve el evaluador en el hub.
+    let pendingPaymentCount = 0;
+    const { REQUIRE_PAID_EVALUATION } = require('./config/brand');
+    if (REQUIRE_PAID_EVALUATION) {
+      const pendingRow = await db('participant_evaluations as pe')
+        .join('evaluations as e', 'pe.evaluation_id', 'e.id')
+        .whereIn('e.company_id', companyIds)
+        .whereNull('pe.paid_at')
+        .where('e.paid', false)
+        .where('pe.status', 'completed')
+        .count('* as c')
+        .first();
+      pendingPaymentCount = parseInt(pendingRow.c) || 0;
+    }
+
     const stats = {
       totalCompanies: companyIds.length,
       totalEvaluations: parseInt(evaluationStats.total_evaluations) || 0,
@@ -247,7 +263,9 @@ app.get('/api/evaluator/dashboard', require('./middleware/auth').auth, async (re
       totalParticipants: parseInt(participantStats.total_participants) || 0,
       completedAssessments: parseInt(participantStats.completed_participants) || 0,
       pendingAssessments: totalParticipants - completedParticipants,
-      averageCompletion: averageCompletion
+      averageCompletion: averageCompletion,
+      pendingPaymentCount,
+      paymentsEnabled: REQUIRE_PAID_EVALUATION
     };
 
     res.json({
@@ -304,6 +322,14 @@ console.log('✅ Results routes loaded');
 console.log('✅ Reports routes loaded');
 
 // Super-admin (cross-tenant) routes
+try {
+  app.use('/api/payments', require('./routes/payments'));
+  console.log('✅ Payments routes loaded');
+} catch (error) {
+  console.error('❌ Error loading payments routes:', error);
+  process.exit(1);
+}
+
 try {
   app.use('/api/admin', require('./routes/admin'));
   console.log('✅ Admin routes loaded');

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
+import Link from 'next/link';
 import FlowLayout from '../../components/FlowLayout';
 import {
   PlusIcon,
@@ -38,6 +39,9 @@ interface Evaluation {
   endDate: string;
   status: 'active' | 'completed' | 'cancelled';
   paid: boolean;
+  /** Pruebas pagadas por Wompi y completadas que siguen sin pagar. */
+  paidParticipants?: number;
+  unpaidCompletedParticipants?: number;
   includeCoping: boolean;
   totalParticipants: number;
   completedParticipants: number;
@@ -560,13 +564,31 @@ export default function EvaluatorEvaluations() {
                             {getStatusBadge(evaluation.status)}
                           </div>
                           <div className="ml-2">
-                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                              evaluation.paid
-                                ? 'bg-emerald-100 text-emerald-800'
-                                : 'bg-amber-100 text-amber-800'
-                            }`}>
-                              {evaluation.paid ? 'Pagada' : 'Pendiente de pago'}
-                            </span>
+                            {/* `paid` es el interruptor del admin para toda la
+                                evaluacion; sin el, el estado sale del pago por
+                                prueba (Wompi): cuantas completadas faltan. */}
+                            {evaluation.paid ? (
+                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800">
+                                Pagada
+                              </span>
+                            ) : (evaluation.unpaidCompletedParticipants || 0) > 0 ? (
+                              <Link
+                                href="/evaluator/payments"
+                                onClick={(e) => e.stopPropagation()}
+                                title="Ir a pagar las pruebas pendientes"
+                                className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800 hover:bg-amber-200"
+                              >
+                                {evaluation.unpaidCompletedParticipants} por pagar
+                              </Link>
+                            ) : (evaluation.paidParticipants || 0) > 0 ? (
+                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800">
+                                {evaluation.paidParticipants} pagada(s)
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
+                                Sin pagos
+                              </span>
+                            )}
                           </div>
                           {/* Solo se marca cuando el COPE esta activo: es el caso
                               que agrega 28 preguntas al participante. */}

@@ -12,6 +12,7 @@ import {
   BuildingOfficeIcon,
   ShieldCheckIcon,
   UserCircleIcon,
+  CreditCardIcon,
 } from '@heroicons/react/24/outline';
 
 const SUPER_ADMIN_EMAILS = ['d_talero@yahoo.com'];
@@ -28,6 +29,10 @@ interface DashboardStats {
   pendingAssessments: number;
   averageCompletion: number;
   totalCompanies: number;
+  /** Pruebas completadas sin pagar (las que bloquean informes). */
+  pendingPaymentCount?: number;
+  /** false en instancias sin cobro por prueba (licenciatarios). */
+  paymentsEnabled?: boolean;
 }
 
 export default function EvaluatorDashboard() {
@@ -39,6 +44,8 @@ export default function EvaluatorDashboard() {
     pendingAssessments: 0,
     averageCompletion: 0,
     totalCompanies: 0,
+    pendingPaymentCount: 0,
+    paymentsEnabled: true,
   });
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState<any>(null);
@@ -78,7 +85,8 @@ export default function EvaluatorDashboard() {
     { key: 'D', href: '/evaluator/results' },
     { key: 'E', href: '/evaluator/reports' },
     { key: 'F', href: '/evaluator/profile' },
-    ...(isSuperAdmin(user) ? [{ key: 'G', href: '/evaluator/admin-clients' }] : []),
+    ...(stats.paymentsEnabled !== false ? [{ key: 'G', href: '/evaluator/payments' }] : []),
+    ...(isSuperAdmin(user) ? [{ key: 'H', href: '/evaluator/admin-clients' }] : []),
   ]);
 
   if (loading) {
@@ -157,9 +165,21 @@ export default function EvaluatorDashboard() {
           icon={UserCircleIcon}
         />
 
-        {isSuperAdmin(user) && (
+        {stats.paymentsEnabled !== false && (
           <FlowOption
             letter="G"
+            title="Pagos"
+            description="Pagar con Wompi las pruebas aplicadas para liberar resultados e informes"
+            href="/evaluator/payments"
+            icon={CreditCardIcon}
+            badge={(stats.pendingPaymentCount || 0) > 0 ? `${stats.pendingPaymentCount} por pagar` : 'Al día'}
+            badgeColor={(stats.pendingPaymentCount || 0) > 0 ? 'yellow' : 'green'}
+          />
+        )}
+
+        {isSuperAdmin(user) && (
+          <FlowOption
+            letter="H"
             title="Administración de clientes"
             description="Ver usuarios registrados, empresas, pruebas realizadas y marcar evaluaciones como pagadas"
             href="/evaluator/admin-clients"
