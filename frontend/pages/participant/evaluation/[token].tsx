@@ -1166,12 +1166,18 @@ const ParticipantEvaluationPage = () => {
           <div className="bg-red-50 border border-red-200 rounded-lg p-6">
             <h2 className="text-lg font-medium text-red-800 mb-2">Error</h2>
             <p className="text-red-600">{error}</p>
+            {/* Va a la puerta general, no a "/": el participante no tiene
+                usuario, asi que el inicio es un login que no le sirve (y en
+                las marcas sin sitio comercial, si el navegador tiene sesion
+                de evaluador abierta, lo deja en el dashboard del evaluador).
+                En /acceso entra con su documento y recupera su bateria, que
+                es justo lo que necesita cuando el enlace no funciono. */}
             <div className="mt-4">
               <button
-                onClick={() => router.push('/')}
+                onClick={() => router.push('/acceso')}
                 className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700"
               >
-                Volver al inicio
+                Ingresar con mi número de documento
               </button>
             </div>
           </div>

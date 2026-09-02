@@ -380,6 +380,11 @@ Cuentan solo los intentos **fallidos** (`skipSuccessfulRequests`) y, además, un
 
 > ⚠️ El precio, sin adornos: quien ya conozca **una** cédula válida puede intercalar un acierto para limpiar el contador y seguir barriendo. Frena al curioso, no al decidido. La defensa de fondo sería pedir un segundo dato — el año de nacimiento ya viene en `demographic_data` de toda planilla importada.
 
+### Todo enlace roto desemboca aquí
+`/participant/evaluation/` **sin token** ya no cae al `index.html` genérico: redirige (302) a `/acceso`. El index no es una landing en las marcas sin sitio comercial — es el puente al login, que para un participante es un callejón sin salida, y si ese navegador tiene una sesión de evaluador abierta lo deja mirando el **dashboard del evaluador** (pasó en shaddai: el botón de un WhatsApp viejo llevó a un participante a esa pantalla). La pantalla de "token inválido" lleva al mismo lugar, con el texto "Ingresar con mi número de documento".
+
+De paso, el fallback de `server.js` ahora resuelve la ruta **sin el query string**: `/participant/evaluation/<token>?utm=x` servía el index en vez de la batería.
+
 ### Archivos
 - `backend/routes/participant-access.js` — `POST /lookup` + `lookupLimiter`
 - `backend/migrations/20260826000001_add_document_number_index.js` — índice de expresión sobre `demographic_data->>'documentNumber'` (sin él cada ingreso escanea toda la tabla, y con este enlace la empresa entera entra a la vez)

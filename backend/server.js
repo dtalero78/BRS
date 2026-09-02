@@ -445,12 +445,25 @@ app.use('*', (req, res) => {
     return res.status(404).end();
   }
 
-  const urlPath = req.originalUrl.replace(/\/$/, '') || '/index';
+  // El query string no es parte de la ruta: sin quitarlo, un link con
+  // ?utm=... no resuelve el archivo y termina cayendo al index.
+  const pathname = req.originalUrl.split('?')[0];
+  const urlPath = pathname.replace(/\/$/, '') || '/index';
 
   // Try to resolve the file (supports Next.js [param] directories)
   const resolved = resolveNextFile(frontendPath, urlPath);
   if (resolved) {
     return res.sendFile(resolved);
+  }
+
+  // Link del participante SIN token (la parte dinamica del boton de WhatsApp
+  // salio vacia, o alguien recorto la URL): va a la puerta general, no al
+  // index. En las marcas sin sitio comercial el index es el puente al login,
+  // que para un participante es un callejon sin salida — y si ese navegador
+  // tiene una sesion de evaluador abierta, el puente lo deja mirando el
+  // dashboard del evaluador. En /acceso entra con su numero de documento.
+  if (/^\/participant\/evaluation\/?$/.test(pathname)) {
+    return res.redirect(302, '/acceso');
   }
 
   // Final fallback to root index.html
