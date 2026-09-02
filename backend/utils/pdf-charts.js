@@ -966,6 +966,131 @@ function drawSectionBanner(doc, x, y, width, text, options = {}) {
   return y + h;
 }
 
+// ============================================================
+// STACKED RISK BARS (distribucion 100% por dimension)
+// ============================================================
+/**
+ * Una barra horizontal 100% apilada por dimension: cada segmento es un nivel de
+ * riesgo. Pensada para la interpretacion por dominio, donde los nombres de las
+ * dimensiones son largos y una barra agrupada vertical los dejaria truncados.
+ * @param {PDFDocument} doc
+ * @param {number} x
+ * @param {number} y
+ * @param {number} width
+ * @param {Array<{label: string, counts: object}>} rows
+ * @param {object} options - { title, labelWidth, barHeight, showLegend, showHighPct }
+ * @returns {number} Y final
+ */
+function drawStackedRiskBars(doc, x, y, width, rows, options = {}) {
+  const data = (rows || []).filter(r => r && sumRiskCounts(r.counts) > 0);
+  if (data.length === 0) return y;
+
+  const labelWidth = options.labelWidth || 155;
+  const highW = options.showHighPct === false ? 0 : 34;
+  const barH = options.barHeight || 15;
+  const barGap = 5;
+  const titleH = options.title ? 14 : 0;
+  const axisH = 9;
+  const legendH = options.showLegend === false ? 0 : 16;
+
+  const plotX = x + labelWidth;
+  const plotW = width - labelWidth - highW;
+  const barsY = y + titleH + axisH;
+
+  doc.save();
+
+  if (options.title) {
+    doc.fontSize(8.5).fillColor('#1F2937').font('Helvetica-Bold');
+    doc.text(options.title, x, y, { width, align: 'left' });
+  }
+
+  // Escala 0-100%: ticks arriba + grid vertical, para leer proporciones sin contar.
+  const ticks = [0, 25, 50, 75, 100];
+  const barsH = data.length * (barH + barGap) - barGap;
+  ticks.forEach(tv => {
+    const tx = plotX + (tv / 100) * plotW;
+    doc.fontSize(5.5).fillColor('#9CA3AF').font('Helvetica');
+    doc.text(tv + '%', tx - 12, y + titleH, { width: 24, align: 'center' });
+    doc.moveTo(tx, barsY).lineTo(tx, barsY + barsH)
+      .strokeColor('#E5E7EB').lineWidth(0.3).stroke();
+  });
+  if (highW > 0) {
+    doc.fontSize(5).fillColor('#9CA3AF').font('Helvetica');
+    doc.text('% alto', plotX + plotW + 2, y + titleH, { width: highW - 2, align: 'center' });
+  }
+
+  data.forEach((row, i) => {
+    const by = barsY + i * (barH + barGap);
+    const total = sumRiskCounts(row.counts);
+
+    // Etiqueta a la izquierda, centrada verticalmente contra su barra.
+    doc.fontSize(6).font('Helvetica').fillColor('#374151');
+    const lw = labelWidth - 6;
+    const lh = Math.min(doc.heightOfString(row.label, { width: lw }), barH + 4);
+    doc.text(row.label, x, by + (barH - lh) / 2, { width: lw, align: 'right', height: barH + 4, ellipsis: true });
+
+    // Segmentos apilados
+    let sx = plotX;
+    RISK_ORDER.forEach(level => {
+      const val = row.counts[level] || 0;
+      if (val === 0) return;
+      const segW = (val / total) * plotW;
+      doc.rect(sx, by, segW, barH).fillColor(RISK_COLORS[level]).fill();
+      const pct = val / total * 100;
+      // El % solo cabe legible desde ~9% de la barra; debajo de eso el numero
+      // se sale del segmento y se lee como si perteneciera al vecino.
+      if (pct >= 9) {
+        doc.fontSize(5.5).font('Helvetica-Bold')
+          .fillColor(level === 'riesgo_medio' || level === 'riesgo_bajo' ? '#374151' : '#FFFFFF');
+        doc.text(Math.round(pct) + '%', sx, by + (barH - 6) / 2, { width: segW, align: 'center' });
+      }
+      sx += segW;
+    });
+    doc.rect(plotX, by, plotW, barH).strokeColor('#D1D5DB').lineWidth(0.3).stroke();
+
+    // % en riesgo alto o muy alto: el numero que dispara la intervencion.
+    if (highW > 0) {
+      const high = (row.counts.riesgo_alto || 0) + (row.counts.riesgo_muy_alto || 0);
+      const highPct = high / total * 100;
+      doc.fontSize(6).font('Helvetica-Bold').fillColor(highPct >= 20 ? '#DC2626' : '#6B7280');
+      doc.text(highPct.toFixed(0) + '%', plotX + plotW + 2, by + (barH - 7) / 2, { width: highW - 2, align: 'center' });
+    }
+  });
+
+  let endY = barsY + barsH;
+
+  if (options.showLegend !== false) {
+    const legendY = endY + 6;
+    let lx = plotX;
+    RISK_ORDER.forEach(level => {
+      doc.rect(lx, legendY, 6, 6).fillColor(RISK_COLORS[level]).fill();
+      doc.fontSize(5.5).fillColor('#374151').font('Helvetica');
+      doc.text(RISK_LABELS[level], lx + 8, legendY, { width: 52 });
+      lx += 62;
+    });
+    endY = legendY + legendH - 6;
+  }
+
+  doc.restore();
+  doc.x = x;
+  doc.y = endY;
+  return endY;
+}
+
+// Alto que ocupara drawStackedRiskBars, para reservar espacio antes de dibujar.
+function measureStackedRiskBars(rowCount, options = {}) {
+  const barH = options.barHeight || 15;
+  const barGap = 5;
+  const titleH = options.title ? 14 : 0;
+  const legendH = options.showLegend === false ? 0 : 16;
+  return titleH + 9 + rowCount * (barH + barGap) - barGap + legendH;
+}
+
+function sumRiskCounts(counts) {
+  if (!counts) return 0;
+  return RISK_ORDER.reduce((s, k) => s + (counts[k] || 0), 0);
+}
+
 module.exports = {
   drawPieChart,
   drawBarChart,
@@ -976,6 +1101,8 @@ module.exports = {
   drawDonutChart,
   drawSemicircleGauge,
   drawSimpleRiskBars,
+  drawStackedRiskBars,
+  measureStackedRiskBars,
   drawColorCodedRiskTable,
   drawRiskPrioritizationMatrix,
   drawSectionBanner,

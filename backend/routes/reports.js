@@ -4,7 +4,7 @@ const PDFDocument = require('pdfkit');
 const db = require('../config/database');
 const { auth, getOwnedCompanyIds, isSuperAdmin } = require('../middleware/auth');
 const { REQUIRE_PAID_EVALUATION } = require('../config/brand');
-const { drawPieChart, drawBarChart, drawHorizontalBarChart, drawGroupedBarChart, drawTable, createRiskSeries, drawDonutChart, drawSemicircleGauge, drawSimpleRiskBars, drawColorCodedRiskTable, drawRiskPrioritizationMatrix, drawSectionBanner, RISK_COLORS, RISK_ORDER, RISK_LABELS } = require('../utils/pdf-charts');
+const { drawPieChart, drawBarChart, drawHorizontalBarChart, drawGroupedBarChart, drawTable, createRiskSeries, drawDonutChart, drawSemicircleGauge, drawSimpleRiskBars, drawStackedRiskBars, measureStackedRiskBars, drawColorCodedRiskTable, drawRiskPrioritizationMatrix, drawSectionBanner, RISK_COLORS, RISK_ORDER, RISK_LABELS } = require('../utils/pdf-charts');
 const { aggregateDemographics, aggregateExtendedDemographics, aggregateResultsByForm, getAtRiskDimensions, aggregateStressTypology, buildRiskPrioritizationMatrix, aggregateResultsByArea, aggregateResultsByCargo, buildDemandasPorCargo, resolveFicha, sumCounts } = require('../utils/report-data-aggregator');
 const templates = require('../utils/report-templates');
 const { BRAND_NAME } = require('../config/brand');
@@ -847,6 +847,27 @@ function generateOrganizationalPDF(doc, { evaluation, demographics, aggResults, 
     doc.moveDown(0.4);
   };
 
+  // Encabezado de dominio dentro de la interpretacion cualitativa.
+  const writeDomainHeading = (text) => {
+    ensureSpace(doc, 40);
+    doc.x = m;
+    doc.fontSize(10).fillColor('#0F766E').font('Helvetica-Bold');
+    doc.text(text, m, doc.y, { width: pageW });
+    doc.moveDown(0.35);
+  };
+
+  // Barra 100% apilada por dimension. Acompana a los parrafos de interpretacion:
+  // el texto dice el nivel, la grafica muestra como se reparte el grupo.
+  const drawDimensionDistribution = (rows, title) => {
+    const data = rows.filter(r => r && sumCounts(r.counts) > 0);
+    if (data.length === 0) return;
+    const h = measureStackedRiskBars(data.length, { title });
+    ensureSpace(doc, h + 16);
+    drawStackedRiskBars(doc, m, doc.y, pageW, data, { title });
+    doc.x = m;
+    doc.moveDown(0.9);
+  };
+
   // Renders one intralaboral form (A/B): per-form risk table + qualitative
   // interpretation per dimension, domain conclusions and form general analysis.
   // Returns true if it rendered anything.
@@ -885,19 +906,42 @@ function generateOrganizationalPDF(doc, { evaluation, demographics, aggResults, 
     drawColorCodedRiskTable(doc, m, doc.y, pageW, tableData);
     doc.moveDown(1);
 
-    // Qualitative interpretation: dimension paragraphs + domain conclusions
+    // Qualitative interpretation: por dominio, grafica de distribucion de sus
+    // dimensiones + parrafos + conclusion del dominio.
     templates.DOMAIN_ORDER.forEach(domainKey => {
-      const dims = templates.DOMAIN_DIMENSIONS[domainKey][form] || [];
-      dims.forEach(dimKey => {
-        const counts = formAgg.dimensions[dimKey];
-        if (!counts || sumCounts(counts) === 0) return;
-        writeNarrative(templates.generateDimensionNarrative(dimKey, counts));
-      });
+      const dims = (templates.DOMAIN_DIMENSIONS[domainKey][form] || [])
+        .filter(dimKey => formAgg.dimensions[dimKey] && sumCounts(formAgg.dimensions[dimKey]) > 0);
+      if (dims.length === 0) return;
+      const domainName = templates.DOMAIN_DISPLAY_NAMES[domainKey] || domainKey;
+
+      // Encabezado + grafica + un parrafo entran juntos: un titulo de dominio
+      // al pie de pagina, con su grafica arriba de la siguiente, se lee como
+      // si la grafica perteneciera al dominio anterior.
+      ensureSpace(doc, measureStackedRiskBars(dims.length, { title: 'x' }) + 100);
+      writeDomainHeading(`Dominio ${domainName} – Forma ${form}`);
+      drawDimensionDistribution(
+        dims.map(dimKey => ({
+          label: templates.DIMENSION_DISPLAY_NAMES[dimKey] || dimKey,
+          counts: formAgg.dimensions[dimKey]
+        })),
+        `Distribución del riesgo por dimensión – ${domainName}`
+      );
+
+      dims.forEach(dimKey => writeNarrative(templates.generateDimensionNarrative(dimKey, formAgg.dimensions[dimKey])));
       const dCounts = formAgg.domains[domainKey];
       if (dCounts && sumCounts(dCounts) > 0) {
         writeNarrative(templates.generateDomainConclusion(domainKey, dCounts), { color: '#1F2937' });
       }
+      doc.moveDown(0.4);
     });
+
+    // Cierre visual de la forma: como se reparte el grupo en los 4 dominios.
+    const domainRows = templates.DOMAIN_ORDER
+      .map(domainKey => ({ label: templates.DOMAIN_DISPLAY_NAMES[domainKey] || domainKey, counts: formAgg.domains[domainKey] }))
+      .filter(r => r.counts && sumCounts(r.counts) > 0);
+    if (domainRows.length > 0) {
+      drawDimensionDistribution(domainRows, `Distribución del riesgo por dominio – Forma ${form}`);
+    }
 
     // Form-level general analysis
     if (formAgg.overall && sumCounts(formAgg.overall) > 0) {
@@ -929,6 +973,14 @@ function generateOrganizationalPDF(doc, { evaluation, demographics, aggResults, 
     ensureSpace(doc, 100);
     drawColorCodedRiskTable(doc, m, doc.y, pageW, tableData);
     doc.moveDown(1);
+
+    drawDimensionDistribution(
+      dimKeys.map(dimKey => ({
+        label: templates.DIMENSION_DISPLAY_NAMES[dimKey] || dimKey,
+        counts: formAgg.dimensions[dimKey]
+      })),
+      `Distribución del riesgo por dimensión extralaboral – Forma ${form}`
+    );
 
     dimKeys.forEach(dimKey => writeNarrative(templates.generateDimensionNarrative(dimKey, formAgg.dimensions[dimKey])));
 
@@ -1434,6 +1486,13 @@ function generateOrganizationalPDF(doc, { evaluation, demographics, aggResults, 
     if (extraTableData.length > 0) {
       drawColorCodedRiskTable(doc, m, doc.y, pageW, extraTableData);
       doc.moveDown(1);
+      drawDimensionDistribution(
+        extraDimKeys.map(dimKey => ({
+          label: templates.DIMENSION_DISPLAY_NAMES[dimKey] || dimKey,
+          counts: aggResults.extralaboral.general.dimensions[dimKey]
+        })),
+        'Distribución del riesgo por dimensión extralaboral'
+      );
       extraDimKeys.forEach(dimKey => writeNarrative(templates.generateDimensionNarrative(dimKey, aggResults.extralaboral.general.dimensions[dimKey])));
     }
   }
