@@ -102,7 +102,10 @@ export default function EvaluatorEvaluations() {
   const fetchEvaluations = async () => {
     try {
       const token = localStorage.getItem('token');
-      const response = await fetch('/api/evaluations', {
+      // limit explícito: el API pagina de a 10 y esta pantalla no tiene
+      // paginador, así que sin esto la evaluación número 11 en adelante
+      // simplemente no existía para el evaluador.
+      const response = await fetch('/api/evaluations?limit=200', {
         headers: {
           'Authorization': `Bearer ${token}`
         }

@@ -48,8 +48,12 @@ const updateEvaluationSchema = Joi.object({
 // Get all evaluations for the evaluator's companies
 router.get('/', auth, async (req, res) => {
   try {
-    const { page = 1, limit = 10, status } = req.query;
-    const offset = (page - 1) * limit;
+    const { page = 1, status } = req.query;
+    // `limit` entraba crudo a knex: un valor no numerico rompia la query, y el
+    // default de 10 dejaba invisibles las evaluaciones mas viejas para las
+    // pantallas que no paginan. Se acota a un rango sano.
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 10, 1), 500);
+    const offset = (Math.max(parseInt(page, 10) || 1, 1) - 1) * limit;
     const companyIds = await getOwnedCompanyIds(req.user.userId);
 
     let query = db('evaluations')

@@ -263,7 +263,12 @@ export default function EvaluatorParticipants() {
   const fetchEvaluations = async () => {
     try {
       const token = localStorage.getItem('token');
-      const response = await fetch('/api/evaluations', {
+      // limit explícito: el API pagina de a 10 por defecto. Sin esto solo
+      // llegaban las 10 evaluaciones más recientes, y las demás desaparecían
+      // del filtro, de los selectores para asignar y de la columna
+      // "Evaluación" (salía N/A en gente que sí tenía su batería y sus
+      // respuestas — reportado en la campaña INFOTEP).
+      const response = await fetch('/api/evaluations?limit=200', {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -1279,7 +1284,11 @@ export default function EvaluatorParticipants() {
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div className="text-sm text-gray-900">
-                            {evaluation?.name || 'N/A'}
+                            {/* El nombre viene en la fila (`evaluationName`); la
+                                búsqueda en la lista es solo respaldo. Depender
+                                de la lista hacía que una evaluación fuera de la
+                                primera página se mostrara como N/A. */}
+                            {participant.evaluationName || evaluation?.name || 'N/A'}
                           </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
