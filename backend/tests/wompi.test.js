@@ -92,3 +92,66 @@ describe('Wompi: checksum de eventos', () => {
     expect(wompi.verifyEventChecksum({ ...event, signature: { properties: [], checksum: 'zz' } }, secret)).toBe(false);
   });
 });
+
+describe('Wompi: tarifa por prueba con tramo por volumen', () => {
+  // getPricing() consulta system_configs; con el stub de database la consulta
+  // falla y cae a las env vars, que es justo lo que queremos ejercitar aqui.
+  const ENV = { ...process.env };
+  beforeEach(() => {
+    process.env.BRS_TEST_PRICE_COP = '5000';
+    process.env.BRS_TEST_PRICE_BULK_COP = '3500';
+    process.env.BRS_TEST_BULK_MIN_QTY = '250';
+  });
+  afterEach(() => { process.env = { ...ENV }; });
+
+  test('lee los dos tramos de las env vars', async () => {
+    await expect(wompi.getPricing()).resolves.toEqual({
+      unitPriceCop: 5000, bulkPriceCop: 3500, bulkMinQty: 250,
+    });
+  });
+
+  test('el umbral por defecto es 250 si no se configura', async () => {
+    delete process.env.BRS_TEST_BULK_MIN_QTY;
+    await expect(wompi.getPricing()).resolves.toMatchObject({ bulkMinQty: 250 });
+  });
+
+  test('un precio de volumen que no baja el precio se ignora', async () => {
+    process.env.BRS_TEST_PRICE_BULK_COP = '5000';
+    await expect(wompi.getPricing()).resolves.toMatchObject({ bulkPriceCop: 0 });
+    process.env.BRS_TEST_PRICE_BULK_COP = '9000';
+    await expect(wompi.getPricing()).resolves.toMatchObject({ bulkPriceCop: 0 });
+  });
+
+  test('el tramo aplica al SUPERAR el umbral, no al alcanzarlo', async () => {
+    const pricing = await wompi.getPricing();
+    expect(wompi.unitPriceForQuantity(1, pricing)).toBe(5000);
+    expect(wompi.unitPriceForQuantity(250, pricing)).toBe(5000);
+    expect(wompi.unitPriceForQuantity(251, pricing)).toBe(3500);
+    expect(wompi.unitPriceForQuantity(1000, pricing)).toBe(3500);
+  });
+
+  test('sin tramo configurado siempre cobra el precio base', async () => {
+    delete process.env.BRS_TEST_PRICE_BULK_COP;
+    const pricing = await wompi.getPricing();
+    expect(wompi.unitPriceForQuantity(10, pricing)).toBe(5000);
+    expect(wompi.unitPriceForQuantity(10000, pricing)).toBe(5000);
+  });
+
+  test('el descuento aplica a TODA la orden: pagar 251 cuesta menos que 250', async () => {
+    // Comportamiento deliberado (decision de negocio), no un bug: por eso la
+    // UI avisa cuando faltan pocas pruebas para cruzar el umbral.
+    const pricing = await wompi.getPricing();
+    const totalFor = (n) => n * wompi.unitPriceForQuantity(n, pricing);
+    expect(totalFor(250)).toBe(1250000);
+    expect(totalFor(251)).toBe(878500);
+    expect(totalFor(251)).toBeLessThan(totalFor(250));
+    expect(totalFor(300)).toBe(1050000);
+  });
+
+  test('sin precio base el modulo queda desactivado', async () => {
+    delete process.env.BRS_TEST_PRICE_COP;
+    const pricing = await wompi.getPricing();
+    expect(pricing.unitPriceCop).toBe(0);
+    expect(wompi.isConfigured(pricing.unitPriceCop)).toBe(false);
+  });
+});

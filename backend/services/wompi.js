@@ -21,7 +21,9 @@
  *   WOMPI_PUBLIC_KEY        pub_test_... (sandbox) | pub_prod_... (produccion)
  *   WOMPI_INTEGRITY_SECRET  firma del monto en el checkout
  *   WOMPI_EVENTS_SECRET     firma de los webhooks
- *   BRS_TEST_PRICE_COP      precio por prueba en pesos (entero, sin IVA)
+ *   BRS_TEST_PRICE_COP       precio por prueba en pesos (entero)
+ *   BRS_TEST_PRICE_BULK_COP  precio por prueba en ordenes grandes (opcional)
+ *   BRS_TEST_BULK_MIN_QTY    desde cuantas pruebas aplica ese precio (def. 250)
  *   BRS_PUBLIC_URL          base de la redirect-url (fallback: host del request)
  */
 const crypto = require('crypto');
@@ -45,25 +47,57 @@ function apiBase(key = publicKey()) {
   return isSandbox(key) ? 'https://sandbox.wompi.co/v1' : 'https://production.wompi.co/v1';
 }
 
-function envUnitPriceCop() {
-  const n = parseInt(process.env.BRS_TEST_PRICE_COP || '0', 10);
+function envInt(name) {
+  const n = parseInt(process.env[name] || '0', 10);
   return Number.isFinite(n) && n > 0 ? n : 0;
 }
 
+// Desde cuantas pruebas aplica el precio por volumen. El descuento entra
+// cuando la orden SUPERA este numero (251 con el default de 250).
+const DEFAULT_BULK_MIN_QTY = 250;
+
 /**
- * Precio por prueba en pesos. `system_configs.wompi_unit_price_cop` manda
- * sobre la env var para poder cambiarlo sin redeploy; sin ninguna de las dos
- * el modulo queda desactivado (no se puede cobrar $0).
+ * Tarifa por prueba. Dos tramos: precio normal y precio por volumen para
+ * ordenes grandes. `system_configs` manda sobre las env vars para poder
+ * cambiar la tarifa sin redeploy; sin precio base el modulo queda desactivado
+ * (no se puede cobrar $0).
+ *
+ * El tramo por volumen aplica a TODA la orden, no solo a las pruebas que
+ * exceden el umbral: pasar de 250 baja el precio de todas. Eso hace que
+ * pagar 251 cueste menos que pagar 250 — la UI avisa cuando faltan pocas
+ * para el tramo, porque un descuento que solo encuentra quien tropieza con
+ * el no es un descuento, es una loteria.
  */
-async function getUnitPriceCop() {
+async function getPricing() {
+  const cfg = {};
   try {
-    const row = await db('system_configs').where('config_key', 'wompi_unit_price_cop').first();
-    const n = row ? parseInt(row.config_value, 10) : 0;
-    if (Number.isFinite(n) && n > 0) return n;
+    const rows = await db('system_configs').whereIn('config_key', [
+      'wompi_unit_price_cop', 'wompi_bulk_price_cop', 'wompi_bulk_min_qty',
+    ]);
+    rows.forEach((r) => {
+      const n = parseInt(r.config_value, 10);
+      if (Number.isFinite(n) && n > 0) cfg[r.config_key] = n;
+    });
   } catch (e) {
-    // La tabla existe desde el esquema inicial; si falla, cae a la env var.
+    // La tabla existe desde el esquema inicial; si falla, caemos a env vars.
   }
-  return envUnitPriceCop();
+
+  const unitPriceCop = cfg.wompi_unit_price_cop || envInt('BRS_TEST_PRICE_COP');
+  let bulkPriceCop = cfg.wompi_bulk_price_cop || envInt('BRS_TEST_PRICE_BULK_COP');
+  const bulkMinQty = cfg.wompi_bulk_min_qty || envInt('BRS_TEST_BULK_MIN_QTY') || DEFAULT_BULK_MIN_QTY;
+
+  // Un "descuento" que no baja el precio es un error de configuracion: se
+  // ignora en vez de cobrarle de mas al evaluador por comprar mas.
+  if (bulkPriceCop >= unitPriceCop) bulkPriceCop = 0;
+
+  return { unitPriceCop, bulkPriceCop, bulkMinQty };
+}
+
+/** Precio unitario que aplica a una orden de `qty` pruebas. */
+function unitPriceForQuantity(qty, pricing) {
+  const n = Number(qty) || 0;
+  if (pricing && pricing.bulkPriceCop > 0 && n > pricing.bulkMinQty) return pricing.bulkPriceCop;
+  return (pricing && pricing.unitPriceCop) || 0;
 }
 
 function isConfigured(unitPriceCop) {
@@ -219,7 +253,8 @@ module.exports = {
   publicKey,
   isSandbox,
   apiBase,
-  getUnitPriceCop,
+  getPricing,
+  unitPriceForQuantity,
   isConfigured,
   integritySignature,
   buildCheckoutUrl,

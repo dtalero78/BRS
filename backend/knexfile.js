@@ -9,7 +9,9 @@ module.exports = {
       database: process.env.DB_NAME,
       user: process.env.DB_USER,
       password: process.env.DB_PASSWORD,
-      ssl: { rejectUnauthorized: false }
+      // Postgres local no habla SSL y la managed de DigitalOcean lo exige.
+      // DB_SSL=false permite desarrollar contra una base local sin tocar prod.
+      ssl: process.env.DB_SSL === 'false' ? false : { rejectUnauthorized: false }
     },
     pool: {
       min: 2,
@@ -37,7 +39,7 @@ module.exports = {
           database: process.env.DB_NAME,
           user: process.env.DB_USER,
           password: process.env.DB_PASSWORD,
-          ssl: { rejectUnauthorized: false }
+          ssl: process.env.DB_SSL === 'false' ? false : { rejectUnauthorized: false }
         },
     pool: {
       min: 2,

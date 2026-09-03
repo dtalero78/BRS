@@ -9,6 +9,11 @@
  *   GET  /api/payments/:reference          detalle de una orden
  *   POST /api/payments/wompi/events        webhook de Wompi (publico, firmado)
  *
+ * Tarifa: precio por prueba, con un tramo por volumen que aplica a TODA la
+ * orden cuando supera `bulkMinQty` (ver `services/wompi.js`). El monto lo
+ * calcula siempre el backend a partir de las pruebas seleccionadas; el
+ * frontend nunca manda un precio ni un total.
+ *
  * "Pendiente de pago" = la prueba no tiene `paid_at` Y su evaluacion no fue
  * liberada a mano por el admin (`evaluations.paid`). Se listan pruebas en
  * cualquier estado: el evaluador decide si paga por adelantado o solo las
@@ -62,8 +67,8 @@ function serializePayment(p, items) {
 }
 
 async function buildConfig() {
-  const unitPriceCop = await wompi.getUnitPriceCop();
-  const configured = wompi.isConfigured(unitPriceCop);
+  const pricing = await wompi.getPricing();
+  const configured = wompi.isConfigured(pricing.unitPriceCop);
   return {
     // Sin cobro por evaluacion (licenciatarios) no hay nada que pagar aunque
     // Wompi este configurado.
@@ -71,7 +76,12 @@ async function buildConfig() {
     requirePaidEvaluation: REQUIRE_PAID_EVALUATION,
     configured,
     sandbox: configured ? wompi.isSandbox() : false,
-    unitPriceCop,
+    unitPriceCop: pricing.unitPriceCop,
+    // Tramo por volumen (0 = sin tramo). Aplica a toda la orden cuando la
+    // cantidad SUPERA bulkMinQty. La UI lo necesita para mostrar el precio
+    // que de verdad se va a cobrar segun lo que el evaluador seleccione.
+    bulkPriceCop: pricing.bulkPriceCop,
+    bulkMinQty: pricing.bulkMinQty,
     currency: wompi.CURRENCY,
   };
 }
@@ -190,13 +200,17 @@ router.get('/pending', async (req, res) => {
       };
     });
 
+    const completed = items.filter((i) => i.status === 'completed').length;
     res.json({
       config,
       items,
       totals: {
         count: items.length,
-        completed: items.filter((i) => i.status === 'completed').length,
-        amountCop: items.length * config.unitPriceCop,
+        completed,
+        // Precio que aplicaria pagandolas todas de una: con el tramo por
+        // volumen el total no es una simple multiplicacion por el precio base.
+        unitPriceCop: wompi.unitPriceForQuantity(items.length, config),
+        amountCop: items.length * wompi.unitPriceForQuantity(items.length, config),
       },
     });
   } catch (err) {
@@ -242,7 +256,9 @@ router.post('/checkout', async (req, res) => {
       });
     }
 
-    const unitPriceInCents = config.unitPriceCop * 100;
+    // El precio lo decide la cantidad de la orden, no el frontend: `config`
+    // trae los dos tramos y aqui se resuelve cual aplica.
+    const unitPriceInCents = wompi.unitPriceForQuantity(ids.length, config) * 100;
     const amountInCents = unitPriceInCents * ids.length;
     const reference = `BRS-${req.user.userId}-${Date.now().toString(36).toUpperCase()}-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
 

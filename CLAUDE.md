@@ -367,7 +367,15 @@ El `returnUrl` se sigue guardando y exponiendo en el API, pero el frontend **ya 
 El evaluador paga por su cuenta las pruebas que aplicó y con eso se liberan los informes. Antes el único mecanismo era que el admin marcara `evaluations.paid` a mano desde `/evaluator/admin-clients`; ese interruptor **sigue existiendo** como cortesía/convenio y libera la evaluación completa aunque ninguna prueba tenga pago.
 
 ### La unidad de cobro es la prueba, no la evaluación
-Una "prueba" es un `participant_evaluation` (una persona en una evaluación). El precio es único por instancia (`BRS_TEST_PRICE_COP`, o `system_configs.wompi_unit_price_cop` que manda sobre la env var para cambiarlo sin redeploy). El total del checkout es `precio × pruebas seleccionadas`, y lo fija el backend: el frontend nunca manda un monto.
+Una "prueba" es un `participant_evaluation` (una persona en una evaluación). El total del checkout lo fija **siempre el backend** a partir de las pruebas seleccionadas: el frontend nunca manda un monto ni un precio.
+
+**Tarifa (dos tramos).** $5.000 por prueba, y $3.500 cuando la orden **supera** 250 pruebas. El tramo aplica a **toda la orden**, no solo a las que exceden el umbral. Se configura con `BRS_TEST_PRICE_COP` / `BRS_TEST_PRICE_BULK_COP` / `BRS_TEST_BULK_MIN_QTY`, y `system_configs` (`wompi_unit_price_cop`, `wompi_bulk_price_cop`, `wompi_bulk_min_qty`) manda sobre las env vars para cambiar la tarifa sin redeploy. Sin precio base el módulo queda desactivado; sin precio de volumen se cobra el base siempre (comportamiento previo).
+
+Un `bulkPriceCop >= unitPriceCop` se **ignora** (queda en 0): un "descuento" que no baja el precio es un error de configuración, y aplicarlo le cobraría de más al evaluador justo por comprar más.
+
+> ⚠️ **El umbral tiene un salto, y es deliberado.** Como el precio bajo aplica a toda la orden, pagar 251 pruebas ($878.500) cuesta **menos** que pagar 250 ($1.250.000). Por eso la UI avisa cuando faltan pocas para cruzarlo ("agrega N y pagas $X menos"): un descuento que solo encuentra quien tropieza con él deja a dos evaluadores con la misma cantidad pagando distinto. El umbral se cuenta **por orden de checkout**, no acumulado: el evaluador decide cuándo juntar volumen.
+
+La orden guarda en `payments.unit_price_in_cents` el precio que efectivamente se aplicó, así que el histórico queda auditable aunque la tarifa cambie después.
 
 ### Qué se bloquea sin pago (con `BRAND_REQUIRE_PAID_EVALUATION` activo)
 - **Informe individual** (`POST /reports/individual`): `403 payment_required` si la prueba no tiene `paid_at` y la evaluación no está `paid`.
@@ -386,6 +394,24 @@ Una "prueba" es un `participant_evaluation` (una persona en una evaluación). El
 5. `APPROVED` con monto y moneda iguales a la orden → `paid_at` + `payment_id` en cada prueba de `payment_items`. Si el monto **no** cuadra, la orden queda en `error` con el payload guardado y **no** libera: es el caso de un checkout manipulado que Wompi igual cobró.
 6. Una orden `approved` no retrocede (los eventos pueden llegar fuera de orden). Una orden `pending` abandonada se queda así; la misma prueba puede aparecer en varias órdenes pendientes y se libera con la primera que se apruebe.
 
+### El Web Checkout rechaza un `redirect-url` a localhost
+
+Probar el checkout desde `localhost` **no funciona**, y el modo de falla no dice por qué: el navegador aterriza en un **403 de CloudFront** ("Request blocked") antes de llegar a la aplicación de Wompi.
+
+No es la firma, ni la llave, ni el monto, ni la IP de salida. Es una regla anti-SSRF del WAF que se dispara por el **contenido del parámetro `redirect-url`**:
+
+| `redirect-url` | Respuesta |
+|---|---|
+| (ausente) | 200 |
+| `https://bateriariesgopsicosocial.com/...` | 200 |
+| `http://localhost:3000/...` | **403** |
+| `https://localhost:3000/...` | **403** |
+| `http://127.0.0.1:3000/...` | **403** |
+
+Se comprueba con `curl` a la URL del checkout, sin navegador. La misma IP y la misma llave dan 200 quitando ese parámetro, así que descarta VPN y entorno.
+
+Para probar el flujo completo en local hace falta una **URL pública** (un túnel tipo cloudflared/ngrok) en `BRS_PUBLIC_URL`. Sin túnel se puede validar igual el ciclo: pagar con el `redirect-url` de producción y aplicar la transacción a mano con `POST /api/payments/verify` pasándole el `id` que Wompi deja en la URL de retorno.
+
 ### Sandbox vs producción
 Lo decide el **prefijo de la llave pública**: `pub_test_` → `https://sandbox.wompi.co/v1`, `pub_prod_` → `https://production.wompi.co/v1`. No hay una env var aparte para el ambiente: con dos variables la app podría firmar con el secreto de un ambiente y cobrar en el otro. La UI muestra una insignia morada "sandbox" cuando aplica.
 
@@ -395,7 +421,7 @@ Lo decide el **prefijo de la llave pública**: `pub_test_` → `https://sandbox.
 - Sin `WOMPI_PUBLIC_KEY`, `WOMPI_INTEGRITY_SECRET` o precio, `GET /config` devuelve `enabled: false`, la página lo explica y `POST /checkout` responde `503` (fail-closed).
 
 ### Env vars
-`WOMPI_PUBLIC_KEY`, `WOMPI_INTEGRITY_SECRET`, `WOMPI_EVENTS_SECRET`, `BRS_TEST_PRICE_COP` (entero en pesos), `BRS_PUBLIC_URL` (base del `redirect-url`; fallback `FRONTEND_URL` y luego el host del request).
+`WOMPI_PUBLIC_KEY`, `WOMPI_INTEGRITY_SECRET`, `WOMPI_EVENTS_SECRET`, `BRS_TEST_PRICE_COP` (entero en pesos), `BRS_TEST_PRICE_BULK_COP` (precio por volumen, opcional), `BRS_TEST_BULK_MIN_QTY` (umbral, default 250), `BRS_PUBLIC_URL` (base del `redirect-url`; fallback `FRONTEND_URL` y luego el host del request).
 
 ### Archivos
 - `backend/migrations/20260903000001_add_wompi_payments.js`

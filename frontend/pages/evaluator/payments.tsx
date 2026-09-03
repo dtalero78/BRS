@@ -52,8 +52,19 @@ interface PaymentsConfig {
   configured: boolean;
   sandbox: boolean;
   unitPriceCop: number;
+  /** Precio por prueba en ordenes grandes. 0 = no hay tramo por volumen. */
+  bulkPriceCop: number;
+  /** El tramo aplica cuando la orden SUPERA esta cantidad. */
+  bulkMinQty: number;
   currency: string;
 }
+
+/** Precio unitario segun la cantidad. Espeja `unitPriceForQuantity` del backend. */
+const unitPriceFor = (qty: number, config: PaymentsConfig | null) => {
+  if (!config) return 0;
+  if (config.bulkPriceCop > 0 && qty > config.bulkMinQty) return config.bulkPriceCop;
+  return config.unitPriceCop;
+};
 
 const statusLabel = (s: PendingItem['status']) =>
   s === 'completed' ? 'Completada' : s === 'in_progress' ? 'En progreso' : 'Sin iniciar';
@@ -119,8 +130,24 @@ export default function EvaluatorPayments() {
   }, [visibleItems]);
 
   const selectedCount = selected.size;
-  const unitPrice = config?.unitPriceCop || 0;
+  const unitPrice = unitPriceFor(selectedCount, config);
   const total = selectedCount * unitPrice;
+  const bulkActive = !!config && config.bulkPriceCop > 0 && selectedCount > config.bulkMinQty;
+
+  // El tramo aplica a toda la orden, asi que justo debajo del umbral agregar
+  // pruebas ABARATA el total. Sin este aviso el descuento solo lo encuentra
+  // quien tropieza con el, y dos evaluadores con la misma cantidad terminan
+  // pagando distinto por no haberlo notado.
+  const bulkHint = useMemo(() => {
+    if (!config || config.bulkPriceCop <= 0 || bulkActive) return null;
+    const target = config.bulkMinQty + 1;
+    // Solo tiene sentido si de verdad le alcanzan las pruebas sin pagar.
+    if (selectedCount === 0 || items.length < target) return null;
+    const missing = target - selectedCount;
+    const savings = selectedCount * config.unitPriceCop - target * config.bulkPriceCop;
+    if (savings <= 0) return null;
+    return { missing, savings, target };
+  }, [config, bulkActive, selectedCount, items.length]);
 
   const toggle = (id: number) => {
     setSelected((prev) => {
@@ -197,6 +224,13 @@ export default function EvaluatorPayments() {
             <div className="mt-4 sm:mt-0 text-right">
               <div className="text-xs uppercase tracking-wide text-gray-500">Valor por prueba</div>
               <div className="text-2xl font-bold text-gray-900">{formatCop(unitPrice)}</div>
+              {config.bulkPriceCop > 0 && (
+                <div className="text-xs text-gray-500">
+                  {bulkActive
+                    ? `Precio por volumen (más de ${config.bulkMinQty} pruebas)`
+                    : `${formatCop(config.bulkPriceCop)} c/u pasando de ${config.bulkMinQty} pruebas`}
+                </div>
+              )}
               {config.sandbox && (
                 <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
                   Ambiente de pruebas (sandbox)
@@ -338,7 +372,20 @@ export default function EvaluatorPayments() {
           {items.length > 0 && (
             <div className="px-4 py-4 border-t border-gray-200 bg-gray-50 rounded-b-lg sm:flex sm:items-center sm:justify-between gap-4">
               <div className="text-sm text-gray-700">
-                <span className="font-semibold">{selectedCount}</span> prueba(s) seleccionada(s) × {formatCop(unitPrice)}
+                <div>
+                  <span className="font-semibold">{selectedCount}</span> prueba(s) seleccionada(s) × {formatCop(unitPrice)}
+                  {bulkActive && (
+                    <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800">
+                      Precio por volumen aplicado
+                    </span>
+                  )}
+                </div>
+                {bulkHint && (
+                  <div className="mt-1 text-sm text-emerald-700">
+                    Agrega {bulkHint.missing} prueba(s) más (total {bulkHint.target}) y pagas {formatCop(bulkHint.savings)} menos:
+                    pasando de {config?.bulkMinQty} el precio baja a {formatCop(config?.bulkPriceCop || 0)} por prueba.
+                  </div>
+                )}
               </div>
               <div className="mt-3 sm:mt-0 flex items-center gap-4">
                 <div className="text-right">
