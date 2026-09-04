@@ -448,6 +448,27 @@ Lo decide el **prefijo de la llave pública**: `pub_test_` → `https://sandbox.
 
 Hoy configurado: `Universidad Manuela Beltran` (NIT 860.517.647-5) → `/brand/regis/logo.jpeg`.
 
+## LOGO DE LA EMPRESA EVALUADORA EN EL PDF (opcional)
+
+`users.logo_image` guarda el logo de la **consultora que firma el informe** y se imprime en la portada del informe individual y del organizacional. Sin logo cargado la portada queda exactamente como estaba: es opcional, no hay default.
+
+**No confundir con las otras dos marcas del sistema**, que son cosas distintas:
+- `config/brand.ts` — marca de la INSTANCIA, horneada en build (`NEXT_PUBLIC_BRAND`). Sirve para un licenciatario con su propia app, no para los muchos evaluadores de una instancia compartida.
+- `companies.logo_url` — logo de la empresa **evaluada**, en la pantalla del participante (sección anterior).
+- `users.logo_image` — logo de la empresa **evaluadora**. Va en `users` porque es del mismo registro que ya aporta el nombre, el título profesional y la firma que cierran el informe.
+
+**Se guarda como data URL en TEXT, igual que `signature_image`.** El disco de App Platform es efímero: un archivo subido a `/uploads` desaparecería en el siguiente deploy. Tope de 700.000 caracteres (~500 KB) validado en el backend, y el navegador ya lo reescala a 400×200 px antes de subirlo.
+
+Se convierte a **PNG** al reescalar, no a JPEG: los logos suelen traer fondo transparente y en JPEG ese fondo sale negro sobre la portada blanca.
+
+En la portada se encaja en una caja fija de 170×70 pt y se centra a mano (`doc.image` no entiende `align: 'center'` con `fit`), así que un logo apaisado y uno cuadrado ocupan un alto parecido y la portada no se descuadra según lo que suba cada consultora. `doc.image` **no mueve el cursor**: hay que fijar `doc.y` después o el título se imprime encima. Una imagen corrupta se ignora en silencio — el informe sale sin logo en vez de fallar.
+
+### Archivos
+- `backend/migrations/20260904000001_add_logo_image_to_users.js`
+- `backend/routes/auth.js` — `POST|DELETE /api/auth/profile/logo` + `logo_image` en `GET /profile`
+- `backend/routes/reports.js` — `drawEvaluatorLogo()` y las dos portadas
+- `frontend/pages/evaluator/profile.tsx` — tarjeta de carga con vista previa
+
 ## PUERTA GENERAL DE ACCESO (`/acceso`)
 
 Un solo enlace público para toda la instancia: la persona escribe su número de documento y entra a su batería. Evita tener que repartir cientos de enlaces individuales por WhatsApp o correo.

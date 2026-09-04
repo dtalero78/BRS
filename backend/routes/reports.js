@@ -100,7 +100,7 @@ router.post('/individual', auth, async (req, res) => {
     // Get evaluator info
     const evaluatorRow = await db('users')
       .where('id', req.user.userId)
-      .select('email', 'full_name', 'professional_title', 'license_number', 'signature_image')
+      .select('email', 'full_name', 'professional_title', 'license_number', 'signature_image', 'logo_image')
       .first();
     const evaluator = {
       email: evaluatorRow?.email || '',
@@ -108,6 +108,7 @@ router.post('/individual', auth, async (req, res) => {
       title: evaluatorRow?.professional_title || 'Especialista en Psicología Ocupacional y Organizacional',
       license: evaluatorRow?.license_number || null,
       signatureImage: evaluatorRow?.signature_image || null,
+      logoImage: evaluatorRow?.logo_image || null,
     };
 
     // Generate PDF
@@ -264,7 +265,7 @@ router.post('/organizational', auth, async (req, res) => {
     // Get evaluator info
     const evaluator = await db('users')
       .where('id', req.user.userId)
-      .select('email', 'full_name', 'professional_title', 'license_number', 'signature_image')
+      .select('email', 'full_name', 'professional_title', 'license_number', 'signature_image', 'logo_image')
       .first();
 
     // Aggregate data
@@ -305,6 +306,7 @@ router.post('/organizational', auth, async (req, res) => {
       title: evaluator?.professional_title || 'Especialista en Psicología Ocupacional y Organizacional',
       license: evaluator?.license_number || null,
       signatureImage: evaluator?.signature_image || null,
+      logoImage: evaluator?.logo_image || null,
     };
 
     generateOrganizationalPDF(doc, {
@@ -545,7 +547,8 @@ function generateIndividualPDF(doc, { participant, demo, resultsByType, ficha, e
   const pageW = doc.page.width - m * 2;
 
   // ---- COVER PAGE ----
-  doc.moveDown(4);
+  doc.moveDown(evaluator?.logoImage ? 2 : 4);
+  drawEvaluatorLogo(doc, evaluator, pageW, m);
   doc.fontSize(28).fillColor('#1E40AF').text('REPORTE INDIVIDUAL', { align: 'center' });
   doc.moveDown(0.5);
   doc.fontSize(18).fillColor('#4B5563').text('Batería de Riesgo Psicosocial', { align: 'center' });
@@ -804,6 +807,31 @@ function generateIndividualPDF(doc, { participant, demo, resultsByType, ficha, e
 // ============================================================
 // ORGANIZATIONAL PDF - Full professional report (~35 pages)
 // ============================================================
+/**
+ * Logo de la empresa evaluadora en la portada. Opcional: sin logo cargado la
+ * portada queda exactamente como estaba.
+ *
+ * Se centra por cuenta propia (`doc.image` no entiende `align: 'center'`) y se
+ * encaja en una caja fija, así que un logo apaisado y uno cuadrado ocupan un
+ * alto parecido y la portada no se descuadra según lo que suba cada consultora.
+ */
+function drawEvaluatorLogo(doc, evaluator, pageW, m) {
+  if (!evaluator?.logoImage) return;
+  const boxW = 170;
+  const boxH = 70;
+  try {
+    const base64Data = evaluator.logoImage.replace(/^data:image\/\w+;base64,/, '');
+    const imgBuffer = Buffer.from(base64Data, 'base64');
+    const top = doc.y;
+    doc.image(imgBuffer, m + (pageW - boxW) / 2, top, { fit: [boxW, boxH], align: 'center' });
+    // `doc.image` no mueve el cursor: sin esto el título se imprimiría encima.
+    doc.y = top + boxH;
+    doc.moveDown(1.5);
+  } catch (e) {
+    // Imagen corrupta: la portada sigue sin logo, no se cae el informe.
+  }
+}
+
 function drawEvaluatorSignature(doc, evaluator, pageW, m) {
   doc.moveDown(3);
   const lineY = doc.y;
@@ -1043,7 +1071,8 @@ function generateOrganizationalPDF(doc, { evaluation, demographics, aggResults, 
   // ==========================================================
   // PAGE 1: PORTADA
   // ==========================================================
-  doc.moveDown(6);
+  doc.moveDown(evaluator?.logoImage ? 3 : 6);
+  drawEvaluatorLogo(doc, evaluator, pageW, m);
   doc.fontSize(14).fillColor('#1E293B').font('Helvetica-Bold');
   doc.text('INFORME DE MEDICIÓN, EVALUACIÓN Y DIAGNÓSTICO', { align: 'center' });
   doc.text('DE FACTORES DE RIESGO PSICOSOCIAL', { align: 'center' });

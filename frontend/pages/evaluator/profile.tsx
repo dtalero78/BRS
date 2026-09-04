@@ -9,6 +9,7 @@ import {
   PencilSquareIcon,
   TrashIcon,
   ArrowUpTrayIcon,
+  BuildingOffice2Icon,
   CheckCircleIcon,
 } from '@heroicons/react/24/outline';
 
@@ -20,21 +21,25 @@ interface Profile {
   professional_title: string | null;
   license_number: string | null;
   signature_image: string | null;
+  logo_image: string | null;
 }
 
 export default function EvaluatorProfile() {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const logoInputRef = useRef<HTMLInputElement>(null);
 
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploadingSig, setUploadingSig] = useState(false);
+  const [uploadingLogo, setUploadingLogo] = useState(false);
 
   const [fullName, setFullName] = useState('');
   const [title, setTitle] = useState('');
   const [license, setLicense] = useState('');
   const [sigPreview, setSigPreview] = useState<string | null>(null);
+  const [logoPreview, setLogoPreview] = useState<string | null>(null);
 
   useEffect(() => {
     fetchProfile();
@@ -53,6 +58,7 @@ export default function EvaluatorProfile() {
       setTitle(data.professional_title || '');
       setLicense(data.license_number || '');
       setSigPreview(data.signature_image || null);
+      setLogoPreview(data.logo_image || null);
     } catch {
       router.push('/auth/login');
     } finally {
@@ -82,6 +88,79 @@ export default function EvaluatorProfile() {
       toast.error('Error al guardar el perfil');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleLogoFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      toast.error('Selecciona un archivo de imagen (PNG, JPG)');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const img = new Image();
+      img.onload = () => {
+        // Se reescala al doble de la caja que usa la portada del PDF (170x70
+        // pt): suficiente para que no se vea pixelado al imprimir y sin
+        // engordar el base64, que viaja en la misma fila del usuario.
+        const maxW = 400;
+        const maxH = 200;
+        const ratio = Math.min(maxW / img.width, maxH / img.height, 1);
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.round(img.width * ratio);
+        canvas.height = Math.round(img.height * ratio);
+        const ctx = canvas.getContext('2d')!;
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        // PNG y no JPEG: los logos suelen traer fondo transparente y en JPEG
+        // ese fondo sale negro sobre la portada blanca.
+        const resized = canvas.toDataURL('image/png');
+        setLogoPreview(resized);
+        uploadLogo(resized);
+      };
+      img.src = ev.target?.result as string;
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const uploadLogo = async (base64: string) => {
+    setUploadingLogo(true);
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(`${API_URL}/api/auth/profile/logo`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ logo_image: base64 }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Error');
+      toast.success('Logo guardado exitosamente');
+    } catch (err: any) {
+      toast.error(err.message || 'Error al guardar el logo');
+      setLogoPreview(profile?.logo_image || null);
+    } finally {
+      setUploadingLogo(false);
+    }
+  };
+
+  const handleDeleteLogo = async () => {
+    if (!confirm('¿Eliminar el logo de los informes?')) return;
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(`${API_URL}/api/auth/profile/logo`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error();
+      setLogoPreview(null);
+      toast.success('Logo eliminado');
+    } catch {
+      toast.error('Error al eliminar el logo');
     }
   };
 
@@ -244,6 +323,72 @@ export default function EvaluatorProfile() {
             )}
             {saving ? 'Guardando…' : 'Guardar datos'}
           </button>
+        </div>
+
+        {/* Logo de la empresa evaluadora (opcional) */}
+        <div className="bg-white rounded-2xl border border-gray-200 p-6 space-y-4">
+          <div className="flex items-center gap-2 mb-1">
+            <BuildingOffice2Icon className="h-5 w-5 text-blue-500" />
+            <h2 className="text-base font-semibold text-gray-800">
+              Logo de tu empresa <span className="font-normal text-gray-400">(opcional)</span>
+            </h2>
+          </div>
+          <p className="text-xs text-gray-500">
+            Si lo cargas, aparece en la portada de los informes individuales y organizacionales.
+            PNG con fondo transparente es lo que mejor se ve. Sin logo, la portada queda como está hoy.
+          </p>
+
+          {logoPreview ? (
+            <div className="space-y-3">
+              <div className="border border-gray-200 rounded-xl p-4 bg-gray-50 flex items-center justify-center min-h-[100px]">
+                {uploadingLogo ? (
+                  <div className="flex items-center gap-2 text-gray-500 text-sm">
+                    <span className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-500" />
+                    Guardando logo…
+                  </div>
+                ) : (
+                  <img
+                    src={logoPreview}
+                    alt="Logo de la empresa evaluadora"
+                    className="max-h-24 max-w-xs object-contain"
+                  />
+                )}
+              </div>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => logoInputRef.current?.click()}
+                  className="flex items-center gap-1.5 px-4 py-1.5 text-sm text-blue-600 border border-blue-300 rounded-lg hover:bg-blue-50 transition-colors"
+                >
+                  <ArrowUpTrayIcon className="h-4 w-4" />
+                  Reemplazar
+                </button>
+                <button
+                  onClick={handleDeleteLogo}
+                  className="flex items-center gap-1.5 px-4 py-1.5 text-sm text-red-600 border border-red-200 rounded-lg hover:bg-red-50 transition-colors"
+                >
+                  <TrashIcon className="h-4 w-4" />
+                  Eliminar
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button
+              onClick={() => logoInputRef.current?.click()}
+              className="flex flex-col items-center justify-center w-full border-2 border-dashed border-gray-300 rounded-xl py-8 gap-2 text-gray-400 hover:border-blue-400 hover:text-blue-500 transition-colors cursor-pointer"
+            >
+              <ArrowUpTrayIcon className="h-8 w-8" />
+              <span className="text-sm font-medium">Subir logo</span>
+              <span className="text-xs">PNG, JPG — máximo 500 KB</span>
+            </button>
+          )}
+
+          <input
+            ref={logoInputRef}
+            type="file"
+            accept="image/png,image/jpeg,image/jpg"
+            className="hidden"
+            onChange={handleLogoFile}
+          />
         </div>
 
         {/* Firma digital */}

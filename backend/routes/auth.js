@@ -159,7 +159,7 @@ router.post('/login', async (req, res) => {
 router.get('/profile', auth, async (req, res) => {
   try {
     const user = await db('users')
-      .select('id', 'email', 'role', 'full_name', 'professional_title', 'license_number', 'signature_image')
+      .select('id', 'email', 'role', 'full_name', 'professional_title', 'license_number', 'signature_image', 'logo_image')
       .where('id', req.user.userId)
       .first();
 
@@ -180,6 +180,7 @@ router.get('/profile', auth, async (req, res) => {
       professional_title: user.professional_title,
       license_number: user.license_number,
       signature_image: user.signature_image,
+      logo_image: user.logo_image,
       companies
     });
 
@@ -236,6 +237,48 @@ router.post('/profile/signature', auth, async (req, res) => {
     res.json({ message: 'Firma guardada exitosamente' });
   } catch (error) {
     console.error('Upload signature error:', error);
+    res.status(500).json({ error: 'Error interno del servidor' });
+  }
+});
+
+// Logo de la empresa evaluadora (base64). Mismo contrato que la firma: data
+// URL en TEXT y tope de ~500KB, porque el disco de App Platform es efimero y
+// un archivo subido no sobreviviria al siguiente deploy.
+router.post('/profile/logo', auth, async (req, res) => {
+  try {
+    const { logo_image } = req.body;
+
+    if (!logo_image) {
+      return res.status(400).json({ error: 'No se recibió imagen' });
+    }
+    if (!logo_image.startsWith('data:image/')) {
+      return res.status(400).json({ error: 'Formato de imagen inválido' });
+    }
+    if (logo_image.length > 700000) {
+      return res.status(400).json({ error: 'La imagen es demasiado grande. Máximo 500KB.' });
+    }
+
+    await db('users')
+      .where('id', req.user.userId)
+      .update({ logo_image, updated_at: db.fn.now() });
+
+    res.json({ message: 'Logo guardado exitosamente' });
+  } catch (error) {
+    console.error('Upload logo error:', error);
+    res.status(500).json({ error: 'Error interno del servidor' });
+  }
+});
+
+// Delete logo
+router.delete('/profile/logo', auth, async (req, res) => {
+  try {
+    await db('users')
+      .where('id', req.user.userId)
+      .update({ logo_image: null, updated_at: db.fn.now() });
+
+    res.json({ message: 'Logo eliminado' });
+  } catch (error) {
+    console.error('Delete logo error:', error);
     res.status(500).json({ error: 'Error interno del servidor' });
   }
 });
