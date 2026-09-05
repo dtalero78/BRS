@@ -74,7 +74,7 @@ export default function Results() {
   const fetchEvaluations = async () => {
     try {
       const token = localStorage.getItem('token');
-      const response = await fetch(`${API_URL}/api/evaluations`, {
+      const response = await fetch(`${API_URL}/api/evaluations?limit=500`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }

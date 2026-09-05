@@ -45,7 +45,11 @@ export default function ReportsPage() {
       const token = localStorage.getItem('token');
       const apiUrl = API_URL;
 
-      const evaluationsResponse = await fetch(`${apiUrl}/api/evaluations`, {
+      // Sin `limit` el backend devuelve solo 10 (su default), asi que esta
+      // pantalla no paginada dejaba fuera las evaluaciones mas antiguas: los
+      // contadores marcaban 10/10/10 y los participantes de las evaluaciones
+      // ocultas no aparecian en el selector del informe individual.
+      const evaluationsResponse = await fetch(`${apiUrl}/api/evaluations?limit=500`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
 
@@ -58,26 +62,35 @@ export default function ReportsPage() {
         let totalParticipants = 0;
         let completedParticipants = 0;
 
-        for (const evaluation of evaluationsArray) {
+        // Una peticion por evaluacion, en lotes paralelos. En serie eran tantas
+        // esperas encadenadas como evaluaciones tuviera el evaluador, y al subir
+        // el tope a 500 eso volveria la pantalla inusable.
+        const LOTE = 8;
+        const pedirParticipantes = async (evaluation: Evaluation) => {
           try {
             const participantsResponse = await fetch(`${apiUrl}/api/participants/evaluation/${evaluation.id}?limit=1000`, {
               headers: { 'Authorization': `Bearer ${token}` }
             });
+            if (!participantsResponse.ok) return [];
+            const participantsData = await participantsResponse.json();
+            const participantsArray = Array.isArray(participantsData) ? participantsData : participantsData.participants || [];
 
-            if (participantsResponse.ok) {
-              const participantsData = await participantsResponse.json();
-              const participantsArray = Array.isArray(participantsData) ? participantsData : participantsData.participants || [];
-
-              // Etiquetamos cada participante con su evaluación para poder
-              // filtrarlos después (el endpoint no devuelve el evaluation_id).
-              allParticipantsData.push(
-                ...participantsArray.map((p: Participant) => ({ ...p, evaluationId: evaluation.id }))
-              );
-              totalParticipants += participantsArray.length;
-              completedParticipants += participantsArray.filter((p: Participant) => p.status === 'completed').length;
-            }
+            // Etiquetamos cada participante con su evaluación para poder
+            // filtrarlos después (el endpoint no devuelve el evaluation_id).
+            return participantsArray.map((p: Participant) => ({ ...p, evaluationId: evaluation.id }));
           } catch (error) {
             console.error(`Error fetching participants for evaluation ${evaluation.id}:`, error);
+            return [];
+          }
+        };
+
+        for (let i = 0; i < evaluationsArray.length; i += LOTE) {
+          const lote = evaluationsArray.slice(i, i + LOTE);
+          const resultados = await Promise.all(lote.map(pedirParticipantes));
+          for (const grupo of resultados) {
+            allParticipantsData.push(...grupo);
+            totalParticipants += grupo.length;
+            completedParticipants += grupo.filter((p: Participant) => p.status === 'completed').length;
           }
         }
 

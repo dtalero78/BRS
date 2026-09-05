@@ -181,7 +181,7 @@ export default function OrganizationalDashboard() {
       const token = localStorage.getItem('token');
       
       // Fetch evaluations
-      const evaluationsResponse = await axios.get(`${API_URL}/api/evaluations`, {
+      const evaluationsResponse = await axios.get(`${API_URL}/api/evaluations?limit=500`, {
         headers: { Authorization: `Bearer ${token}` }
       });
 

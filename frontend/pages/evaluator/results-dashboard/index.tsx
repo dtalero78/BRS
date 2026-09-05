@@ -58,7 +58,7 @@ export default function ResultsDashboard() {
   const fetchEvaluations = async () => {
     try {
       const token = localStorage.getItem('token');
-      const response = await axios.get(`${API_URL}/api/evaluations`, {
+      const response = await axios.get(`${API_URL}/api/evaluations?limit=500`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       
