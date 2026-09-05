@@ -43,6 +43,11 @@ interface AdminEvaluation {
   paid: boolean;
   paidAt: string | null;
   paidByEmail: string | null;
+  /** Pruebas de esta evaluación pagadas por la pasarela (independiente de `paid`). */
+  wompiPaidCount: number;
+  wompiFirstPaidAt: string | null;
+  wompiLastPaidAt: string | null;
+  wompiAmountCop: number;
   createdAt: string;
   companyId: number;
   companyName: string;
@@ -127,8 +132,12 @@ export default function AdminClients() {
   };
 
   const filteredEvaluations = evaluations.filter(e => {
-    if (filter === 'paid') return e.paid;
-    if (filter === 'unpaid') return !e.paid;
+    // Una evaluación está cobrada si el admin la liberó a mano O si el cliente
+    // pagó pruebas por Wompi. Mirando solo `paid`, las pagadas por la pasarela
+    // caían en "pendientes de pago".
+    const cobrada = e.paid || e.wompiPaidCount > 0;
+    if (filter === 'paid') return cobrada;
+    if (filter === 'unpaid') return !cobrada;
     return true;
   });
 
@@ -252,7 +261,8 @@ export default function AdminClients() {
                       <th className="px-4 py-2 text-left font-medium text-gray-600">Evaluador</th>
                       <th className="px-4 py-2 text-right font-medium text-gray-600">Participantes</th>
                       <th className="px-4 py-2 text-left font-medium text-gray-600">Estado</th>
-                      <th className="px-4 py-2 text-center font-medium text-gray-600">Pagada</th>
+                      <th className="px-4 py-2 text-left font-medium text-gray-600">Pago</th>
+                      <th className="px-4 py-2 text-center font-medium text-gray-600">Liberada a mano</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
@@ -276,6 +286,9 @@ export default function AdminClients() {
                             {ev.status}
                           </span>
                         </td>
+                        <td className="px-4 py-2">
+                          <PaymentCell ev={ev} />
+                        </td>
                         <td className="px-4 py-2 text-center">
                           <button
                             onClick={() => togglePayment(ev.id, !ev.paid)}
@@ -296,7 +309,7 @@ export default function AdminClients() {
                     ))}
                     {filteredEvaluations.length === 0 && (
                       <tr>
-                        <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
+                        <td colSpan={7} className="px-4 py-8 text-center text-gray-500">
                           No hay evaluaciones en este filtro
                         </td>
                       </tr>
@@ -323,6 +336,57 @@ function StatCard({ icon: Icon, label, value, sub }: { icon: any; label: string;
           {sub && <p className="text-xs text-gray-500 mt-1">{sub}</p>}
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Cuándo y por qué vía se cobró una evaluación.
+ *
+ * Hay dos caminos, y pueden coexistir: el interruptor manual del admin
+ * (cortesías, convenios, transferencias por fuera de la plataforma) y el pago
+ * por prueba con Wompi. Se muestran los dos porque responden preguntas
+ * distintas: el manual dice "alguien decidió liberarla", el de Wompi dice
+ * "entró plata, esta cantidad, este día".
+ */
+function PaymentCell({ ev }: { ev: AdminEvaluation }) {
+  const fecha = (s: string | null) =>
+    s ? new Date(s).toLocaleDateString('es-CO', { year: 'numeric', month: 'short', day: 'numeric' }) : '—';
+  const cop = (n: number) =>
+    new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(n || 0);
+
+  const conWompi = ev.wompiPaidCount > 0;
+  if (!ev.paid && !conWompi) {
+    return <span className="text-gray-400">Sin pago</span>;
+  }
+
+  // Las pruebas de una orden se marcan todas a la vez, pero una evaluación
+  // puede haberse pagado en varias tandas: ahí el rango dice más que una fecha.
+  const mismoDia = fecha(ev.wompiFirstPaidAt) === fecha(ev.wompiLastPaidAt);
+
+  return (
+    <div className="space-y-0.5 text-xs">
+      {conWompi && (
+        <div>
+          <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 font-medium">
+            Wompi
+          </span>{' '}
+          <span className="text-gray-900 font-medium">
+            {mismoDia ? fecha(ev.wompiLastPaidAt) : `${fecha(ev.wompiFirstPaidAt)} → ${fecha(ev.wompiLastPaidAt)}`}
+          </span>
+          <div className="text-gray-600">
+            {ev.wompiPaidCount}/{ev.totalParticipants} prueba(s) · {cop(ev.wompiAmountCop)}
+          </div>
+        </div>
+      )}
+      {ev.paid && (
+        <div title={ev.paidByEmail ? `Liberada por ${ev.paidByEmail}` : undefined}>
+          <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-gray-200 text-gray-700 font-medium">
+            Manual
+          </span>{' '}
+          <span className="text-gray-900">{fecha(ev.paidAt)}</span>
+        </div>
+      )}
     </div>
   );
 }

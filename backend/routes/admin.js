@@ -93,7 +93,20 @@ router.get('/evaluations', async (req, res) => {
         'u.email as evaluator_email',
         'pb.email as paid_by_email',
         db.raw('(SELECT COUNT(*) FROM participant_evaluations pe WHERE pe.evaluation_id = e.id) as total_participants'),
-        db.raw("(SELECT COUNT(*) FROM participant_evaluations pe WHERE pe.evaluation_id = e.id AND pe.completed_at IS NOT NULL) as completed_participants")
+        db.raw("(SELECT COUNT(*) FROM participant_evaluations pe WHERE pe.evaluation_id = e.id AND pe.completed_at IS NOT NULL) as completed_participants"),
+        // Pagos por prueba (Wompi). Son independientes del interruptor manual
+        // `e.paid`: una evaluacion que el cliente pago por la pasarela tiene
+        // `paid = false` y sus pruebas con `paid_at`. Sin estas columnas el
+        // panel muestra como pendiente algo que ya se cobro.
+        db.raw('(SELECT COUNT(*) FROM participant_evaluations pe WHERE pe.evaluation_id = e.id AND pe.paid_at IS NOT NULL) as wompi_paid_count'),
+        db.raw('(SELECT MIN(pe.paid_at) FROM participant_evaluations pe WHERE pe.evaluation_id = e.id AND pe.paid_at IS NOT NULL) as wompi_first_paid_at'),
+        db.raw('(SELECT MAX(pe.paid_at) FROM participant_evaluations pe WHERE pe.evaluation_id = e.id AND pe.paid_at IS NOT NULL) as wompi_last_paid_at'),
+        // Lo efectivamente cobrado por esas pruebas, al precio que tenia la
+        // orden (no al precio de hoy): la tarifa puede cambiar despues.
+        db.raw(`(SELECT COALESCE(SUM(pay.unit_price_in_cents), 0)
+                   FROM participant_evaluations pe
+                   JOIN payments pay ON pay.id = pe.payment_id
+                  WHERE pe.evaluation_id = e.id AND pe.paid_at IS NOT NULL) as wompi_amount_cents`)
       )
       .orderBy('e.created_at', 'desc');
 
@@ -105,6 +118,10 @@ router.get('/evaluations', async (req, res) => {
         paid: !!r.paid,
         paidAt: r.paid_at,
         paidByEmail: r.paid_by_email,
+        wompiPaidCount: parseInt(r.wompi_paid_count) || 0,
+        wompiFirstPaidAt: r.wompi_first_paid_at,
+        wompiLastPaidAt: r.wompi_last_paid_at,
+        wompiAmountCop: Math.round((parseInt(r.wompi_amount_cents) || 0) / 100),
         createdAt: r.created_at,
         companyId: r.company_id,
         companyName: r.company_name,
