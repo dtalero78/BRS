@@ -8,6 +8,8 @@ const db = require('../config/database');
 const calculateResults = require('../utils/calculate-results');
 const { extractAnswersFromSheet, extractAllQuestionnairesFromSheet, QUESTIONNAIRE_META, FICHA_FIELDS, FICHA_FIELD_NAMES } = require('../utils/answer-sheet-ocr');
 const { fusionarFicha } = require('../utils/ficha-merge');
+const { resolveFicha } = require('../utils/report-data-aggregator');
+const { toResponseMap } = require('../utils/response-format');
 
 const VALID_TYPES = Object.keys(QUESTIONNAIRE_META);
 const VALID_TYPES_WITH_FICHA = [...VALID_TYPES, 'ficha_datos'];
@@ -282,6 +284,70 @@ router.post(
 const fichaFieldsJoi = Joi.object(Object.fromEntries(
   FICHA_FIELD_NAMES.map(n => [n, Joi.string().allow('')])
 )).unknown(false);
+
+/**
+ * Lo que YA está guardado para (evaluación, participante), para que el modal de
+ * ingreso manual abra con las respuestas existentes en vez de en blanco.
+ *
+ * Abrirlo vacío hacía que el psicólogo leyera "no quedó grabado" cuando en
+ * realidad sí estaba: la pantalla era la única evidencia que tenía a la mano.
+ */
+router.get(
+  '/:evaluationId/existing/:participantId',
+  auth,
+  authorize('admin', 'evaluator'),
+  async (req, res) => {
+    try {
+      const { evaluationId, participantId } = req.params;
+      const evaluation = await loadEvaluationForUser(evaluationId, req.user.userId, req.user.role);
+      if (!evaluation) return res.status(404).json({ error: 'Evaluación no encontrada' });
+
+      const participant = await db('participants')
+        .where('id', participantId)
+        .where('company_id', evaluation.company_id)
+        .first();
+      if (!participant) return res.status(404).json({ error: 'Participante no encontrado en esta empresa.' });
+
+      const pe = await db('participant_evaluations')
+        .where('evaluation_id', evaluation.id)
+        .where('participant_id', participant.id)
+        .first();
+      if (!pe) return res.json({ responses: {}, fichaDatos: null });
+
+      const filas = await db('responses')
+        .where('participant_evaluation_id', pe.id)
+        .select('questionnaire_type', 'responses');
+
+      const porTipo = {};
+      let fichaDatos = null;
+
+      for (const fila of filas) {
+        const mapa = toResponseMap(fila.responses);
+        if (fila.questionnaire_type === 'ficha_datos') {
+          // La ficha se guarda por número de campo, pero en DOS numeraciones
+          // distintas (`official` 19 campos / `photo` 18 — ver FICHA_FIELD_MAP).
+          // Mapear por posición dejaba en blanco, o peor, cruzada, toda ficha
+          // guardada en la otra numeración: en `official` la 5 es la ocupación
+          // y en `photo` es el estado civil. `resolveFicha` la traduce a nombres
+          // de campo, que es como la edita el modal.
+          const porNombre = resolveFicha(fila.responses);
+          fichaDatos = {};
+          for (const f of FICHA_FIELDS) {
+            const v = porNombre[f.name];
+            fichaDatos[f.name] = v === undefined || v === null ? '' : String(v);
+          }
+        } else {
+          porTipo[fila.questionnaire_type] = mapa;
+        }
+      }
+
+      return res.json({ responses: porTipo, fichaDatos });
+    } catch (error) {
+      console.error('Photo existing error:', error);
+      return res.status(500).json({ error: 'Error interno del servidor' });
+    }
+  }
+);
 
 const commitSchema = Joi.alternatives().try(
   Joi.object({

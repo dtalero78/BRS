@@ -76,6 +76,13 @@ export default function ManualEntryModal({
   });
   const [committing, setCommitting] = useState(false);
   const [result, setResult] = useState<any>(null);
+  // Lo que ya esta guardado en la base para este participante, por cuestionario.
+  // null = todavia no se ha consultado.
+  const [existing, setExisting] = useState<{
+    responses: Record<string, Record<string, number>>;
+    fichaDatos: FichaValues | null;
+  } | null>(null);
+  const [loadingExisting, setLoadingExisting] = useState(false);
 
   const isFicha = questionnaireType === 'ficha_datos';
 
@@ -83,16 +90,55 @@ export default function ManualEntryModal({
     if (!open) return;
     setStep('entry');
     setQuestionnaireType(defaultQuestionnaireType);
-    setEdits({});
-    setFichaEdits(emptyFicha());
     setEditedInfo({ documentNumber: '', firstName: '', lastName: '' });
     setResult(null);
-  }, [open, defaultQuestionnaireType]);
+    setExisting(null);
 
+    // Abrir en blanco hacia que el evaluador leyera "no quedo grabado" aunque
+    // las respuestas SI estuvieran en la base: esta pantalla es la unica
+    // evidencia que tiene a la mano. Se precarga lo ya guardado.
+    if (!participantId || !evaluationId) {
+      setExisting({ responses: {}, fichaDatos: null });
+      return;
+    }
+    let cancelado = false;
+    setLoadingExisting(true);
+    (async () => {
+      try {
+        const token = localStorage.getItem('token');
+        const r = await fetch(`/api/photo-import/${evaluationId}/existing/${participantId}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = r.ok ? await r.json() : { responses: {}, fichaDatos: null };
+        if (!cancelado) setExisting({ responses: data.responses || {}, fichaDatos: data.fichaDatos || null });
+      } catch (err) {
+        // Sin lo previo se sigue pudiendo digitar: se abre en blanco, como antes.
+        if (!cancelado) setExisting({ responses: {}, fichaDatos: null });
+      } finally {
+        if (!cancelado) setLoadingExisting(false);
+      }
+    })();
+    return () => { cancelado = true; };
+  }, [open, defaultQuestionnaireType, evaluationId, participantId]);
+
+  // Siembra el formulario cada vez que cambia el cuestionario elegido (y cuando
+  // por fin llega lo ya guardado).
   useEffect(() => {
-    setEdits({});
+    if (!existing) return;
+    if (questionnaireType === 'ficha_datos') {
+      setEdits({});
+      setFichaEdits(existing.fichaDatos ? { ...emptyFicha(), ...existing.fichaDatos } : emptyFicha());
+      return;
+    }
+    const previas = existing.responses[questionnaireType] || {};
+    const siembra: Record<number, number> = {};
+    for (const [qn, valor] of Object.entries(previas)) {
+      const n = Number(valor);
+      if (Number.isFinite(n)) siembra[Number(qn)] = n;
+    }
+    setEdits(siembra);
     setFichaEdits(emptyFicha());
-  }, [questionnaireType]);
+  }, [questionnaireType, existing]);
 
   const expectedCount = isFicha ? 18 : QUESTIONNAIRE_COUNTS[questionnaireType as QuestionnaireType];
   const scale = !isFicha ? QUESTIONNAIRE_SCALES[questionnaireType as QuestionnaireType] : 'intra';
@@ -266,13 +312,25 @@ export default function ManualEntryModal({
               <div className="bg-amber-50 border border-amber-200 rounded-md p-2 text-xs text-amber-900 flex items-start gap-2">
                 <ExclamationTriangleIcon className="h-4 w-4 flex-shrink-0 mt-0.5" />
                 <span>
-                  Si el participante ya tiene respuestas para este cuestionario, se reemplazarán al guardar.
+                  {isFicha
+                    ? (savedCount > 0 && !loadingExisting
+                        ? 'Esta ficha ya tiene datos guardados y se cargaron abajo. Al guardar se actualiza lo que cambies; los campos que dejes en blanco conservan su valor.'
+                        : 'Al guardar se completa la ficha del participante: los campos que dejes en blanco conservan el valor que ya tuvieran.')
+                    : (savedCount > 0 && !loadingExisting
+                        ? 'Este cuestionario ya tiene respuestas guardadas y se cargaron abajo. Lo que dejes aquí las reemplaza al guardar.'
+                        : 'Si el participante ya tiene respuestas para este cuestionario, se reemplazarán al guardar.')}
                 </span>
               </div>
             </div>
 
             <div className="flex-1 overflow-auto">
-              {isFicha ? (
+              {/* Mientras llega lo ya guardado no se muestra el formulario: si el
+                  evaluador alcanzara a digitar, la siembra le borraria lo tecleado. */}
+              {loadingExisting ? (
+                <div className="p-8 text-center text-sm text-gray-500">
+                  Cargando las respuestas ya guardadas…
+                </div>
+              ) : isFicha ? (
                 <FichaDatosForm
                   values={fichaEdits}
                   onChange={(name, value) => setFichaEdits((prev) => ({ ...prev, [name]: value }))}
@@ -330,7 +388,7 @@ export default function ManualEntryModal({
               </button>
               <button
                 onClick={handleCommit}
-                disabled={committing || savedCount === 0}
+                disabled={committing || loadingExisting || savedCount === 0}
                 className="px-4 py-2 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
               >
                 {committing ? 'Guardando…' : `Guardar (${savedCount})`}

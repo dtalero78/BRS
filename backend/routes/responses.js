@@ -4,6 +4,7 @@ const Joi = require('joi');
 const { auth, getOwnedCompanyIds } = require('../middleware/auth');
 const db = require('../config/database');
 const { isQuestionnaireComplete } = require('../utils/questionnaire-totals');
+const { toResponseList } = require('../utils/response-format');
 
 // Validation schema for saving responses.
 // participants.id es serial integer (no UUID); exigir UUID hacia que TODO
@@ -182,23 +183,18 @@ router.get('/participant/:participantId', auth, async (req, res) => {
     let totalResponses = 0;
 
     responses.forEach(response => {
-      try {
-        const responseData = typeof response.responses === 'string' 
-          ? JSON.parse(response.responses)
-          : (response.responses || {});
-        
-        const questionResponses = Object.entries(responseData).map(([questionNumber, responseValue]) => ({
-          questionNumber: parseInt(questionNumber),
-          responseValue: responseValue,
-          createdAt: response.created_at
-        }));
+      // El problema espejo del lector del participante: aqui se asumia el mapa
+      // `{"1": 4}` y con el arreglo que guarda la pantalla del participante
+      // `Object.entries` devolvia el indice como numero de pregunta y el objeto
+      // entero como respuesta. `toResponseList` entiende las dos formas.
+      const questionResponses = toResponseList(response.responses).map(r => ({
+        questionNumber: r.questionNumber,
+        responseValue: r.responseValue,
+        createdAt: response.created_at
+      }));
 
-        groupedResponses[response.questionnaire_type] = questionResponses;
-        totalResponses += questionResponses.length;
-      } catch (e) {
-        console.error('Error parsing response JSON:', e);
-        groupedResponses[response.questionnaire_type] = [];
-      }
+      groupedResponses[response.questionnaire_type] = questionResponses;
+      totalResponses += questionResponses.length;
     });
 
     res.json({

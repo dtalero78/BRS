@@ -6,6 +6,7 @@ const db = require('../config/database');
 const calculateResults = require('../utils/calculate-results');
 const { calculateCopingResults } = require('../utils/calculate-coping');
 const { isQuestionnaireComplete } = require('../utils/questionnaire-totals');
+const { toResponseList } = require('../utils/response-format');
 const { notifyEvaluationCompleted } = require('../services/webhook-emitter');
 const {
   isFaceVerificationEnabled,
@@ -1191,20 +1192,14 @@ router.get('/:token/responses', async (req, res) => {
       .orderBy('questionnaire_type')
       .select('*');
 
-    // Parse JSON responses and group by questionnaire type
+    // Agrupar por cuestionario. `toResponseList` entiende las dos formas en que
+    // se guardan las respuestas (mapa del ingreso manual/Excel y arreglo de esta
+    // misma pantalla). Antes esto asumia arreglo y ademas hacia JSON.parse sobre
+    // un valor que `pg` ya habia parseado, asi que devolvia SIEMPRE una lista
+    // vacia: el participante veia el cuestionario en blanco y su primer
+    // autoguardado borraba lo que el psicologo habia digitado a mano.
     const groupedResponses = responses.reduce((acc, response) => {
-      try {
-        const parsedResponses = JSON.parse(response.responses);
-        acc[response.questionnaire_type] = parsedResponses.map(r => ({
-          questionNumber: r.questionNumber,
-          responseValue: r.responseValue,
-          dimension: r.dimension,
-          domain: r.domain
-        }));
-      } catch (e) {
-        console.error('Error parsing responses:', e);
-        acc[response.questionnaire_type] = [];
-      }
+      acc[response.questionnaire_type] = toResponseList(response.responses);
       return acc;
     }, {});
 
