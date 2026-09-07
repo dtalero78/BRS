@@ -23,9 +23,16 @@ router.post('/calculate/:participantId', auth, async (req, res) => {
       return res.status(404).json({ error: 'Participante no encontrado' });
     }
 
-    // Get all responses for the participant
+    // Get all responses for the participant.
+    // Solo cuestionarios TERMINADOS: un borrador abandonado no debe puntuarse.
+    // Al cambiarle la forma a un participante que ya habia empezado, su Forma A
+    // a medias quedaba en la tabla y se calculaba igual, produciendo resultados
+    // con el mapa de items y los baremos del instrumento equivocado; el informe
+    // contaba a esa persona en las dos formas (Esfera Color: n=14 en Forma A
+    // cuando eran 11) y sus puntajes espurios entraban en los porcentajes.
     const responses = await db('responses')
       .where('participant_evaluation_id', participant.pe_id)
+      .whereNotNull('completed_at')
       .select('*');
 
     if (responses.length === 0) {

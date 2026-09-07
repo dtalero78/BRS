@@ -531,7 +531,12 @@ router.post('/:token/face', faceLimiter, async (req, res) => {
 
 async function autoCalculateResults(peId) {
   try {
-    const responses = await db('responses').where('participant_evaluation_id', peId).select('*');
+    // Solo cuestionarios TERMINADOS (ver el mismo filtro en routes/results.js):
+    // un borrador sin completar no debe producir puntajes.
+    const responses = await db('responses')
+      .where('participant_evaluation_id', peId)
+      .whereNotNull('completed_at')
+      .select('*');
     const toProcess = responses.filter(r => r.questionnaire_type !== 'ficha_datos');
     if (toProcess.length === 0) return;
 
