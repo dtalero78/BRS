@@ -753,6 +753,7 @@ module.exports = {
   aggregateResultsByCargo,
   buildDemandasPorCargo,
   resolveFicha,
+  FICHA_FIELD_MAP,
   normalizeTipoCargo,
   newRiskCounts,
   newCopingCounts,

@@ -7,6 +7,7 @@ const { auth, authorize, getOwnedCompanyIds } = require('../middleware/auth');
 const db = require('../config/database');
 const calculateResults = require('../utils/calculate-results');
 const { extractAnswersFromSheet, extractAllQuestionnairesFromSheet, QUESTIONNAIRE_META, FICHA_FIELDS, FICHA_FIELD_NAMES } = require('../utils/answer-sheet-ocr');
+const { fusionarFicha } = require('../utils/ficha-merge');
 
 const VALID_TYPES = Object.keys(QUESTIONNAIRE_META);
 const VALID_TYPES_WITH_FICHA = [...VALID_TYPES, 'ficha_datos'];
@@ -402,7 +403,12 @@ router.post(
         }
 
         if (isFicha) {
-          const responseMap = transformFichaToResponseMap(fichaDatos);
+          const fichaGuardada = await trx('responses')
+            .where('participant_evaluation_id', pe.id)
+            .where('questionnaire_type', 'ficha_datos')
+            .first();
+          const responseMap = fusionarFicha(
+            fichaGuardada && fichaGuardada.responses, transformFichaToResponseMap(fichaDatos));
 
           await trx('responses')
             .where('participant_evaluation_id', pe.id)
@@ -628,7 +634,12 @@ router.post(
             .where('id', participant.id)
             .update({ demographic_data: JSON.stringify(demo) });
 
-          const fichaMap = transformFichaToResponseMap(fichaDatos);
+          const fichaPrevia = await trx('responses')
+            .where('participant_evaluation_id', pe.id)
+            .where('questionnaire_type', 'ficha_datos')
+            .first();
+          const fichaMap = fusionarFicha(
+            fichaPrevia && fichaPrevia.responses, transformFichaToResponseMap(fichaDatos));
           await trx('responses')
             .where('participant_evaluation_id', pe.id)
             .where('questionnaire_type', 'ficha_datos')
