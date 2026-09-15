@@ -270,12 +270,18 @@ function MarketingHome() {
 
         {/* Left: Headline + CTAs */}
         <div className="flex-1 max-w-xl">
-          {/* Eyebrow badge */}
-          <div className="inline-flex items-center gap-2 bg-white border border-gray-200 rounded-full px-4 py-1.5 mb-8 shadow-sm">
-            <span className="w-2 h-2 rounded-full bg-green-500 flex-shrink-0"></span>
-            <span className="text-xs text-gray-600 font-medium">
-              Basado en Resolución 2646 de 2008 — Min. Protección Social
-            </span>
+          {/* Eyebrow badges: marco normativo */}
+          <div className="flex flex-col items-start gap-2 mb-8">
+            {[
+              'Basado en Resolución 2646 de 2008 — Min. Protección Social',
+              'Ley 2460 de 2025 — Normatividad en Salud Mental',
+              'Decreto 0728 de 2025 — Salud mental en los entornos laborales',
+            ].map((norma) => (
+              <div key={norma} className="inline-flex items-center gap-2 bg-white border border-gray-200 rounded-full px-4 py-1.5 shadow-sm">
+                <span className="w-2 h-2 rounded-full bg-green-500 flex-shrink-0"></span>
+                <span className="text-xs text-gray-600 font-medium">{norma}</span>
+              </div>
+            ))}
           </div>
 
           <h1 className="text-5xl lg:text-6xl xl:text-7xl font-bold text-gray-900 leading-[1.05] tracking-tight mb-6">
