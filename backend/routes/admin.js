@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../config/database');
+const wompi = require('../services/wompi');
 const { auth, requireSuperAdmin } = require('../middleware/auth');
 
 router.use(auth, requireSuperAdmin);
@@ -106,11 +107,28 @@ router.get('/evaluations', async (req, res) => {
         db.raw(`(SELECT COALESCE(SUM(pay.unit_price_in_cents), 0)
                    FROM participant_evaluations pe
                    JOIN payments pay ON pay.id = pe.payment_id
-                  WHERE pe.evaluation_id = e.id AND pe.paid_at IS NOT NULL) as wompi_amount_cents`)
+                  WHERE pe.evaluation_id = e.id AND pe.paid_at IS NOT NULL) as wompi_amount_cents`),
+        // Pruebas que cubre el interruptor manual. Se cuentan las que tienen
+        // resultados —mismo criterio con el que el informe organizacional
+        // decide que hay que pagar— y se excluyen las que ya pagó Wompi, que
+        // si no quedarian contadas dos veces en una evaluacion con las dos vias.
+        db.raw(`(SELECT COUNT(*)
+                   FROM participant_evaluations pe
+                  WHERE pe.evaluation_id = e.id
+                    AND e.paid = true
+                    AND pe.paid_at IS NULL
+                    AND EXISTS (SELECT 1 FROM results r WHERE r.participant_evaluation_id = pe.id)) as manual_paid_count`)
       )
       .orderBy('e.created_at', 'desc');
 
+    // Precio con el que la UI valoriza las pruebas liberadas a mano: esas no
+    // pasaron por la pasarela, asi que no tienen un monto propio que sumar.
+    // Se toma de la configuracion y no de un numero fijo, para que el panel no
+    // siga valorizando a la tarifa vieja cuando el precio cambie.
+    const { unitPriceCop } = await wompi.getPricing();
+
     res.json({
+      unitPriceCop,
       evaluations: rows.map(r => ({
         id: r.id,
         name: r.name,
@@ -122,6 +140,7 @@ router.get('/evaluations', async (req, res) => {
         wompiFirstPaidAt: r.wompi_first_paid_at,
         wompiLastPaidAt: r.wompi_last_paid_at,
         wompiAmountCop: Math.round((parseInt(r.wompi_amount_cents) || 0) / 100),
+        manualPaidCount: parseInt(r.manual_paid_count) || 0,
         createdAt: r.created_at,
         companyId: r.company_id,
         companyName: r.company_name,

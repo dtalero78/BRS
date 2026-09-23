@@ -48,6 +48,8 @@ interface AdminEvaluation {
   wompiFirstPaidAt: string | null;
   wompiLastPaidAt: string | null;
   wompiAmountCop: number;
+  /** Pruebas con resultados que cubre el interruptor manual (sin las de Wompi). */
+  manualPaidCount: number;
   createdAt: string;
   companyId: number;
   companyName: string;
@@ -82,6 +84,8 @@ export default function AdminClients() {
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [sortDir, setSortDir] = useState<'desc' | 'asc'>('desc');
+  /** Precio por prueba con el que se valorizan las liberadas a mano. */
+  const [unitPrice, setUnitPrice] = useState(0);
 
   useEffect(() => {
     const userData = localStorage.getItem('user');
@@ -111,6 +115,7 @@ export default function AdminClients() {
       setStats(s);
       setEvaluators(ev.evaluators || []);
       setEvaluations(ee.evaluations || []);
+      setUnitPrice(ee.unitPriceCop || 0);
     } catch (err) {
       console.error(err);
       toast.error('Error cargando datos de administración');
@@ -186,9 +191,14 @@ export default function AdminClients() {
       pruebasPagadas: acc.pruebasPagadas + e.wompiPaidCount,
       montoCop: acc.montoCop + e.wompiAmountCop,
       manuales: acc.manuales + (e.paid ? 1 : 0),
+      pruebasManuales: acc.pruebasManuales + e.manualPaidCount,
     }),
-    { evaluaciones: 0, cobradas: 0, pruebasPagadas: 0, montoCop: 0, manuales: 0 }
+    { evaluaciones: 0, cobradas: 0, pruebasPagadas: 0, montoCop: 0, manuales: 0, pruebasManuales: 0 }
   );
+  // Las liberadas a mano no pasaron por la pasarela: no hay un monto cobrado,
+  // se valorizan al precio de lista. Es valor equivalente, no plata que entro,
+  // y por eso va en su propia casilla en vez de sumarse al cobrado.
+  const montoManualCop = totales.pruebasManuales * unitPrice;
   const formatCop = (n: number) =>
     new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(n || 0);
 
@@ -332,24 +342,45 @@ export default function AdminClients() {
 
             {/* Totales de lo filtrado. Con un rango de fechas puesto, responde
                 "¿cuánto entró en este período?" sin sacar la cuenta a mano. */}
-            <div className="bg-white shadow rounded-lg px-4 py-3 flex flex-wrap items-center gap-x-8 gap-y-2 text-sm">
-              <div>
-                <span className="text-gray-500">Evaluaciones:</span>{' '}
-                <span className="font-semibold text-gray-900">{totales.evaluaciones}</span>
+            <div className="bg-white shadow rounded-lg px-4 py-3 text-sm">
+              <div className="flex flex-wrap items-center gap-x-8 gap-y-2">
+                <div>
+                  <span className="text-gray-500">Evaluaciones:</span>{' '}
+                  <span className="font-semibold text-gray-900">{totales.evaluaciones}</span>
+                </div>
+                <div>
+                  <span className="text-gray-500">Cobradas:</span>{' '}
+                  <span className="font-semibold text-gray-900">{totales.cobradas}</span>
+                  <span className="text-gray-400 text-xs"> ({totales.manuales} a mano)</span>
+                </div>
               </div>
-              <div>
-                <span className="text-gray-500">Cobradas:</span>{' '}
-                <span className="font-semibold text-gray-900">{totales.cobradas}</span>
-                <span className="text-gray-400 text-xs"> ({totales.manuales} a mano)</span>
+
+              <div className="mt-3 pt-3 border-t border-gray-100 grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div>
+                  <div className="text-xs uppercase tracking-wide text-gray-500">Cobrado por Wompi</div>
+                  <div className="text-lg font-bold text-emerald-700">{formatCop(totales.montoCop)}</div>
+                  <div className="text-xs text-gray-500">{totales.pruebasPagadas} prueba(s) · dinero recibido</div>
+                </div>
+                <div>
+                  <div className="text-xs uppercase tracking-wide text-gray-500">Liberado a mano</div>
+                  <div className="text-lg font-bold text-gray-700">{formatCop(montoManualCop)}</div>
+                  <div className="text-xs text-gray-500">
+                    {totales.pruebasManuales} prueba(s) × {formatCop(unitPrice)} · equivalente
+                  </div>
+                </div>
+                <div className="sm:text-right">
+                  <div className="text-xs uppercase tracking-wide text-gray-500">Total equivalente</div>
+                  <div className="text-xl font-bold text-gray-900">{formatCop(totales.montoCop + montoManualCop)}</div>
+                  <div className="text-xs text-gray-500">
+                    {totales.pruebasPagadas + totales.pruebasManuales} prueba(s) en total
+                  </div>
+                </div>
               </div>
-              <div>
-                <span className="text-gray-500">Pruebas pagadas:</span>{' '}
-                <span className="font-semibold text-gray-900">{totales.pruebasPagadas}</span>
-              </div>
-              <div className="ml-auto">
-                <span className="text-gray-500">Total cobrado por Wompi:</span>{' '}
-                <span className="font-bold text-emerald-700 text-base">{formatCop(totales.montoCop)}</span>
-              </div>
+
+              <p className="mt-2 text-xs text-gray-400">
+                Las liberadas a mano no pasaron por la pasarela: se valoran al precio de lista sobre las pruebas
+                con resultados, así que son valor equivalente y no dinero recibido.
+              </p>
             </div>
 
             <div className="bg-white shadow rounded-lg overflow-hidden">
@@ -495,6 +526,11 @@ function PaymentCell({ ev }: { ev: AdminEvaluation }) {
             Manual
           </span>{' '}
           <span className="text-gray-900">{fecha(ev.paidAt)}</span>
+          {ev.manualPaidCount > 0 && (
+            <div className="text-gray-600">
+              {ev.manualPaidCount} prueba(s) con resultados
+            </div>
+          )}
         </div>
       )}
     </div>
