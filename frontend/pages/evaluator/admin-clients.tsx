@@ -58,6 +58,18 @@ interface AdminEvaluation {
 
 type Tab = 'stats' | 'evaluators' | 'evaluations';
 
+/**
+ * Fecha de pago de una evaluación, para filtrar y ordenar.
+ *
+ * Hay dos vías y pueden coexistir; se toma la más reciente, que es la que
+ * responde "¿cuándo terminó de pagarse esto?". Null = nunca se cobró.
+ */
+function fechaPagoDe(e: AdminEvaluation): string | null {
+  const fechas = [e.wompiLastPaidAt, e.paid ? e.paidAt : null].filter(Boolean) as string[];
+  if (fechas.length === 0) return null;
+  return fechas.sort().at(-1) || null;
+}
+
 export default function AdminClients() {
   const router = useRouter();
   const [tab, setTab] = useState<Tab>('stats');
@@ -67,6 +79,9 @@ export default function AdminClients() {
   const [evaluations, setEvaluations] = useState<AdminEvaluation[]>([]);
   const [updatingId, setUpdatingId] = useState<number | null>(null);
   const [filter, setFilter] = useState<'all' | 'paid' | 'unpaid'>('all');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [sortDir, setSortDir] = useState<'desc' | 'asc'>('desc');
 
   useEffect(() => {
     const userData = localStorage.getItem('user');
@@ -136,10 +151,46 @@ export default function AdminClients() {
     // pagó pruebas por Wompi. Mirando solo `paid`, las pagadas por la pasarela
     // caían en "pendientes de pago".
     const cobrada = e.paid || e.wompiPaidCount > 0;
+
+    // El rango de fechas es sobre la fecha de PAGO, así que una evaluación sin
+    // pago no puede caer dentro de ningún rango: se excluye en cuanto se pone
+    // una fecha, aunque el filtro de estado sea "Todas".
+    if (dateFrom || dateTo) {
+      const f = fechaPagoDe(e);
+      if (!f) return false;
+      const dia = f.slice(0, 10);
+      if (dateFrom && dia < dateFrom) return false;
+      if (dateTo && dia > dateTo) return false;
+    }
+
     if (filter === 'paid') return cobrada;
     if (filter === 'unpaid') return !cobrada;
     return true;
+  }).sort((a, b) => {
+    // Las que nunca se cobraron van siempre al final: en una tabla ordenada
+    // por fecha de pago, una fila sin fecha no compite por posición.
+    const fa = fechaPagoDe(a);
+    const fb = fechaPagoDe(b);
+    if (!fa && !fb) return (b.createdAt || '').localeCompare(a.createdAt || '');
+    if (!fa) return 1;
+    if (!fb) return -1;
+    return sortDir === 'desc' ? fb.localeCompare(fa) : fa.localeCompare(fb);
   });
+
+  // Totales de lo que hay en pantalla, no de toda la base: si el usuario filtró
+  // por un mes, el total tiene que ser el de ese mes.
+  const totales = filteredEvaluations.reduce(
+    (acc, e) => ({
+      evaluaciones: acc.evaluaciones + 1,
+      cobradas: acc.cobradas + (e.paid || e.wompiPaidCount > 0 ? 1 : 0),
+      pruebasPagadas: acc.pruebasPagadas + e.wompiPaidCount,
+      montoCop: acc.montoCop + e.wompiAmountCop,
+      manuales: acc.manuales + (e.paid ? 1 : 0),
+    }),
+    { evaluaciones: 0, cobradas: 0, pruebasPagadas: 0, montoCop: 0, manuales: 0 }
+  );
+  const formatCop = (n: number) =>
+    new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(n || 0);
 
   if (loading) {
     return (
@@ -231,7 +282,7 @@ export default function AdminClients() {
 
         {tab === 'evaluations' && (
           <div className="space-y-3">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <span className="text-sm text-gray-600">Filtrar:</span>
               {(['all', 'unpaid', 'paid'] as const).map(f => (
                 <button
@@ -246,9 +297,59 @@ export default function AdminClients() {
                   {f === 'all' ? 'Todas' : f === 'paid' ? 'Pagadas' : 'Pendientes de pago'}
                 </button>
               ))}
+
+              <span className="mx-1 h-5 w-px bg-gray-300" aria-hidden="true" />
+
+              <label className="text-xs text-gray-600">Pagadas entre</label>
+              <input
+                type="date"
+                value={dateFrom}
+                onChange={e => setDateFrom(e.target.value)}
+                className="px-2 py-1 rounded-md border border-gray-300 text-xs"
+                aria-label="Fecha de pago desde"
+              />
+              <span className="text-xs text-gray-500">y</span>
+              <input
+                type="date"
+                value={dateTo}
+                onChange={e => setDateTo(e.target.value)}
+                className="px-2 py-1 rounded-md border border-gray-300 text-xs"
+                aria-label="Fecha de pago hasta"
+              />
+              {(dateFrom || dateTo) && (
+                <button
+                  onClick={() => { setDateFrom(''); setDateTo(''); }}
+                  className="px-2 py-1 rounded-md border border-gray-300 text-xs text-gray-700 hover:bg-gray-50"
+                >
+                  Limpiar fechas
+                </button>
+              )}
+
               <span className="text-xs text-gray-500 ml-2">
                 {filteredEvaluations.length} de {evaluations.length}
               </span>
+            </div>
+
+            {/* Totales de lo filtrado. Con un rango de fechas puesto, responde
+                "¿cuánto entró en este período?" sin sacar la cuenta a mano. */}
+            <div className="bg-white shadow rounded-lg px-4 py-3 flex flex-wrap items-center gap-x-8 gap-y-2 text-sm">
+              <div>
+                <span className="text-gray-500">Evaluaciones:</span>{' '}
+                <span className="font-semibold text-gray-900">{totales.evaluaciones}</span>
+              </div>
+              <div>
+                <span className="text-gray-500">Cobradas:</span>{' '}
+                <span className="font-semibold text-gray-900">{totales.cobradas}</span>
+                <span className="text-gray-400 text-xs"> ({totales.manuales} a mano)</span>
+              </div>
+              <div>
+                <span className="text-gray-500">Pruebas pagadas:</span>{' '}
+                <span className="font-semibold text-gray-900">{totales.pruebasPagadas}</span>
+              </div>
+              <div className="ml-auto">
+                <span className="text-gray-500">Total cobrado por Wompi:</span>{' '}
+                <span className="font-bold text-emerald-700 text-base">{formatCop(totales.montoCop)}</span>
+              </div>
             </div>
 
             <div className="bg-white shadow rounded-lg overflow-hidden">
@@ -261,7 +362,16 @@ export default function AdminClients() {
                       <th className="px-4 py-2 text-left font-medium text-gray-600">Evaluador</th>
                       <th className="px-4 py-2 text-right font-medium text-gray-600">Participantes</th>
                       <th className="px-4 py-2 text-left font-medium text-gray-600">Estado</th>
-                      <th className="px-4 py-2 text-left font-medium text-gray-600">Pago</th>
+                      <th className="px-4 py-2 text-left font-medium text-gray-600">
+                        <button
+                          onClick={() => setSortDir(d => (d === 'desc' ? 'asc' : 'desc'))}
+                          className="inline-flex items-center gap-1 hover:text-gray-900"
+                          title="Ordenar por fecha de pago"
+                        >
+                          Pago
+                          <span className="text-gray-400">{sortDir === 'desc' ? '↓' : '↑'}</span>
+                        </button>
+                      </th>
                       <th className="px-4 py-2 text-center font-medium text-gray-600">Liberada a mano</th>
                     </tr>
                   </thead>
