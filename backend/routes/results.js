@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
-const { auth, getOwnedCompanyIds } = require('../middleware/auth');
+const { auth, getOwnedCompanyIds, isSuperAdmin } = require('../middleware/auth');
+const { REQUIRE_PAID_EVALUATION } = require('../config/brand');
 const db = require('../config/database');
 const calculateResults = require('../utils/calculate-results');
 const { calculateCopingResults } = require('../utils/calculate-coping');
@@ -191,11 +192,56 @@ router.get('/participant/:participantId', auth, async (req, res) => {
       .leftJoin('evaluations', 'pe.evaluation_id', 'evaluations.id')
       .where('participants.id', participantId)
       .whereIn('participants.company_id', await getOwnedCompanyIds(req.user.userId))
-      .select('participants.*', 'evaluations.name as evaluation_name', 'pe.id as pe_id')
+      .select(
+        'participants.*',
+        'evaluations.name as evaluation_name',
+        'pe.id as pe_id',
+        'pe.paid_at as pe_paid_at',
+        'evaluations.paid as evaluation_paid'
+      )
       .first();
 
     if (!participant) {
       return res.status(404).json({ error: 'Participante no encontrado' });
+    }
+
+    // Parse demographic data (se necesita tambien para la respuesta bloqueada:
+    // la pantalla de pago muestra de quien son los resultados que no se ven).
+    let demographicData = {};
+    try {
+      demographicData = typeof participant.demographic_data === 'string'
+        ? JSON.parse(participant.demographic_data)
+        : (participant.demographic_data || {});
+    } catch (e) {
+      demographicData = {};
+    }
+
+    const participantInfo = {
+      firstName: demographicData.firstName || 'N/A',
+      lastName: demographicData.lastName || 'N/A',
+      formType: demographicData.formType || 'A',
+      evaluationName: participant.evaluation_name
+    };
+
+    // Sin pago no se devuelven los resultados. El velo de la pantalla es lo que
+    // ve el evaluador, pero la guarda vive aqui: difuminar solo en CSS lo deja
+    // a un DevTools de distancia, y estos endpoints son los que alimentan el
+    // analisis y la tabla completos.
+    const liberada = !!participant.pe_paid_at || !!participant.evaluation_paid;
+    if (REQUIRE_PAID_EVALUATION && !liberada && !isSuperAdmin(req.user)) {
+      const pendientes = await db('results')
+        .where('participant_evaluation_id', participant.pe_id)
+        .count('* as c')
+        .first();
+      return res.json({
+        participantId,
+        participant: participantInfo,
+        paymentRequired: true,
+        participantEvaluationId: participant.pe_id,
+        hasResults: (parseInt(pendientes.c) || 0) > 0,
+        results: {},
+        calculatedAt: null
+      });
     }
 
     // Get calculated results using participant_evaluation_id
@@ -233,24 +279,10 @@ router.get('/participant/:participantId', auth, async (req, res) => {
       }
     });
 
-    // Parse demographic data
-    let demographicData = {};
-    try {
-      demographicData = typeof participant.demographic_data === 'string'
-        ? JSON.parse(participant.demographic_data)
-        : (participant.demographic_data || {});
-    } catch (e) {
-      demographicData = {};
-    }
-
     res.json({
       participantId,
-      participant: {
-        firstName: demographicData.firstName || 'N/A',
-        lastName: demographicData.lastName || 'N/A',
-        formType: demographicData.formType || 'A',
-        evaluationName: participant.evaluation_name
-      },
+      participant: participantInfo,
+      paymentRequired: false,
       results: groupedResults,
       calculatedAt: results.length > 0 ? results[0].calculated_at : null
     });

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import FlowLayout from '../../../components/FlowLayout';
+import PaidResultsGate from '../../../components/PaidResultsGate';
 import ResultsDimensionCard from '../../../components/ResultsDimensionCard';
 import RiskSummaryChart from '../../../components/RiskSummaryChart';
 import ResultsInterpretation from '../../../components/ResultsInterpretation';
@@ -27,6 +28,9 @@ interface ResultsData {
   participant: Participant;
   results: { [key: string]: Result[] };
   calculatedAt: string;
+  /** El backend vacía `results` cuando la prueba no está pagada. */
+  paymentRequired?: boolean;
+  hasResults?: boolean;
 }
 
 interface DomainGroup {
@@ -224,6 +228,21 @@ export default function ResultsDashboard() {
   if (loading) return <FlowLayout backHref="/evaluator/results-dashboard" backLabel="Volver" maxWidth="full"><div className="text-center py-8">Cargando resultados...</div></FlowLayout>;
   if (error) return <FlowLayout backHref="/evaluator/results-dashboard" backLabel="Volver" maxWidth="full"><div className="text-red-600 text-center py-8">{error}</div></FlowLayout>;
   if (!resultsData) return <FlowLayout backHref="/evaluator/results-dashboard" backLabel="Volver" maxWidth="full"><div className="text-center py-8">No se encontraron resultados</div></FlowLayout>;
+
+  // Sin pago el backend no manda los resultados: se muestra el velo en vez del
+  // análisis vacío, que se leería como un error.
+  if (resultsData.paymentRequired) {
+    return (
+      <FlowLayout backHref="/evaluator/results-dashboard" backLabel="Volver" maxWidth="full">
+        <PaidResultsGate
+          firstName={resultsData.participant?.firstName}
+          lastName={resultsData.participant?.lastName}
+          evaluationName={resultsData.participant?.evaluationName}
+          hasResults={resultsData.hasResults !== false}
+        />
+      </FlowLayout>
+    );
+  }
 
   const allResults = Object.values(resultsData.results).flat();
   const riskSummary = calculateRiskSummary(allResults);

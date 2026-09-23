@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import FlowLayout from '../../../components/FlowLayout';
+import PaidResultsGate from '../../../components/PaidResultsGate';
 import { API_URL } from '../../../config/api';
 import { dimensionName } from '../../../config/dimensionNames';
 
@@ -25,6 +26,9 @@ interface ResultsData {
   participant: Participant;
   results: { [key: string]: Result[] };
   calculatedAt: string;
+  /** El backend vacía `results` cuando la prueba no está pagada. */
+  paymentRequired?: boolean;
+  hasResults?: boolean;
 }
 
 const getRiskLevelColor = (riskLevel: string) => {
@@ -158,6 +162,21 @@ export default function ParticipantResults() {
   if (loading) return <FlowLayout backHref="/evaluator/results" backLabel="Volver" maxWidth="full"><div className="text-center py-8">Cargando resultados...</div></FlowLayout>;
   if (error) return <FlowLayout backHref="/evaluator/results" backLabel="Volver" maxWidth="full"><div className="text-red-600 text-center py-8">{error}</div></FlowLayout>;
   if (!resultsData) return <FlowLayout backHref="/evaluator/results" backLabel="Volver" maxWidth="full"><div className="text-center py-8">No se encontraron resultados</div></FlowLayout>;
+
+  // Sin pago el backend no manda los resultados: se muestra el velo en vez de
+  // la tabla vacía, que se leería como un error.
+  if (resultsData.paymentRequired) {
+    return (
+      <FlowLayout backHref="/evaluator/results" backLabel="Volver" maxWidth="full">
+        <PaidResultsGate
+          firstName={resultsData.participant?.firstName}
+          lastName={resultsData.participant?.lastName}
+          evaluationName={resultsData.participant?.evaluationName}
+          hasResults={resultsData.hasResults !== false}
+        />
+      </FlowLayout>
+    );
+  }
 
   const selectedResults = selectedQuestionnaire ? resultsData.results[selectedQuestionnaire] || [] : [];
   const riskSummary = calculateRiskSummary(selectedResults);
