@@ -71,12 +71,36 @@ router.post('/register', async (req, res) => {
     // Hash password
     const passwordHash = await bcrypt.hash(password, 10);
 
+    // Origen de la visita (gclid / utm), enviado por el frontend desde
+    // localStorage. Se sanea a campos conocidos: viene del cliente y no debe
+    // poder inyectar claves arbitrarias en el JSONB. Si no viene nada, queda
+    // NULL y el registro se guarda igual — la atribución nunca puede ser
+    // motivo para perder un alta.
+    const acq = req.body.acquisition;
+    let acquisition = null;
+    if (acq && typeof acq === 'object' && !Array.isArray(acq)) {
+      const str = (v) => (typeof v === 'string' && v ? v.slice(0, 300) : null);
+      const campos = {
+        gclid: str(acq.gclid),
+        utmSource: str(acq.utmSource),
+        utmMedium: str(acq.utmMedium),
+        utmCampaign: str(acq.utmCampaign),
+        utmTerm: str(acq.utmTerm),
+        landingPath: str(acq.landingPath),
+        referrer: str(acq.referrer),
+        capturedAt: str(acq.capturedAt),
+      };
+      // Solo persistir si trae algo atribuible; un objeto de puros nulls es ruido.
+      if (campos.gclid || campos.utmSource) acquisition = campos;
+    }
+
     // Insert evaluator (no company_id)
     await db('users').insert({
       email,
       password_hash: passwordHash,
       role: 'evaluator',
-      full_name: `${firstName} ${lastName}`.trim()
+      full_name: `${firstName} ${lastName}`.trim(),
+      acquisition: acquisition ? JSON.stringify(acquisition) : null
     });
 
     res.status(201).json({

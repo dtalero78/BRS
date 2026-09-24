@@ -3,6 +3,7 @@ import { useEffect } from 'react';
 import { QueryClient, QueryClientProvider } from 'react-query';
 import { Toaster } from 'react-hot-toast';
 import '../styles/globals.css';
+import { captureAcquisition } from '../config/acquisition';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -27,7 +28,18 @@ function loadAnalytics() {
   ga.src = 'https://www.googletagmanager.com/gtag/js?id=G-KT5D58PW0N';
   document.head.appendChild(ga);
   (window as any).dataLayer = (window as any).dataLayer || [];
-  const gtag = (...args: any[]) => { (window as any).dataLayer.push(args); };
+  // OJO: gtag.js SOLO reconoce como comando los objetos `arguments`. Si aqui se
+  // empuja un Array plano (lo que hace una arrow function con rest params),
+  // gtag.js lo ignora en silencio: el script carga con 200, `window.gtag` existe
+  // y el dataLayer se llena, pero NO se envia ni un solo hit a /g/collect.
+  // Fue el bug de b27b20c (2026-07-20): GA4 en cero hasta el 2026-08-27, lo que
+  // dejo a Google Ads sin conversiones y volvio ilegible el CPA de la campana.
+  // Por eso es `function` y no arrow: las arrow no tienen `arguments`.
+  // Sin parametros declarados a proposito: cualquier firma con rest params
+  // reintroduce el riesgo de que alguien la "simplifique" a una arrow function.
+  const gtag = function () {
+    (window as any).dataLayer.push(arguments);
+  } as (...args: any[]) => void;
   (window as any).gtag = gtag;
   gtag('js', new Date());
   gtag('config', 'G-KT5D58PW0N');
@@ -90,7 +102,7 @@ function installAuthExpiryHandler() {
 }
 
 export default function App({ Component, pageProps }: AppProps) {
-  useEffect(() => { loadAnalytics(); installAuthExpiryHandler(); }, []);
+  useEffect(() => { loadAnalytics(); captureAcquisition(); installAuthExpiryHandler(); }, []);
   return (
     <QueryClientProvider client={queryClient}>
       <Component {...pageProps} />

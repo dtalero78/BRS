@@ -9,6 +9,7 @@ import * as yup from 'yup';
 import toast from 'react-hot-toast';
 import { EyeIcon, EyeSlashIcon } from '@heroicons/react/24/outline';
 import { BRAND, logoBox } from '../../config/brand';
+import { readAcquisition } from '../../config/acquisition';
 
 const schema = yup.object({
   firstName: yup.string().required('Nombre es requerido'),
@@ -64,6 +65,7 @@ export default function RegisterPage() {
           lastName: data.lastName,
           email: data.email,
           password: data.password,
+          acquisition: readAcquisition(),
           _hp: honeypot,
           _ts: timeSpent,
         }),
@@ -74,6 +76,13 @@ export default function RegisterPage() {
       if (response.ok) {
         // Google Analytics conversion event
         if (typeof window !== 'undefined' && (window as any).gtag) {
+          // Conversiones mejoradas: el tag de Google hashea el correo (SHA-256)
+          // antes de enviarlo y lo usa para emparejar al usuario entre
+          // dispositivos. Es el arreglo del caso que mas nos cuesta aqui: el
+          // clic del anuncio ocurre en el celular (56% de las impresiones) pero
+          // el registro se hace en el computador, y sin esto la conversion se
+          // pierde. Requiere activar "Conversiones mejoradas" en Google Ads.
+          (window as any).gtag('set', 'user_data', { email: data.email });
           (window as any).gtag('event', 'sign_up', {
             method: 'email',
           });
