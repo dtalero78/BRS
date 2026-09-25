@@ -102,6 +102,16 @@ interface Props {
   onSuccess?: () => void;
 }
 
+/** Lo que ya está cargado para esta persona en esta evaluación. */
+interface YaCargado {
+  found: boolean;
+  participantId?: number;
+  nombre?: string;
+  documentNumber?: string;
+  enEstaEvaluacion?: boolean;
+  cuestionarios?: { tipo: TabKey; respuestas: number; fecha: string | null }[];
+}
+
 type Step = 'select' | 'preview' | 'result';
 type EditedRow = { responseValue: number | null; confidence: 'high' | 'medium' | 'low' | 'user' };
 type EditsByType = Partial<Record<QuestionnaireType, Record<number, EditedRow>>>;
@@ -131,6 +141,7 @@ export default function PhotoImportModal({
   });
   const [committing, setCommitting] = useState(false);
   const [result, setResult] = useState<any>(null);
+  const [yaCargado, setYaCargado] = useState<YaCargado | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -144,7 +155,41 @@ export default function PhotoImportModal({
     setActiveTab(null);
     setEditedInfo({ documentNumber: '', firstName: '', lastName: '' });
     setResult(null);
+    setYaCargado(null);
   }, [open, defaultQuestionnaireType]);
+
+  // ¿Esta persona ya está cargada en esta evaluación? Se consulta en el paso de
+  // previsualización, cuando ya hay documento (el OCR lo leyó o el evaluador lo
+  // corrigió), y se repite si lo cambia: confirmar sin saberlo reemplaza en
+  // silencio lo que ya estaba.
+  useEffect(() => {
+    if (!open || step !== 'preview') return;
+    const doc = editedInfo.documentNumber.replace(/\D+/g, '');
+    const pid = participantId ?? preview?.participantId ?? null;
+    if (!pid && doc.length < 5) {
+      setYaCargado(null);
+      return;
+    }
+
+    let cancelado = false;
+    const t = setTimeout(async () => {
+      try {
+        const token = localStorage.getItem('token');
+        const q = pid ? `participantId=${pid}` : `documentNumber=${encodeURIComponent(doc)}`;
+        const r = await fetch(`/api/photo-import/${evaluationId}/existing-summary?${q}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!r.ok) return;
+        const data: YaCargado = await r.json();
+        if (!cancelado) setYaCargado(data.found ? data : null);
+      } catch {
+        // Silencioso a propósito: es un aviso, no una precondición. Si la
+        // consulta falla, la importación sigue estando disponible.
+      }
+    }, 400);
+
+    return () => { cancelado = true; clearTimeout(t); };
+  }, [open, step, editedInfo.documentNumber, participantId, preview?.participantId, evaluationId]);
 
   const buildInitialEdits = (t: TypeData): Record<number, EditedRow> => {
     const edits: Record<number, EditedRow> = {};
@@ -240,6 +285,24 @@ export default function PhotoImportModal({
     () => Object.values(fichaEdits).some(v => v && String(v).trim().length > 0),
     [fichaEdits]
   );
+
+  const tiposDetectados = useMemo<TabKey[]>(() => {
+    const lista = Object.keys(editsByType) as TabKey[];
+    return fichaDetected && fichaHasContent ? [...lista, 'ficha_datos'] : lista;
+  }, [editsByType, fichaDetected, fichaHasContent]);
+
+  // Lo que este archivo va a pisar: la intersección entre lo detectado y lo que
+  // esa persona ya tiene guardado. Es el dato que faltaba para decidir.
+  const tiposAReemplazar = useMemo<TabKey[]>(() => {
+    if (!yaCargado?.enEstaEvaluacion) return [];
+    const yaTiene = new Set(
+      (yaCargado.cuestionarios || []).filter(c => c.respuestas > 0).map(c => c.tipo)
+    );
+    return tiposDetectados.filter(t => yaTiene.has(t));
+  }, [yaCargado, tiposDetectados]);
+
+  const fechaCorta = (f: string | null) =>
+    f ? new Date(f).toLocaleDateString('es-CO', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
 
   const handleCommit = async () => {
     if (!preview) return;
@@ -526,6 +589,49 @@ export default function PhotoImportModal({
               </div>
             )}
 
+            {yaCargado?.found && (
+              <div className={`px-5 py-3 border-b text-sm ${tiposAReemplazar.length > 0 ? 'bg-orange-50 text-orange-900' : 'bg-sky-50 text-sky-900'}`}>
+                <div className="flex items-start gap-2">
+                  <ExclamationTriangleIcon className="h-5 w-5 flex-shrink-0 mt-0.5" />
+                  <div className="space-y-1">
+                    <p className="font-semibold">
+                      {yaCargado.enEstaEvaluacion
+                        ? `${yaCargado.nombre} ya está en esta evaluación`
+                        : `${yaCargado.nombre} ya existe en esta empresa, pero no en esta evaluación`}
+                      {yaCargado.documentNumber ? ` (CC ${yaCargado.documentNumber})` : ''}
+                    </p>
+
+                    {(yaCargado.cuestionarios || []).length > 0 && (
+                      <p>
+                        Ya tiene cargado:{' '}
+                        {(yaCargado.cuestionarios || [])
+                          .map(c => `${SHORT_LABELS[c.tipo] || c.tipo} (${c.respuestas} resp., ${fechaCorta(c.fecha)})`)
+                          .join(' · ')}
+                      </p>
+                    )}
+
+                    {tiposAReemplazar.length > 0 ? (
+                      <p className="font-medium">
+                        Si confirmas, se <u>reemplaza</u> lo que ya estaba en{' '}
+                        {tiposAReemplazar.filter(t => t !== 'ficha_datos').map(t => SHORT_LABELS[t]).join(', ')}
+                        {tiposAReemplazar.includes('ficha_datos') && (
+                          <>
+                            {tiposAReemplazar.length > 1 ? ', y la ' : 'la '}
+                            ficha se fusiona campo a campo (un campo vacío no borra uno que ya tenga dato)
+                          </>
+                        )}
+                        . Si este es el mismo cuadernillo que ya subiste, cancela.
+                      </p>
+                    ) : (
+                      yaCargado.enEstaEvaluacion && (
+                        <p>Los cuestionarios de este archivo no chocan con los que ya tiene: se suman.</p>
+                      )
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
             {!preview.participantId && (
               <div className="px-5 py-3 bg-blue-50 border-b grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
                 <div>
@@ -644,10 +750,18 @@ export default function PhotoImportModal({
                 <button
                   onClick={handleCommit}
                   disabled={committing || totalSaved === 0}
-                  className="px-4 py-2 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
+                  className={`px-4 py-2 text-sm rounded-md text-white disabled:opacity-50 ${
+                    tiposAReemplazar.length > 0
+                      ? 'bg-orange-600 hover:bg-orange-700'
+                      : 'bg-blue-600 hover:bg-blue-700'
+                  }`}
                 >
                   {committing
                     ? 'Guardando…'
+                    : tiposAReemplazar.length > 0
+                    // El botón dice lo que va a pasar. "Confirmar e importar"
+                    // sobre datos que ya existen describe mal la acción.
+                    ? `Reemplazar lo ya cargado (${totalSaved} respuestas)`
                     : preview.mode === 'auto'
                     ? `Confirmar e importar todos (${totalSaved} respuestas)`
                     : `Confirmar e importar (${totalSaved})`}

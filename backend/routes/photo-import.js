@@ -349,6 +349,99 @@ router.get(
   }
 );
 
+/**
+ * ¿Esta persona ya está cargada, y con qué cuestionarios?
+ *
+ * El alta por foto no tiene `participantId`: la persona se resuelve por el
+ * documento que leyó el OCR. Sin esta consulta el evaluador no tenía forma de
+ * saber que ese cuadernillo ya estaba subido — confirmaba otra vez y la
+ * importación reemplazaba en silencio lo que ya había (para intralaboral,
+ * extralaboral y estrés el guardado borra e inserta, y recalcula resultados).
+ * Si el segundo escaneo salió peor, ese cambio degradaba datos buenos sin
+ * dejar rastro. Una psicóloga de Shaddai lo reportó tras subir el mismo
+ * cuadernillo dos veces sin recibir ningún aviso.
+ *
+ * Se identifica por `participantId` (modal abierto sobre una fila) o por
+ * `documentNumber` (alta por foto). Es solo de lectura: quien decide si
+ * reemplaza es el evaluador, con lo que ve aquí.
+ */
+router.get(
+  '/:evaluationId/existing-summary',
+  auth,
+  authorize('admin', 'evaluator'),
+  async (req, res) => {
+    try {
+      const { evaluationId } = req.params;
+      const { documentNumber, participantId } = req.query;
+
+      const evaluation = await loadEvaluationForUser(evaluationId, req.user.userId, req.user.role);
+      if (!evaluation) return res.status(404).json({ error: 'Evaluación no encontrada' });
+
+      let participant = null;
+      if (participantId) {
+        participant = await db('participants')
+          .where('id', participantId)
+          .where('company_id', evaluation.company_id)
+          .first();
+      } else {
+        const docDigits = String(documentNumber || '').replace(/\D+/g, '');
+        if (!docDigits) return res.json({ found: false });
+        // Mismo par de correos que usa el commit, o la respuesta diría "no
+        // existe" justo antes de que el commit lo encuentre y lo reemplace.
+        participant = await db('participants')
+          .where('company_id', evaluation.company_id)
+          .whereIn('email', [
+            `cc_${docDigits}@temp.com`,
+            `cc_${docDigits}_c${evaluation.company_id}@temp.com`,
+          ])
+          .first();
+      }
+
+      if (!participant) return res.json({ found: false });
+
+      const demo = typeof participant.demographic_data === 'string'
+        ? JSON.parse(participant.demographic_data)
+        : (participant.demographic_data || {});
+      const base = {
+        found: true,
+        participantId: participant.id,
+        nombre: `${demo.firstName || ''} ${demo.lastName || ''}`.trim() || participant.email,
+        documentNumber: demo.documentNumber || '',
+      };
+
+      const pe = await db('participant_evaluations')
+        .where('evaluation_id', evaluation.id)
+        .where('participant_id', participant.id)
+        .first();
+
+      // Existe en la empresa pero no en ESTA evaluación: no hay nada que
+      // reemplazar, aunque al evaluador le sirve saber que ya la conoce.
+      if (!pe) return res.json({ ...base, enEstaEvaluacion: false, cuestionarios: [] });
+
+      const filas = await db('responses')
+        .where('participant_evaluation_id', pe.id)
+        .select('questionnaire_type', 'responses', 'completed_at', 'created_at');
+
+      const cuestionarios = filas.map(f => ({
+        tipo: f.questionnaire_type,
+        respuestas: Object.keys(toResponseMap(f.responses)).length,
+        fecha: f.completed_at || f.created_at,
+      }));
+
+      return res.json({
+        ...base,
+        enEstaEvaluacion: true,
+        participantEvaluationId: pe.id,
+        peStatus: pe.status,
+        cuestionarios,
+      });
+    } catch (error) {
+      console.error('Photo existing-summary error:', error);
+      return res.status(500).json({ error: 'Error interno del servidor' });
+    }
+  }
+);
+
 const commitSchema = Joi.alternatives().try(
   Joi.object({
     questionnaireType: Joi.string().valid(...VALID_TYPES).required(),

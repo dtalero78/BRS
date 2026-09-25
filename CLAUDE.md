@@ -469,6 +469,16 @@ En la portada se encaja en una caja fija de 170×70 pt y se centra a mano (`doc.
 - `backend/routes/reports.js` — `drawEvaluatorLogo()` y las dos portadas
 - `frontend/pages/evaluator/profile.tsx` — tarjeta de carga con vista previa
 
+## IMPORTACIÓN POR FOTO: AVISO ANTES DE PISAR LO YA CARGADO
+
+Subir dos veces el mismo cuadernillo **no duplica** a la persona: el commit la resuelve por documento (`cc_<cédula>@temp.com` dentro de la empresa) y reusa su `participant_evaluation`. Lo que hace es **reemplazar**: para intralaboral, extralaboral y estrés el guardado borra e inserta, y recalcula resultados. Solo la ficha se fusiona campo a campo (`fusionarFicha`).
+
+Eso hacía silencioso el peor caso: si el segundo escaneo salió peor que el primero —una página mal leída, una foto movida— pisaba datos buenos sin dejar rastro. Y con cientos de cuadernillos en papel el evaluador no tenía forma de saber cuáles ya había procesado.
+
+`GET /api/photo-import/:evaluationId/existing-summary?documentNumber=…` (o `?participantId=…`) responde quién es esa persona y qué cuestionarios ya tiene, con número de respuestas y fecha. `PhotoImportModal` lo consulta en el paso de previsualización —cuando el OCR ya leyó el documento, y otra vez si el evaluador lo corrige— y pinta el aviso; si lo detectado choca con lo guardado, el botón pasa a **"Reemplazar lo ya cargado"** en naranja. El aviso **no bloquea**: si la consulta falla, la importación sigue disponible.
+
+> El documento lo lee el OCR de un manuscrito. Un dígito mal leído crea **otra** persona, porque el correo sintético es la identidad. Por eso el campo del documento es editable en el preview y la consulta se repite al cambiarlo.
+
 ## VOCABULARIO DE LA FICHA: UNA SOLA LISTA POR CAMPO
 
 Las opciones de cada campo de la ficha salen de `bateria_riesgo_psicosocial_preguntas.json` (`ficha_datos_generales`). **Ese JSON es la fuente; `frontend/components/fichaFields.ts` lo copia carácter por carácter** — es la lista que ve el evaluador en la entrada manual y en la importación por foto.
