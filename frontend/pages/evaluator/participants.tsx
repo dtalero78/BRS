@@ -538,7 +538,7 @@ export default function EvaluatorParticipants() {
     }
   };
 
-  const handleExportCsv = () => {
+  const handleExportXls = async () => {
     if (!participants || participants.length === 0) {
       toast.error('No hay participantes para exportar');
       return;
@@ -611,22 +611,16 @@ export default function EvaluatorParticipants() {
       p.evaluationUrl || '',
     ]);
 
-    const escape = (v: string) => {
-      const s = String(v ?? '');
-      return /[",\n\r;]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-    };
-
-    const csv = [headers, ...rows].map(r => r.map(escape).join(';')).join('\r\n');
-    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
+    // .xls real (BIFF8), no CSV: Excel abre el CSV con el separador del sistema y
+    // en equipos configurados con coma parte las columnas. La librería se carga
+    // solo al exportar para no engordar el bundle de la página.
+    const XLSX = await import('xlsx');
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+    ws['!cols'] = headers.map(h => ({ wch: Math.max(12, h.length + 2) }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Participantes');
     const ts = new Date().toISOString().slice(0, 10);
-    a.href = url;
-    a.download = `participantes_${ts}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    XLSX.writeFile(wb, `participantes_${ts}.xls`, { bookType: 'xls' });
     toast.success(`Exportados ${rows.length} participantes`);
     if (excluded > 0) {
       toast(`${excluded} participante(s) no se exportaron: su evaluación no tiene el pago registrado.`, { icon: '⚠️' });
@@ -923,7 +917,7 @@ export default function EvaluatorParticipants() {
               </button>
             )}
             <button
-              onClick={handleExportCsv}
+              onClick={handleExportXls}
               className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
             >
               <ArrowDownTrayIcon className="h-4 w-4 mr-2" />
