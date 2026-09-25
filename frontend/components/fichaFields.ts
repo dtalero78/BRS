@@ -10,13 +10,20 @@ export const FICHA_FIELDS: FichaField[] = [
   { name: 'fecha',            label: 'Fecha de aplicación',       kind: 'text', placeholder: 'DD/MM/AAAA' },
   { name: 'sexo',             label: 'Sexo',                      kind: 'select', options: ['Masculino', 'Femenino', 'Otro'] },
   { name: 'birthYear',        label: 'Año de nacimiento',         kind: 'text', placeholder: 'AAAA o DD/MM/AAAA' },
+  // Los literales son los de la ficha oficial (`ficha_datos_generales` en
+  // bateria_riesgo_psicosocial_preguntas.json), carácter por carácter. Esta
+  // lista decía 'Post-grado' y 'Técnico/tecnológico' sin espacios, y como el
+  // <select> solo marca una opción con coincidencia EXACTA, las fichas que
+  // respondió el participante se veían vacías en esta pantalla: en la
+  // Universidad Manuela Beltrán, 200 de 219. Cualquier lista de opciones de
+  // este archivo tiene que salir de ese JSON.
   { name: 'education',        label: 'Último nivel de estudios',  kind: 'select', options: [
     'Ninguno', 'Primaria incompleta', 'Primaria completa',
     'Bachillerato incompleto', 'Bachillerato completo',
-    'Técnico/tecnológico incompleto', 'Técnico/tecnológico completo',
+    'Técnico / tecnológico incompleto', 'Técnico / tecnológico completo',
     'Profesional incompleto', 'Profesional completo',
-    'Carrera militar/policía',
-    'Post-grado incompleto', 'Post-grado completo',
+    'Carrera militar / policía',
+    'Posgrado incompleto', 'Posgrado completo',
   ] },
   { name: 'maritalStatus',    label: 'Estado civil',              kind: 'select', options: [
     'Soltero(a)', 'Casado(a)', 'Unión libre', 'Separado(a)', 'Divorciado(a)', 'Viudo(a)', 'Sacerdote/Monja',
@@ -47,6 +54,40 @@ export const FICHA_FIELDS: FichaField[] = [
   ] },
   { name: 'horasTrabajo',     label: 'Horas diarias de trabajo',  kind: 'text', placeholder: 'Ej. "8" o "12 horas"' },
 ];
+
+/**
+ * Normaliza para COMPARAR, nunca para guardar ni mostrar.
+ *
+ * El mismo nivel de estudios está escrito de varias formas en datos que ya
+ * existen: la ficha del participante guardó 'Técnico / tecnológico completo' y
+ * esta pantalla guardaba 'Técnico/tecnológico completo'; 'Posgrado' convivía
+ * con 'Post-grado'. Sin tolerar esas variantes, corregir los literales dejaría
+ * fuera a las fichas viejas en vez de rescatarlas.
+ */
+const paraComparar = (s: string): string =>
+  String(s)
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/post\s*-?\s*grado/g, 'posgrado')
+    .replace(/\s*\/\s*/g, '/')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+/**
+ * Devuelve la opción canónica que corresponde a `value`, o null si ninguna.
+ *
+ * El null es información: significa que el valor guardado NO es una respuesta
+ * de esta lista (p. ej. el 'Bachiller' que el formulario de participantes
+ * ponía por defecto). Quien llama decide si lo muestra aparte o lo ignora,
+ * pero no debe hacerlo pasar por una respuesta.
+ */
+export function matchFichaOption(options: string[] | undefined, value: unknown): string | null {
+  if (!options || !options.length) return null;
+  const v = paraComparar(String(value ?? ''));
+  if (!v) return null;
+  return options.find((o) => paraComparar(o) === v) ?? null;
+}
 
 export type FichaValues = Record<string, string>;
 

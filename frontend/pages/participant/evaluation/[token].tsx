@@ -4,6 +4,7 @@ import toast from 'react-hot-toast';
 import { ClipboardList, Briefcase, HardHat, Home, Brain, Shield, FileText, CheckCircle2, ArrowLeft, ChevronLeft, ChevronDown, Check, ScanFace, ShieldAlert, PlayCircle, LucideIcon } from 'lucide-react';
 import { BRAND } from '../../../config/brand';
 import FaceCapture from '../../../components/FaceCapture';
+import { matchFichaOption } from '../../../components/fichaFields';
 import ConsentText from '../../../components/ConsentText';
 import IntroVideoModal from '../../../components/IntroVideoModal';
 
@@ -449,18 +450,35 @@ const ParticipantEvaluationPage = () => {
       14: () => '', // Años en cargo actual - not captured separately
       15: () => existingData.department || '', // Área/sección
       16: () => existingData.contractType || '', // Tipo de contrato
-      17: () => existingData.salaryRange || '', // Salario
-      18: () => existingData.workHoursPerDay || '' // Horas de trabajo
+      // 17 y 18 estaban cruzados: en la ficha oficial la 17 son las HORAS y la
+      // 18 el TIPO DE SALARIO. El cruce dejó rastro — en Manuela Beltrán hay 7
+      // fichas con "8" guardado como tipo de salario.
+      17: () => existingData.workHoursPerDay || '', // Horas diarias de trabajo
+      18: () => existingData.salaryRange || '' // Tipo de salario
     };
 
     campos?.forEach((campo: any) => {
       const mapper = fieldMapping[campo.numero as keyof typeof fieldMapping];
-      if (mapper) {
-        const value = mapper();
-        if (value !== '' && value !== null && value !== undefined) {
-          responses[`q_${campo.numero}`] = value;
-        }
+      if (!mapper) return;
+      const value = mapper();
+      if (value === '' || value === null || value === undefined) return;
+
+      // Una pregunta de opciones solo se pre-llena si el dato que trae el
+      // evaluador ES una de ellas. Lo importado viene de otro vocabulario
+      // ('Bachiller' del default del formulario, 'Indefinido' del Excel, un
+      // número de horas en el tipo de salario) y esos valores no coinciden con
+      // ninguna opción: la pantalla los mostraba como si nadie hubiera
+      // contestado, pero viajaban igual al guardar y quedaban como si la
+      // persona los hubiera elegido. Mejor dejar la pregunta en blanco y que la
+      // conteste de verdad. Cuando sí corresponde, se guarda el literal
+      // canónico para que la opción aparezca marcada.
+      if (Array.isArray(campo.opciones) && campo.opciones.length > 0) {
+        const canonico = matchFichaOption(campo.opciones, value);
+        if (canonico) responses[`q_${campo.numero}`] = canonico;
+        return;
       }
+
+      responses[`q_${campo.numero}`] = value;
     });
 
     return responses;

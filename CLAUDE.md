@@ -469,6 +469,23 @@ En la portada se encaja en una caja fija de 170×70 pt y se centra a mano (`doc.
 - `backend/routes/reports.js` — `drawEvaluatorLogo()` y las dos portadas
 - `frontend/pages/evaluator/profile.tsx` — tarjeta de carga con vista previa
 
+## VOCABULARIO DE LA FICHA: UNA SOLA LISTA POR CAMPO
+
+Las opciones de cada campo de la ficha salen de `bateria_riesgo_psicosocial_preguntas.json` (`ficha_datos_generales`). **Ese JSON es la fuente; `frontend/components/fichaFields.ts` lo copia carácter por carácter** — es la lista que ve el evaluador en la entrada manual y en la importación por foto.
+
+Cuando las dos listas se separan, el dato no se pierde pero **se vuelve invisible**: un `<select>` de React con un valor que no coincide con ninguna `<option>` se pinta vacío. Pasó con el nivel de estudios — la ficha del participante guardaba `Posgrado completo` y `Técnico / tecnológico completo`, la entrada manual ofrecía `Post-grado completo` y `Técnico/tecnológico completo`, y en la Universidad Manuela Beltrán **200 de 219 fichas se veían sin escolaridad estando bien guardadas**.
+
+`matchFichaOption(options, value)` compara sin acentos, sin mayúsculas, con `post-grado ≡ posgrado` y con los espacios alrededor de `/` normalizados. Es **solo para comparar**: lo que se guarda y se muestra es el literal oficial. Devuelve `null` cuando el valor no es ninguna opción, y ese null es información — significa "esto no lo eligió nadie de esta lista".
+
+Un valor fuera de lista **se sigue mostrando** en `FichaDatosForm`, como opción propia y con el campo en ámbar. Esconderlo se lee como "se perdió el dato" cuando en realidad está guardado.
+
+### Lo pre-llenado no es una respuesta
+La ficha del participante llega pre-llenada con lo que cargó el evaluador. Ese dato viene de otro vocabulario (`Bachiller` del default del formulario, `Indefinido` del importador de Excel), así que **una pregunta de opciones solo se pre-llena si el dato importado es una de ellas**; si no, queda en blanco para que la persona la conteste. Antes se pre-llenaba igual: la pantalla no lo mostraba marcado, pero el valor viajaba al guardar y quedaba como si lo hubiera elegido — 39 personas de Manuela Beltrán quedaron con `Bachiller` sin haberlo tocado.
+
+> ⚠️ **Nunca poner un default inventado en `demographic_data`.** `participants.tsx` ponía `educationLevel: 'Bachiller'` sin tener campo de escolaridad en el formulario: 523 participantes quedaron marcados así sin que nadie lo escribiera. Siguen ahí `maritalStatus: 'Soltero(a)'` y `contractType: 'Indefinido'`, también invisibles en el formulario (el primero es `required` en el Joi del backend).
+
+**Los campos 17 y 18 estaban cruzados** en el pre-llenado: en la ficha oficial la 17 son las horas diarias y la 18 el tipo de salario. Quedó rastro en producción — 7 fichas de Manuela Beltrán tienen `8` guardado como tipo de salario.
+
 ## PUERTA GENERAL DE ACCESO (`/acceso`)
 
 Un solo enlace público para toda la instancia: la persona escribe su número de documento y entra a su batería. Evita tener que repartir cientos de enlaces individuales por WhatsApp o correo.

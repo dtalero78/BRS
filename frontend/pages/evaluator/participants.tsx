@@ -166,7 +166,12 @@ export default function EvaluatorParticipants() {
     birthYear: new Date().getFullYear() - 30,
     gender: 'Masculino',
     maritalStatus: 'Soltero(a)',
-    educationLevel: 'Bachiller',
+    // Vacío, no 'Bachiller': el formulario no tiene campo de escolaridad, así
+    // que ese default entraba a la base como si alguien lo hubiera digitado —
+    // en Manuela Beltrán quedaron 523 participantes marcados 'Bachiller' sin
+    // que nadie lo escribiera— y de ahí se pre-llenaba la ficha del
+    // participante. El dato real lo pone la persona al responder la ficha.
+    educationLevel: '',
     department: 'General',
     position: 'Empleado',
     contractType: 'Indefinido',
@@ -420,7 +425,7 @@ export default function EvaluatorParticipants() {
       birthYear: new Date().getFullYear() - 30,
       gender: 'Masculino',
       maritalStatus: 'Soltero(a)',
-      educationLevel: 'Bachiller',
+      educationLevel: '',
       department: 'General',
       position: 'Empleado',
       contractType: 'Indefinido',
