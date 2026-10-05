@@ -431,7 +431,11 @@ router.get('/evaluation/:evaluationId', auth, async (req, res) => {
     const participants = await query
       .limit(limit)
       .offset(offset)
-      .select('participants.*', 'participant_evaluations.status', 'participant_evaluations.assigned_at', 'participant_evaluations.completed_at', 'participant_evaluations.access_token', 'participant_evaluations.id as pe_id');
+      .select('participants.*', 'participant_evaluations.status', 'participant_evaluations.assigned_at', 'participant_evaluations.completed_at', 'participant_evaluations.access_token', 'participant_evaluations.id as pe_id',
+        // Estado de pago: la pantalla de Resultados exporta desde aquí y tiene
+        // que respetar el mismo candado que la exportación de participantes y
+        // que los informes. Sin este dato, exportar sería la puerta de atrás.
+        'participant_evaluations.paid_at as pe_paid_at');
 
     // Get completed questionnaires and results for each participant
     const participantIds = participants.map(p => p.pe_id);
@@ -500,13 +504,6 @@ router.get('/evaluation/:evaluationId', auth, async (req, res) => {
         const completedQuestionnaires = responsesByParticipant[p.pe_id] || [];
         const hasResults = Boolean(resultsByParticipant[p.pe_id] && resultsByParticipant[p.pe_id].length > 0);
 
-        // Temporary debug log for Daniel Talero
-        if (p.id === 4) {
-          console.log(`DEBUG - Daniel Talero (ID: ${p.id}, PE: ${p.pe_id}):`);
-          console.log(`  completed_questionnaires:`, completedQuestionnaires);
-          console.log(`  hasResults:`, hasResults);
-        }
-
         return {
           id: p.id,
           participant_evaluation_id: p.pe_id,
@@ -523,6 +520,10 @@ router.get('/evaluation/:evaluationId', auth, async (req, res) => {
           hasResults: hasResults,
           overall_risk_level: overallRiskByParticipant[p.pe_id] || null,
           completionPercentage: 0,
+          // Misma semántica que en GET /: pagada por prueba (pe.paid_at) o
+          // evaluación liberada a mano por el admin (evaluations.paid).
+          evaluationPaid: (!REQUIRE_PAID_EVALUATION || isSuperAdmin(req.user)) ? true : (!!evaluation.paid || !!p.pe_paid_at),
+          paidAt: p.pe_paid_at || null,
           startedAt: p.assigned_at,
           completedAt: p.completed_at,
           completed_at: p.completed_at,

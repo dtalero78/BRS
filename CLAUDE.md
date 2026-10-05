@@ -381,6 +381,7 @@ La orden guarda en `payments.unit_price_in_cents` el precio que efectivamente se
 - **Informe individual** (`POST /reports/individual`): `403 payment_required` si la prueba no tiene `paid_at` y la evaluación no está `paid`.
 - **Informe organizacional** (`POST /reports/organizational`): `403` mientras exista alguna prueba **con resultados** sin pagar. Las pruebas sin resultados no cuentan: no aportan nada al informe.
 - **Exportación CSV** de participantes: `evaluationPaid` por fila ahora significa "pagada por prueba **o** evaluación liberada por el admin".
+- **Exportación de la pantalla de Resultados** (`/evaluator/results`): mismo candado por fila. El botón "Exportar Excel" existió por mucho tiempo con el `onClick` vacío (un TODO), así que no exportaba nada y se leía como "el botón no sirve"; al implementarlo había que traer `evaluationPaid` también en `GET /api/participants/evaluation/:id`, o esa pantalla quedaba como la puerta de atrás del cobro.
 - Responder la batería **nunca** se bloquea: el participante no es quien paga, y la campaña no puede depender de que el evaluador pague antes.
 - Super-admin y las instancias con `BRAND_REQUIRE_PAID_EVALUATION=false` (licenciatarios) pasan siempre; en esas el menú "Pagos" ni se muestra (`paymentsEnabled` en el dashboard).
 
