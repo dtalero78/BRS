@@ -489,6 +489,13 @@ Cuando las dos listas se separan, el dato no se pierde pero **se vuelve invisibl
 
 Un valor fuera de lista **se sigue mostrando** en `FichaDatosForm`, como opción propia y con el campo en ámbar. Esconderlo se lee como "se perdió el dato" cuando en realidad está guardado.
 
+### La gráfica del informe agrupa por significado, no por ortografía
+`groupEducation()` en `report-data-aggregator.js` normaliza antes de comparar (minúsculas, sin tildes, sin signos) y reconoce `posgrado ≡ postgrado ≡ post-grado`, `universitario → Pregrado`, y las abreviaturas de los Excel de cliente (`PRI COMPLETA`, `BACHILLERATO INCOMPLE`). Antes comparaba el literal crudo: cada forma de escribir el mismo nivel se convertía en **una barra propia** en la gráfica "Distribución por Nivel de Estudio" del informe organizacional. En Trilliant el informe separaba `Posgrado=11` de `Post-grado completo=7` y `Post-grado incompleto=1`, y la empresa preguntó por la diferencia. En toda la base eran **617 fichas de 2.219 (28%) repartidas en 55 evaluaciones**; tras el arreglo quedan 20, todas por el mismo valor.
+
+**`Bachiller` sigue sin agruparse a propósito.** Son 334 fichas y vienen del default viejo del formulario de participantes, no de una respuesta: meterlas en `Secundaria` afirmaría una escolaridad que esas personas nunca dieron. La barra suelta es la señal de que ese dato hay que limpiarlo. Hay evaluaciones donde el **100%** de las fichas dice `Bachiller` (Clínica San Lucas 22/22, Auditorías Triple A 14/14) — ahí nadie contestó nunca.
+
+El informe agrega al generarse, así que el arreglo vale para los informes ya entregados: basta volver a descargarlos. No hay que migrar datos.
+
 ### Lo pre-llenado no es una respuesta
 La ficha del participante llega pre-llenada con lo que cargó el evaluador. Ese dato viene de otro vocabulario (`Bachiller` del default del formulario, `Indefinido` del importador de Excel), así que **una pregunta de opciones solo se pre-llena si el dato importado es una de ellas**; si no, queda en blanco para que la persona la conteste. Antes se pre-llenaba igual: la pantalla no lo mostraba marcado, pero el valor viajaba al guardar y quedaba como si lo hubiera elegido — 39 personas de Manuela Beltrán quedaron con `Bachiller` sin haberlo tocado.
 

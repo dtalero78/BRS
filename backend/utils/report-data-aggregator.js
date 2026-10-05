@@ -148,16 +148,44 @@ function extractYear(val) {
   return isNaN(n) ? null : n;
 }
 
+/**
+ * Normaliza SOLO para comparar: minúsculas, sin tildes y sin signos.
+ *
+ * El mismo nivel llega escrito de muchas formas porque entra por tres puertas
+ * distintas (el formulario del participante, la carga del evaluador y los
+ * Excel de cada empresa): 'Posgrado completo', 'POSTGRADO COMPLETO',
+ * 'Post-grado completo', 'PRI INCOMPLE'. Sin esto, cada variante caía en el
+ * `return edu` del final y la gráfica de escolaridad del informe pintaba una
+ * barra aparte por cada forma de escribirlo — una empresa preguntó por qué su
+ * informe separaba "Posgrado" de "Post-grado completo".
+ */
+function normalizarNivelEstudio(edu) {
+  return String(edu || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
 function groupEducation(edu) {
-  const lower = edu.toLowerCase();
-  if (lower.includes('primaria')) return 'Primaria';
-  if (lower.includes('bachillerato') || lower.includes('secundaria')) return 'Secundaria';
-  if (lower.includes('técnico') || lower.includes('tecnológico') || lower.includes('tecnico') || lower.includes('tecnologico')) return 'Técnico/Tecnológico';
-  if (lower.includes('profesional') && !lower.includes('posgrado')) return 'Pregrado';
-  if (lower.includes('posgrado') || lower.includes('maestr') || lower.includes('doctor') || lower.includes('especiali')) return 'Posgrado';
-  if (lower.includes('militar') || lower.includes('policía') || lower.includes('policia')) return 'Carrera militar/policía';
-  if (lower.includes('ninguno')) return 'Ninguno';
-  return edu; // return as-is if no match
+  const t = normalizarNivelEstudio(edu);
+  if (!t) return edu;
+  // Posgrado va primero: 'profesional/posgrado' debe contar como posgrado, que
+  // es lo que hacía el guard `&& !lower.includes('posgrado')` de antes.
+  if (t.includes('posgrado') || t.includes('postgrado') || t.includes('post grado') ||
+      t.includes('maestr') || t.includes('doctor') || t.includes('especializ')) return 'Posgrado';
+  if (t.includes('tecnic') || t.includes('tecnolog')) return 'Técnico/Tecnológico';
+  if (t.includes('profesional') || t.includes('universitario') ||
+      t.includes('pregrado') || t.includes('licenciatur')) return 'Pregrado';
+  if (t.includes('bachillerato') || t.includes('secundaria') || t.includes('media vocacional')) return 'Secundaria';
+  // 'PRI COMPLETA' / 'PRI INCOMPLE': abreviaturas de un Excel de cliente.
+  if (t.includes('primaria') || /\bpri\b/.test(t)) return 'Primaria';
+  if (t.includes('militar') || t.includes('policia')) return 'Carrera militar/policía';
+  if (t.includes('ninguno') || t.includes('sin estudios')) return 'Ninguno';
+  // Se devuelve tal cual a propósito: una barra con un valor raro es una señal
+  // de que algo entró mal, y esconderla dentro de un grupo la haría invisible.
+  return edu;
 }
 
 // ============================================================
@@ -753,6 +781,7 @@ module.exports = {
   aggregateResultsByCargo,
   buildDemandasPorCargo,
   resolveFicha,
+  groupEducation,
   FICHA_FIELD_MAP,
   normalizeTipoCargo,
   newRiskCounts,
