@@ -27,6 +27,7 @@ interface Stats {
 interface Evaluator {
   id: number;
   email: string;
+  phone: string | null;
   active: boolean;
   createdAt: string;
   companiesCount: number;
@@ -260,6 +261,7 @@ export default function AdminClients() {
                 <thead className="sticky top-0 z-10 bg-gray-50 shadow-sm">
                   <tr>
                     <th className="px-4 py-2 text-left font-medium text-gray-600">Email</th>
+                    <th className="px-4 py-2 text-left font-medium text-gray-600">Celular</th>
                     <th className="px-4 py-2 text-left font-medium text-gray-600">Registrado</th>
                     <th className="px-4 py-2 text-right font-medium text-gray-600">Empresas</th>
                     <th className="px-4 py-2 text-right font-medium text-gray-600">Evaluaciones</th>
@@ -272,6 +274,7 @@ export default function AdminClients() {
                   {evaluators.map(ev => (
                     <tr key={ev.id} className="hover:bg-gray-50">
                       <td className="px-4 py-2 text-gray-900">{ev.email}</td>
+                      <td className="px-4 py-2 text-gray-700">{ev.phone || <span className="text-gray-300">—</span>}</td>
                       <td className="px-4 py-2 text-gray-500">{formatDate(ev.createdAt)}</td>
                       <td className="px-4 py-2 text-right text-gray-700">{ev.companiesCount}</td>
                       <td className="px-4 py-2 text-right text-gray-700">{ev.evaluationsCount}</td>

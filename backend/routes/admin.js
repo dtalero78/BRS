@@ -43,10 +43,11 @@ router.get('/evaluators', async (req, res) => {
       .leftJoin('evaluations as e', 'e.company_id', 'c.id')
       .leftJoin('participant_evaluations as pe', 'pe.evaluation_id', 'e.id')
       .where('u.role', 'evaluator')
-      .groupBy('u.id', 'u.email', 'u.active', 'u.created_at')
+      .groupBy('u.id', 'u.email', 'u.phone', 'u.active', 'u.created_at')
       .select(
         'u.id',
         'u.email',
+        'u.phone',
         'u.active',
         'u.created_at',
         db.raw('COUNT(DISTINCT c.id) as companies_count'),
@@ -61,6 +62,7 @@ router.get('/evaluators', async (req, res) => {
       evaluators: rows.map(r => ({
         id: r.id,
         email: r.email,
+        phone: r.phone,
         active: r.active,
         createdAt: r.created_at,
         companiesCount: parseInt(r.companies_count) || 0,

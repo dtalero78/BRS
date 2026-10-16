@@ -11,7 +11,11 @@ const registerSchema = Joi.object({
   email: Joi.string().email().required(),
   password: Joi.string().min(6).required(),
   firstName: Joi.string().required(),
-  lastName: Joi.string().required()
+  lastName: Joi.string().required(),
+  // Celular: se guarda normalizado (solo dígitos, con "+" opcional al inicio).
+  // 7-15 dígitos cubre fijos/celulares colombianos y números internacionales (E.164).
+  phone: Joi.string().pattern(/^\+?\d{7,15}$/).required()
+    .messages({ 'string.pattern.base': 'Número de celular inválido', 'any.required': 'El celular es requerido', 'string.empty': 'El celular es requerido' })
 });
 
 const loginSchema = Joi.object({
@@ -52,11 +56,18 @@ router.post('/register', async (req, res) => {
       return res.status(201).json({ message: 'Cuenta creada exitosamente.' });
     }
 
+    // Se quitan espacios, guiones, puntos y paréntesis antes de validar:
+    // "300 123 4567" y "(300) 123-4567" son el mismo número.
+    const phone = typeof req.body.phone === 'string'
+      ? req.body.phone.trim().replace(/[\s\-().]/g, '')
+      : req.body.phone;
+
     const { error } = registerSchema.validate({
       email: req.body.email,
       password: req.body.password,
       firstName: req.body.firstName,
       lastName: req.body.lastName,
+      phone,
     });
     if (error) return res.status(400).json({ error: error.details[0].message });
 
@@ -100,6 +111,7 @@ router.post('/register', async (req, res) => {
       password_hash: passwordHash,
       role: 'evaluator',
       full_name: `${firstName} ${lastName}`.trim(),
+      phone,
       acquisition: acquisition ? JSON.stringify(acquisition) : null
     });
 

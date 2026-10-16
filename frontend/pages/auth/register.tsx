@@ -15,6 +15,10 @@ const schema = yup.object({
   firstName: yup.string().required('Nombre es requerido'),
   lastName: yup.string().required('Apellido es requerido'),
   email: yup.string().email('Email inválido').required('Email es requerido'),
+  // Misma regla que el backend: se ignoran espacios, guiones, puntos y paréntesis.
+  phone: yup.string()
+    .required('Celular es requerido')
+    .test('phone', 'Número de celular inválido', (v) => /^\+?\d{7,15}$/.test((v || '').replace(/[\s\-().]/g, ''))),
   password: yup.string().min(6, 'Mínimo 6 caracteres').required('Contraseña es requerida'),
   confirmPassword: yup.string()
     .oneOf([yup.ref('password')], 'Las contraseñas no coinciden')
@@ -64,6 +68,7 @@ export default function RegisterPage() {
           firstName: data.firstName,
           lastName: data.lastName,
           email: data.email,
+          phone: data.phone,
           password: data.password,
           acquisition: readAcquisition(),
           _hp: honeypot,
@@ -151,6 +156,12 @@ export default function RegisterPage() {
               <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
               <input {...register('email')} type="email" autoComplete="email" className={inputClass} />
               {errors.email && <p className="mt-1 text-xs text-red-500">{errors.email.message}</p>}
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Celular</label>
+              <input {...register('phone')} type="tel" inputMode="tel" autoComplete="tel" placeholder="300 123 4567" className={inputClass} />
+              {errors.phone && <p className="mt-1 text-xs text-red-500">{errors.phone.message}</p>}
             </div>
 
             <div>

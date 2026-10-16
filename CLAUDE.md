@@ -147,7 +147,7 @@ BRS/
 
 ```sql
 -- Gestión de usuarios y empresas
-users (id, email, password_hash, role, company_id [nullable], active, created_at, updated_at)
+users (id, email, phone [nullable], password_hash, role, company_id [nullable], active, created_at, updated_at)
 companies (id, name, nit, contact_email, contact_phone, active, created_by [FK→users], created_at, updated_at)
 participants (id, company_id, email, demographic_data, active, created_at, updated_at)
 
@@ -202,7 +202,7 @@ Dimensiones con sufijo `_total` son totales de dominio.
 
 ### Autenticación (`/api/auth`)
 - `POST /login` - JWT login (devuelve token + user data + lista de empresas)
-- `POST /register` - Auto-registro evaluador (solo email, password, nombre — sin empresa)
+- `POST /register` - Auto-registro evaluador (email, password, nombre y celular — sin empresa). El celular es obligatorio y se guarda normalizado en `users.phone` (sin espacios ni guiones, `+` opcional, 7-15 dígitos); se ve en la pestaña de evaluadores de `/evaluator/admin-clients`. Los registrados antes del 2026-10-12 no lo tienen.
 - `POST /refresh` - Renovar token
 - `POST /logout` - Cerrar sesión
 
