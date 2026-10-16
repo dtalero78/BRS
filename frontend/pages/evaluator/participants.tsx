@@ -804,43 +804,66 @@ export default function EvaluatorParticipants() {
     const enviadosOk = new Set<number>();
     let detenido: string | null = null;
 
+    // Reintentos SOLO para el fallo de red del fetch (catch): una caida de
+    // wifi de 2 segundos no es "Meta esta bloqueando al remitente", y antes
+    // bastaba un hipo de la conexion en CUALQUIER lote para frenar en seco
+    // el resto del envio (caso real: lote 20 de 20 con "Failed to fetch",
+    // VATCO, 2026-10-16 — 44 personas se quedaron sin invitacion por un
+    // error que no tenia nada que ver con ellas). Un `!res.ok` o una
+    // respuesta con `fatal`/`tasaFallo` SI es una senal real del servidor o
+    // de WhatsApp: esos casos no se reintentan, se detienen igual que antes.
+    const REINTENTOS_RED = 2;
+    const PAUSA_REINTENTO_MS = 4000;
+
     for (let i = 0; i < destinatarios.length; i += LOTE) {
       const lote = destinatarios.slice(i, i + LOTE);
       const numLote = Math.floor(i / LOTE) + 1;
 
-      try {
-        const res = await fetch('/api/participants/send-whatsapp', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-          body: JSON.stringify({
-            items: lote.map(p => ({ participantId: p.id, evaluationId: p.evaluationId })),
-          }),
-        });
-
-        if (!res.ok) {
-          const err = await res.json().catch(() => ({}));
-          fallidos += lote.length;
-          errores.push({ nombre: `Lote ${numLote}`, error: err.error || `HTTP ${res.status}` });
-          detenido = `El lote ${numLote} fue rechazado por el servidor. Envio detenido.`;
-        } else {
-          const data = await res.json();
-          ok += data.enviados || 0;
-          fallidos += data.fallidos || 0;
-          (data.resultados || []).forEach((r: any) => {
-            if (r.ok) enviadosOk.add(Number(r.participantId));
-            else errores.push({ nombre: r.nombre || `ID ${r.participantId}`, error: r.error });
+      let intento = 0;
+      let erroresDeRed: string[] = [];
+      while (true) {
+        try {
+          const res = await fetch('/api/participants/send-whatsapp', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+            body: JSON.stringify({
+              items: lote.map(p => ({ participantId: p.id, evaluationId: p.evaluationId })),
+            }),
           });
 
-          if (data.fatal) {
-            detenido = `WhatsApp bloqueo el remitente (codigo ${data.fatal.code}). Envio detenido para no agravarlo.`;
-          } else if ((data.tasaFallo ?? 0) > UMBRAL_FALLO) {
-            detenido = `El lote ${numLote} fallo en ${Math.round((data.tasaFallo || 0) * 100)}% de los envios. Envio detenido.`;
+          if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            fallidos += lote.length;
+            errores.push({ nombre: `Lote ${numLote}`, error: err.error || `HTTP ${res.status}` });
+            detenido = `El lote ${numLote} fue rechazado por el servidor. Envio detenido.`;
+          } else {
+            const data = await res.json();
+            ok += data.enviados || 0;
+            fallidos += data.fallidos || 0;
+            (data.resultados || []).forEach((r: any) => {
+              if (r.ok) enviadosOk.add(Number(r.participantId));
+              else errores.push({ nombre: r.nombre || `ID ${r.participantId}`, error: r.error });
+            });
+
+            if (data.fatal) {
+              detenido = `WhatsApp bloqueo el remitente (codigo ${data.fatal.code}). Envio detenido para no agravarlo.`;
+            } else if ((data.tasaFallo ?? 0) > UMBRAL_FALLO) {
+              detenido = `El lote ${numLote} fallo en ${Math.round((data.tasaFallo || 0) * 100)}% de los envios. Envio detenido.`;
+            }
           }
+          break; // hubo respuesta (buena o mala): no es un problema de red, no se reintenta.
+        } catch (e: any) {
+          erroresDeRed.push(e.message || 'Error de red');
+          if (intento < REINTENTOS_RED) {
+            intento++;
+            await new Promise(r => setTimeout(r, PAUSA_REINTENTO_MS * intento));
+            continue; // mismo lote, un intento mas.
+          }
+          fallidos += lote.length;
+          errores.push({ nombre: `Lote ${numLote}`, error: `${erroresDeRed[erroresDeRed.length - 1]} (${erroresDeRed.length} intentos)` });
+          detenido = `Error de red en el lote ${numLote} tras ${erroresDeRed.length} intentos. Envio detenido.`;
+          break;
         }
-      } catch (e: any) {
-        fallidos += lote.length;
-        errores.push({ nombre: `Lote ${numLote}`, error: e.message || 'Error de red' });
-        detenido = `Error de red en el lote ${numLote}. Envio detenido.`;
       }
 
       setBulkProgress({ hechos: Math.min(i + LOTE, destinatarios.length), total: destinatarios.length, ok, fallidos });

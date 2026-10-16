@@ -433,6 +433,26 @@ Lo decide el **prefijo de la llave pública**: `pub_test_` → `https://sandbox.
 - `frontend/pages/evaluator/payments.tsx`, `payments/result.tsx`, `components/PaymentShared.tsx`
 - `frontend/pages/evaluator/dashboard.tsx` (opción G "Pagos" con "N por pagar"), `evaluations.tsx` (insignia por evaluación), `participants.tsx` (insignia "Sin pagar" en completadas)
 
+## ENVÍO MASIVO DE WHATSAPP: NORMALIZACIÓN DE CELULAR Y REINTENTOS DE RED
+
+`normalizarCelular()` en `backend/services/whatsapp-sender.js` convierte el campo libre `demographic_data.phone` (viene de Excels de cliente, con formatos variados) a E.164 colombiano antes de pedirle a Twilio que mande la plantilla.
+
+**El campo a veces trae DOS números** (la persona dio su celular y el de un familiar, o quedó un número viejo sin borrar). La función toma el primero que sea un móvil colombiano válido. El separador entre los dos números **no es solo `/`**: en los Excel reales aparecen guion (`-`), guion largo (`–`, de copiar/pegar desde Word) y hasta basura de OCR en medio. Antes solo se reconocía `/`; con cualquier otro separador se perdía al limpiar no-dígitos, los dos números quedaban pegados en una cadena de 20 dígitos que nunca calzaba, y se reportaba **"Celular inválido"** aunque el primer número estuviera perfectamente bien.
+
+Reportado el 2026-10-16 (VATCO GROUP, instancia Shaddai): de 500 invitaciones intentadas, 44 salieron "con error" — la mayoría eran estos falsos positivos. Ahora `normalizarCelular()` prueba primero el string completo (formatos de un solo número, con espacios o prefijo de país), y si eso falla, separa por **cualquier carácter que no sea dígito** y prueba cada pedazo hasta encontrar uno válido.
+
+### Un fallo de red en un lote detenía TODO el envío restante
+`enviarWhatsAppMasivo()` en `frontend/pages/evaluator/participants.tsx` manda las invitaciones en lotes y se detiene si un lote sale mal — a propósito: si WhatsApp empieza a rechazar al remitente, insistir solo empeora su reputación. Pero esa misma regla se aplicaba también a un `fetch()` que ni siquiera llegó a tener respuesta (`catch`, p. ej. "Failed to fetch" por un hipo de wifi) — una caída de red de 2 segundos en CUALQUIER lote frenaba en seco a todos los que quedaban detrás, sin relación alguna con el lote fallido. Caso real: lote 20 de 20 de VATCO, "Failed to fetch", 44 personas se quedaron sin invitación por un problema de conexión del evaluador, no de WhatsApp.
+
+Ahora el `catch` (fallo de red, no respuesta del servidor) reintenta el **mismo lote** hasta 2 veces más con una pausa creciente antes de darse por vencido. Un `!res.ok` (el servidor respondió que no) o una respuesta con `fatal`/`tasaFallo` (WhatsApp de verdad está bloqueando) **no se reintentan** — esas son señales reales, no un hipo de conexión, y siguen deteniendo el envío igual que antes.
+
+> ⚠️ El backend no tiene protección contra duplicados: si el servidor SÍ alcanzó a procesar un lote pero la respuesta no llegó al navegador, un reintento manda ese lote otra vez y algunas personas podrían recibir la invitación dos veces. Es un riesgo menor (mismo enlace, sin daño) frente al problema que resuelve — antes esas personas no recibían nada.
+
+### Archivos
+- `backend/services/whatsapp-sender.js` — `normalizarCelular()`
+- `backend/tests/whatsapp-sender.test.js` — los números reales de VATCO que fallaban
+- `frontend/pages/evaluator/participants.tsx` — `enviarWhatsAppMasivo()`, reintentos de red por lote
+
 ## CO-MARCA POR EMPRESA (logo en la pantalla del participante)
 
 `companies.logo_url` guarda el logo de la empresa, que se muestra **junto** al de la plataforma en el header del participante. NULL = solo la plataforma (comportamiento de siempre).

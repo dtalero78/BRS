@@ -35,11 +35,35 @@ function isConfigured() {
  * cosa devuelve null y se reporta como fallo en vez de mandarse a ciegas.
  */
 function normalizarCelular(raw) {
-  // Algunos registros traen dos numeros ("A / B"); se toma el primero.
-  let d = String(raw || '').split('/')[0].replace(/\D/g, '');
-  if (d.startsWith('57') && d.length === 12) d = d.slice(2);
-  if (d.length !== 10 || !d.startsWith('3')) return null;
-  return `+57${d}`;
+  const s = String(raw || '').trim();
+  if (!s) return null;
+
+  const comoMovilValido = (digitos) => {
+    let d = digitos;
+    if (d.startsWith('57') && d.length === 12) d = d.slice(2);
+    if (d.length === 10 && d.startsWith('3')) return `+57${d}`;
+    return null;
+  };
+
+  // Caso comun: un solo numero, puede traer espacios internos o el prefijo
+  // de pais. Quitar TODO lo que no sea digito y probar de una.
+  const directo = comoMovilValido(s.replace(/\D/g, ''));
+  if (directo) return directo;
+
+  // Si no calzo, el campo puede traer DOS numeros separados por cualquier
+  // cosa que no sea un digito ("A / B", "A - B", "A – B", basura de OCR
+  // entre medio) — se toma el primero que si sea un movil valido. Antes
+  // solo se reconocia "/": con "-" o "–" (los mas comunes en los Excel de
+  // las empresas) el separador se perdia al limpiar, los dos numeros
+  // quedaban pegados en una cadena de 20 digitos que nunca calzaba con
+  // nada, y se reportaba "Celular invalido" aunque el primer numero
+  // estuviera perfectamente bien.
+  for (const segmento of s.split(/\D+/)) {
+    const valido = comoMovilValido(segmento);
+    if (valido) return valido;
+  }
+
+  return null;
 }
 
 /**
