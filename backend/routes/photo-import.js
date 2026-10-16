@@ -10,6 +10,7 @@ const { extractAnswersFromSheet, extractAllQuestionnairesFromSheet, QUESTIONNAIR
 const { fusionarFicha } = require('../utils/ficha-merge');
 const { resolveFicha } = require('../utils/report-data-aggregator');
 const { toResponseMap } = require('../utils/response-format');
+const { mapFormTypeFromTipoCargo } = require('../utils/map-form-type');
 
 const VALID_TYPES = Object.keys(QUESTIONNAIRE_META);
 const VALID_TYPES_WITH_FICHA = [...VALID_TYPES, 'ficha_datos'];
@@ -68,14 +69,6 @@ function mapMaritalStatus(st) {
   if (u.includes('SEPARAD')) return 'Separado(a)';
   if (u.includes('DIVORCIAD')) return 'Divorciado(a)';
   if (u.includes('VIUD')) return 'Viudo(a)';
-  return null;
-}
-
-function mapFormTypeFromTipoCargo(tc) {
-  if (!tc) return null;
-  const u = String(tc).toUpperCase();
-  if (u.includes('JEFATURA') || u.includes('PROFESIONAL') || u.includes('TÉCNIC') || u.includes('TECNIC')) return 'A';
-  if (u.includes('AUXILIAR') || u.includes('ASISTENT') || u.includes('OPERARI') || u.includes('OPERAD') || u.includes('AYUDANT')) return 'B';
   return null;
 }
 
@@ -617,9 +610,27 @@ router.post(
           completed_at: new Date(),
         });
 
-        const demo = typeof participant.demographic_data === 'string'
+        let demo = typeof participant.demographic_data === 'string'
           ? JSON.parse(participant.demographic_data)
           : (participant.demographic_data || {});
+
+        // Qué cuestionario se sube manda sobre lo que diga demo.formType: es
+        // el dato verificable (la persona respondió 97 o 123 ítems), contra
+        // un campo de texto libre (tipoCargo) que puede estar mal
+        // clasificado o simplemente desactualizado. Sin esto, subir el
+        // intralaboral que de verdad corresponde no corregía el campo
+        // guardado, y la persona quedaba con la insignia "Forma" y el % de
+        // avance de /evaluator/participants calculados contra el
+        // cuestionario que NO respondió (ver nota de mapFormTypeFromTipoCargo
+        // arriba).
+        if (questionnaireType === 'intralaboral_a' && demo.formType !== 'A') {
+          demo = { ...demo, formType: 'A' };
+          await trx('participants').where('id', participant.id).update({ demographic_data: JSON.stringify(demo) });
+        } else if (questionnaireType === 'intralaboral_b' && demo.formType !== 'B') {
+          demo = { ...demo, formType: 'B' };
+          await trx('participants').where('id', participant.id).update({ demographic_data: JSON.stringify(demo) });
+        }
+
         const occupationalGroup = occupationalGroupFor(questionnaireType, demo.formType);
 
         const formatted = responses.map(r => ({
@@ -812,6 +823,17 @@ router.post(
         }
 
         const effectiveFormType = resolvedFormType || demo.formType || 'A';
+
+        // Si este commit trae un intralaboral explícito (resolvedFormType
+        // viene de hasA/hasB, no del heurístico de tipoCargo), ese es el dato
+        // verificable: corregir demographic_data.formType si quedó
+        // desactualizado. Sin esto, re-subir solo el cuestionario (sin la
+        // ficha) después de una carga previa con el formType mal detectado
+        // dejaba la inconsistencia intacta.
+        if (resolvedFormType && demo.formType !== resolvedFormType) {
+          demo = { ...demo, formType: resolvedFormType };
+          await trx('participants').where('id', participant.id).update({ demographic_data: JSON.stringify(demo) });
+        }
 
         const summary = [];
         if (fichaDatos) {
