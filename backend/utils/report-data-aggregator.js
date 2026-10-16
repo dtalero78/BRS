@@ -160,7 +160,19 @@ function extractYear(val) {
  * informe separaba "Posgrado" de "Post-grado completo".
  */
 function normalizarNivelEstudio(edu) {
-  return String(edu || '')
+  return normalizarTexto(edu);
+}
+
+/**
+ * Normaliza texto SOLO para comparar (min\u00fasculas, sin tildes, sin signos).
+ * Usado por todos los `group*()` de esta secci\u00f3n: el mismo valor de la ficha
+ * llega escrito de formas distintas seg\u00fan la puerta por la que entr\u00f3 (el
+ * formulario del participante, la carga del evaluador, el Excel de cada
+ * empresa), y sin esto cada forma de escribirlo se volv\u00eda una barra propia
+ * en el informe.
+ */
+function normalizarTexto(s) {
+  return String(s || '')
     .toLowerCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
@@ -169,7 +181,7 @@ function normalizarNivelEstudio(edu) {
 }
 
 function groupEducation(edu) {
-  const t = normalizarNivelEstudio(edu);
+  const t = normalizarTexto(edu);
   if (!t) return edu;
   // Posgrado va primero: 'profesional/posgrado' debe contar como posgrado, que
   // es lo que hacía el guard `&& !lower.includes('posgrado')` de antes.
@@ -186,6 +198,50 @@ function groupEducation(edu) {
   // Se devuelve tal cual a propósito: una barra con un valor raro es una señal
   // de que algo entró mal, y esconderla dentro de un grupo la haría invisible.
   return edu;
+}
+
+/**
+ * Agrupa el estado civil para la gráfica "Participación por Estado Civil".
+ *
+ * Antes se usaba el literal crudo como llave (`base.estadoCivil[valor]++`),
+ * sin normalizar nada: "Soltero(a)", "SOLTERO (A)" y "Soltero (a)" eran tres
+ * barras distintas para la misma respuesta. Reportado el 2026-10-16: en la
+ * gráfica salían "Soltero(a)": 160 y "Soltero (a)": 5 por separado. En toda
+ * la base eran 18 formas distintas de escribir las 7 categorías oficiales.
+ */
+function groupMaritalStatus(estado) {
+  const t = normalizarTexto(estado);
+  if (!t) return estado;
+  if (t.includes('solter')) return 'Soltero(a)';
+  if (t.includes('casad')) return 'Casado(a)';
+  if (t.includes('union') || t.includes('convive') || t.includes('convivie')) return 'Unión libre';
+  if (t.includes('separad')) return 'Separado(a)';
+  if (t.includes('divorciad')) return 'Divorciado(a)';
+  if (t.includes('viud')) return 'Viudo(a)';
+  if (t.includes('sacerdote') || t.includes('monja')) return 'Sacerdote/Monja';
+  // Como en groupEducation: un valor que no calza con ninguna categoría se
+  // muestra tal cual. En Fundación San Martín (eval 12) 213 fichas tienen
+  // aquí guardado un valor de TIPO DE SALARIO ("FIJO (DIARIO, QUINCENAL,
+  // SEMANAL, MENSUAL)") — el campo quedó cruzado al importar ese Excel. No
+  // es parte de este arreglo: esconderlo lo haría pasar por una respuesta
+  // real de estado civil que nadie dio.
+  return estado;
+}
+
+/**
+ * Agrupa el tipo de vivienda. Mismo problema que estado civil: "Familiar"
+ * vs "FAMILIAR" eran dos barras. De paso aparecen valores numéricos sueltos
+ * ("2", "3"...) que son de ESTRATO, no de tipo de vivienda — mismo patrón de
+ * campo cruzado que el de estado civil; se devuelven tal cual por la misma
+ * razón.
+ */
+function groupTipoVivienda(tipo) {
+  const t = normalizarTexto(tipo);
+  if (!t) return tipo;
+  if (t.includes('propia')) return 'Propia';
+  if (t.includes('arriendo') || t.includes('alquiler')) return 'En arriendo';
+  if (t.includes('familiar')) return 'Familiar';
+  return tipo;
 }
 
 // ============================================================
@@ -683,7 +739,8 @@ function aggregateExtendedDemographics(fichaResponses) {
 
     // Estado civil — flujo foto/manual (Q5) y flujo web/token (Q19)
     if (ficha.maritalStatus && typeof ficha.maritalStatus === 'string') {
-      base.estadoCivil[ficha.maritalStatus] = (base.estadoCivil[ficha.maritalStatus] || 0) + 1;
+      const estadoLabel = groupMaritalStatus(ficha.maritalStatus);
+      base.estadoCivil[estadoLabel] = (base.estadoCivil[estadoLabel] || 0) + 1;
     }
 
     if (ficha.estrato != null && ficha.estrato !== '') {
@@ -692,7 +749,8 @@ function aggregateExtendedDemographics(fichaResponses) {
     }
 
     if (ficha.tipoVivienda) {
-      base.tipoVivienda[ficha.tipoVivienda] = (base.tipoVivienda[ficha.tipoVivienda] || 0) + 1;
+      const viviendaLabel = groupTipoVivienda(ficha.tipoVivienda);
+      base.tipoVivienda[viviendaLabel] = (base.tipoVivienda[viviendaLabel] || 0) + 1;
     }
 
     if (ficha.tipoCargo) {
@@ -782,6 +840,8 @@ module.exports = {
   buildDemandasPorCargo,
   resolveFicha,
   groupEducation,
+  groupMaritalStatus,
+  groupTipoVivienda,
   FICHA_FIELD_MAP,
   normalizeTipoCargo,
   newRiskCounts,
