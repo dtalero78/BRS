@@ -65,7 +65,8 @@ BRS/
 │   │   ├── 20260731000001_add_questionnaire_type_to_face_verifications.js  # verificación por cuestionario
 │   │   ├── 20260731000002_allow_coping_questionnaire_type.js  # deriva: coping faltaba en las CHECK
 │   │   ├── 20260902000001_add_include_coping_to_evaluations.js  # Brief COPE opcional por evaluación
-│   │   └── 20260903000001_add_wompi_payments.js  # payments + payment_items + PE.paid_at (pago por prueba)
+│   │   ├── 20260903000001_add_wompi_payments.js  # payments + payment_items + PE.paid_at (pago por prueba)
+│   │   └── 20261026000001_add_sofi_questionnaire.js  # 'sofi' en las CHECK + evaluations.include_sofi
 │   ├── routes/
 │   │   ├── auth.js           # Login, register (self-service evaluador), refresh, logout
 │   │   ├── companies.js      # CRUD empresas (admin + evaluador con ownership)
@@ -86,6 +87,7 @@ BRS/
 │   └── utils/
 │       ├── rekognition.js            # Verificación facial AWS (DetectFaces + CompareFaces)
 │       ├── calculate-results.js      # Motor de cálculo BRS oficial
+│       ├── calculate-sofi.js         # Motor del SOFI-SM (fatiga laboral, opcional)
 │       ├── baremos-completos.js      # Baremos Tablas 29-34 del Ministerio
 │       ├── excel-import-detector.js  # Detector header-aware + parser de respuestas Excel
 │       ├── pdf-charts.js             # Gráficas PDF: pie, bar, grouped bar, tablas
@@ -596,6 +598,51 @@ Los textos estáticos del informe organizacional no mencionan el COPE (describen
 
 > El frontend del participante no necesitó cambios: el hub se dibuja a partir de la lista que devuelve el backend, y las barras de progreso ya toleraban la ausencia del COPE.
 
+## SOFI-SM (FATIGA LABORAL) OPCIONAL POR EVALUACIÓN
+
+La "prueba SOFI" que el contrato de licencia con Shaddai incluye como desarrollo. Es el **SOFI-SM**: *Swedish Occupational Fatigue Inventory*, versión española modificada (Sebastián Cárdenas, Idoate García, Llano Lagares y Almanzor Elhadad, 2008, revista *28 de abril* nº 2, Universidad de Huelva). **Shaddai no tenía manual**: se reconstruyó del artículo original y las decisiones que el artículo no deja explícitas las tomamos nosotros (abajo).
+
+No hace parte de la batería oficial: como el Brief COPE, es un instrumento adicional que cada evaluación activa con `evaluations.include_sofi`. **El default es `false`**, al revés que el COPE: ahí el `true` protegía datos ya recogidos, aquí no hay ninguno.
+
+### El instrumento
+18 adjetivos, 6 dimensiones de 3 ítems, cada ítem de **0 (nada) a 10 (totalmente)**. No hay ítems invertidos. La numeración (`bateria_riesgo_psicosocial_preguntas.json` → `cuestionarios.sofi`) sigue el orden de aplicación del artículo, con las dimensiones intercaladas a propósito.
+
+| Dimensión | Ítems |
+|---|---|
+| Falta de energía | 1 Agotado · 12 Exhausto · 15 Extenuado |
+| Cansancio físico | 2 Respirando con dificultad · 10 Palpitaciones · 14 Con calor |
+| Disconfort físico | 4 Articulaciones agarrotadas · 7 Entumecido · 17 Dolorido |
+| Falta de motivación | 5 Apático · 8 Pasivo · 18 Indiferente |
+| Somnolencia | 6 Somnoliento · 9 Durmiéndome · 13 Bostezando |
+| Irritabilidad | 3 Irritable · 11 Enojado · 16 Furioso |
+
+La asignación ítem → dimensión vive en dos sitios (el JSON y `DIMENSIONS` en `calculate-sofi.js`); `tests/calculate-sofi.test.js` falla si se separan.
+
+### Calificación
+- **Dimensión** = suma de sus 3 ítems × 100 / 30 (0-100). *Decisión nuestra*: el artículo dice "de 0 a 100" sin dar la fórmula; es la única que cuadra con las medias que reporta.
+- **SSM-Index** (`sofi_ssm_index`) = suma de las 6 dimensiones × 100 / 600 (del artículo).
+- **Niveles** (`riskLevel`): `aceptable` 0-25 · `inadecuado` 26-50 · `inadecuado_ii` 51-75 · `inaceptable` 76-100. Tabla de los autores, **orientativa** (la tomaron por analogía del NASA-TLX). Se aplica al valor **redondeado a entero** para que 25,4 no caiga en el hueco entre franjas. Aplicarla también a cada dimensión es una extensión nuestra.
+- Un ítem sin responder o fuera de 0-10 deja su dimensión, y con ella el SSM-Index, en **null** — no en 0, que subestimaría la fatiga.
+
+### Aplicación
+- La instrucción pide calificar cómo se siente **habitualmente al terminar la jornada**, y la pantalla pone "Al terminar mi jornada de trabajo me siento…" sobre cada adjetivo. El original pregunta por el momento presente; como no controlamos a qué hora abre la persona el enlace, preguntar por "ahora" mediría la hora del día. El informe declara la adaptación.
+- Escala de 11 botones (`questionnaire.escala` en el JSON, renderizada aparte en `[token].tsx`); no pasa por `getResponseOptions()` invertido de las escalas Likert.
+- **No cuenta para dar la batería por completa**, ni siquiera en integración: mismo motivo que el COPE (un PE atascado sin webhook).
+- El consentimiento por defecto agrega una línea sobre la fatiga cuando la evaluación lo aplica (`withFatigue` en `consent-template.js`): pregunta por síntomas de salud.
+- Guards en el backend igual que el COPE: `GET /:token/questionnaire/sofi` → 404, `POST /:token/responses` → `403 SOFI_NOT_INCLUDED`, `POST /api/responses` → 400. `responses.js` acepta valores hasta 10 solo para `sofi`.
+
+### Archivos
+- `backend/migrations/20261026000001_add_sofi_questionnaire.js`
+- `backend/utils/calculate-sofi.js` + `backend/tests/calculate-sofi.test.js`
+- `backend/routes/participant-access.js` — `sofiIncluded()`, hub, guards, cálculo
+- `backend/routes/evaluations.js`, `results.js`, `responses.js`, `questionnaires.js`, `utils/questionnaire-totals.js`
+- `backend/routes/reports.js` + utils del informe — sección de fatiga laboral
+- `frontend/pages/participant/evaluation/[token].tsx` — escala 0-10 y barras de progreso de opcionales
+- `frontend/pages/evaluator/evaluations.tsx` — casilla + insignia "Con SOFI-SM"
+- `frontend/pages/evaluator/results*`, `components/ResultsDimensionCard.tsx`, `config/dimensionNames.ts` — niveles de fatiga
+
+> Pendiente: la importación por Excel y por foto todavía no reconocen el SOFI-SM; hoy solo se responde por el enlace del participante.
+
 ## CONSENTIMIENTO INFORMADO DEL PARTICIPANTE
 
 **Obligatorio en TODAS las instancias** (no es opt-in como la verificación facial). Es la primera pantalla que ve el participante al abrir su enlace, antes del menú de cuestionarios.
@@ -902,6 +949,7 @@ git push origin main
 - [x] **Integración server-to-server** — `POST /api/integration/participant` (auth `X-Api-Key`, idempotente por `externalRef`) + webhook `evaluation.completed` firmado con HMAC
 - [x] **Auto-redirect de retorno desactivado** — el participante ya no es redirigido a la app externa al terminar; se queda en la pantalla de éxito de BRS (webhook sigue notificando)
 - [x] **Brief COPE opcional por evaluación** — `evaluations.include_coping` decide si la campaña aplica el COPE-28; si no, el participante no lo ve y su sección no sale en el informe
+- [x] **SOFI-SM (fatiga laboral) opcional por evaluación** — la "prueba SOFI" del contrato con Shaddai; `evaluations.include_sofi` (default apagado), escala 0-10, SSM-Index con la tabla de cortes de los autores
 - [x] **Consentimiento informado del participante** — pantalla bloqueante antes del menú, en todas las instancias; registro de aceptación/rechazo con IP y snapshot del texto; editable por evaluación
 - [x] **Co-marca por empresa** — `companies.logo_url` pinta el logo de la empresa junto al de la plataforma en la pantalla del participante (hoy: REGIS en Universidad Manuela Beltrán); sin UI todavía, se asigna por SQL
 - [x] **Puerta general de acceso** — enlace único `/acceso` donde el participante entra con su número de documento, sin repartir enlaces individuales; límite de intentos fallidos por IP que se reinicia con cada acierto
