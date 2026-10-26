@@ -280,6 +280,10 @@ function aggregateResultsByForm(allResults) {
     estres: { general: newRiskCounts(), formaA: newRiskCounts(), formaB: newRiskCounts() },
     // Coping (Brief COPE): subscale-level counts using coping levels
     coping: { subscales: {}, categories: {}, overall: newCopingCounts(), participantCount: 0 },
+    // SOFI-SM (fatiga laboral): conteos por nivel y puntajes para promediar.
+    // Mismo patron que el COPE: sin filas 'sofi' todo queda en cero y la
+    // seccion del informe no se dibuja.
+    sofi: { overall: newSofiCounts(), indexScores: [], dimensions: {}, dimensionScores: {}, participantCount: 0 },
     // All dimension averages for intervention planning
     dimensionAverages: {}
   };
@@ -289,6 +293,7 @@ function aggregateResultsByForm(allResults) {
   const formaACounted = new Set();
   const formaBCounted = new Set();
   const copingCounted = new Set();
+  const sofiCounted = new Set();
 
   allResults.forEach(row => {
     const peId = row.participant_evaluation_id;
@@ -391,6 +396,21 @@ function aggregateResultsByForm(allResults) {
           incrementCoping(result.coping.subscales[dimKey], riskLevel);
         }
       }
+
+      // SOFI-SM. El motor ya clasifica: aqui solo se cuenta y se junta el
+      // puntaje transformado para el promedio por dimension.
+      if (qType === 'sofi') {
+        if (!sofiCounted.has(peId)) { sofiCounted.add(peId); result.sofi.participantCount++; }
+        if (dimKey === 'sofi_ssm_index') {
+          incrementRisk(result.sofi.overall, riskLevel);
+          if (d.transformedScore != null) result.sofi.indexScores.push(d.transformedScore);
+        } else {
+          if (!result.sofi.dimensions[dimKey]) result.sofi.dimensions[dimKey] = newSofiCounts();
+          if (!result.sofi.dimensionScores[dimKey]) result.sofi.dimensionScores[dimKey] = [];
+          incrementRisk(result.sofi.dimensions[dimKey], riskLevel);
+          if (d.transformedScore != null) result.sofi.dimensionScores[dimKey].push(d.transformedScore);
+        }
+      }
     });
   });
 
@@ -464,6 +484,36 @@ function newRiskCounts() {
 
 function newCopingCounts() {
   return { muy_bajo: 0, bajo: 0, medio: 0, alto: 0, muy_alto: 0 };
+}
+
+function newSofiCounts() {
+  return { aceptable: 0, inadecuado: 0, inadecuado_ii: 0, inaceptable: 0 };
+}
+
+function mean(values) {
+  if (!values || values.length === 0) return null;
+  return values.reduce((s, v) => s + v, 0) / values.length;
+}
+
+/**
+ * Resumen del SOFI-SM para el informe: promedios y conteos ya listos.
+ * @param {object} sofiAgg - aggResults.sofi
+ * @returns {{ n, indexCounts, indexMean, dimAverages, dimCounts }}
+ */
+function summarizeSofi(sofiAgg) {
+  const agg = sofiAgg || { overall: newSofiCounts(), indexScores: [], dimensions: {}, dimensionScores: {}, participantCount: 0 };
+  const dimAverages = {};
+  Object.entries(agg.dimensionScores || {}).forEach(([k, scores]) => {
+    const avg = mean(scores);
+    if (avg != null) dimAverages[k] = avg;
+  });
+  return {
+    n: agg.participantCount || 0,
+    indexCounts: agg.overall || newSofiCounts(),
+    indexMean: mean(agg.indexScores),
+    dimAverages,
+    dimCounts: agg.dimensions || {}
+  };
 }
 
 function incrementRisk(obj, riskLevel) {
@@ -832,6 +882,7 @@ module.exports = {
   aggregateDemographics,
   aggregateExtendedDemographics,
   aggregateResultsByForm,
+  summarizeSofi,
   getAtRiskDimensions,
   aggregateStressTypology,
   buildRiskPrioritizationMatrix,

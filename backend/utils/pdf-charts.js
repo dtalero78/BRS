@@ -26,6 +26,24 @@ const RISK_LABELS = {
   no_calculable: 'No Calculable'
 };
 
+// SOFI-SM (fatiga laboral): 4 niveles de los autores. Se reutilizan los tonos
+// de la escala de riesgo para que el lector no aprenda una paleta nueva:
+// aceptable = sin riesgo, inadecuado = medio, inadecuado II = alto,
+// inaceptable = muy alto.
+const SOFI_ORDER = ['aceptable', 'inadecuado', 'inadecuado_ii', 'inaceptable'];
+const SOFI_COLORS = {
+  aceptable: RISK_COLORS.sin_riesgo,
+  inadecuado: RISK_COLORS.riesgo_medio,
+  inadecuado_ii: RISK_COLORS.riesgo_alto,
+  inaceptable: RISK_COLORS.riesgo_muy_alto
+};
+const SOFI_LABELS = {
+  aceptable: 'Aceptable',
+  inadecuado: 'Inadecuado',
+  inadecuado_ii: 'Inadecuado II',
+  inaceptable: 'Inaceptable'
+};
+
 // ============================================================
 // PIE CHART
 // ============================================================
@@ -233,7 +251,9 @@ function drawHorizontalBarChart(doc, x, y, chartWidth, data, options = {}) {
   const totalH = marginTop + data.length * (barH + barGap) - barGap + marginBottom;
   const plotY = y + marginTop;
 
-  const maxVal = Math.max(...data.map(d => d.value), 1);
+  // maxValue fija la escala (p.ej. 0-100 para puntajes); sin ella la barra mas
+  // larga ocupa todo el ancho, que es lo correcto para conteos.
+  const maxVal = options.maxValue || Math.max(...data.map(d => d.value), 1);
 
   doc.save();
 
@@ -982,7 +1002,15 @@ function drawSectionBanner(doc, x, y, width, text, options = {}) {
  * @returns {number} Y final
  */
 function drawStackedRiskBars(doc, x, y, width, rows, options = {}) {
-  const data = (rows || []).filter(r => r && sumRiskCounts(r.counts) > 0);
+  // options.scale permite otra escala de niveles (SOFI-SM). Sin ella, la de riesgo.
+  const scale = options.scale || {};
+  const order = scale.order || RISK_ORDER;
+  const colors = scale.colors || RISK_COLORS;
+  const labels = scale.labels || RISK_LABELS;
+  const highKeys = scale.highKeys || ['riesgo_alto', 'riesgo_muy_alto'];
+  const darkTextLevels = scale.darkTextLevels || ['riesgo_medio', 'riesgo_bajo'];
+  const sumScale = (counts) => counts ? order.reduce((s, k) => s + (counts[k] || 0), 0) : 0;
+  const data = (rows || []).filter(r => r && sumScale(r.counts) > 0);
   if (data.length === 0) return y;
 
   const labelWidth = options.labelWidth || 155;
@@ -1016,12 +1044,12 @@ function drawStackedRiskBars(doc, x, y, width, rows, options = {}) {
   });
   if (highW > 0) {
     doc.fontSize(5).fillColor('#9CA3AF').font('Helvetica');
-    doc.text('% alto', plotX + plotW + 2, y + titleH, { width: highW - 2, align: 'center' });
+    doc.text(scale.highLabel || '% alto', plotX + plotW + 2, y + titleH, { width: highW - 2, align: 'center' });
   }
 
   data.forEach((row, i) => {
     const by = barsY + i * (barH + barGap);
-    const total = sumRiskCounts(row.counts);
+    const total = sumScale(row.counts);
 
     // Etiqueta a la izquierda, centrada verticalmente contra su barra.
     doc.fontSize(6).font('Helvetica').fillColor('#374151');
@@ -1031,17 +1059,17 @@ function drawStackedRiskBars(doc, x, y, width, rows, options = {}) {
 
     // Segmentos apilados
     let sx = plotX;
-    RISK_ORDER.forEach(level => {
+    order.forEach(level => {
       const val = row.counts[level] || 0;
       if (val === 0) return;
       const segW = (val / total) * plotW;
-      doc.rect(sx, by, segW, barH).fillColor(RISK_COLORS[level]).fill();
+      doc.rect(sx, by, segW, barH).fillColor(colors[level]).fill();
       const pct = val / total * 100;
       // El % solo cabe legible desde ~9% de la barra; debajo de eso el numero
       // se sale del segmento y se lee como si perteneciera al vecino.
       if (pct >= 9) {
         doc.fontSize(5.5).font('Helvetica-Bold')
-          .fillColor(level === 'riesgo_medio' || level === 'riesgo_bajo' ? '#374151' : '#FFFFFF');
+          .fillColor(darkTextLevels.includes(level) ? '#374151' : '#FFFFFF');
         doc.text(Math.round(pct) + '%', sx, by + (barH - 6) / 2, { width: segW, align: 'center' });
       }
       sx += segW;
@@ -1050,7 +1078,7 @@ function drawStackedRiskBars(doc, x, y, width, rows, options = {}) {
 
     // % en riesgo alto o muy alto: el numero que dispara la intervencion.
     if (highW > 0) {
-      const high = (row.counts.riesgo_alto || 0) + (row.counts.riesgo_muy_alto || 0);
+      const high = highKeys.reduce((s, k) => s + (row.counts[k] || 0), 0);
       const highPct = high / total * 100;
       doc.fontSize(6).font('Helvetica-Bold').fillColor(highPct >= 20 ? '#DC2626' : '#6B7280');
       doc.text(highPct.toFixed(0) + '%', plotX + plotW + 2, by + (barH - 7) / 2, { width: highW - 2, align: 'center' });
@@ -1062,10 +1090,10 @@ function drawStackedRiskBars(doc, x, y, width, rows, options = {}) {
   if (options.showLegend !== false) {
     const legendY = endY + 6;
     let lx = plotX;
-    RISK_ORDER.forEach(level => {
-      doc.rect(lx, legendY, 6, 6).fillColor(RISK_COLORS[level]).fill();
+    order.forEach(level => {
+      doc.rect(lx, legendY, 6, 6).fillColor(colors[level]).fill();
       doc.fontSize(5.5).fillColor('#374151').font('Helvetica');
-      doc.text(RISK_LABELS[level], lx + 8, legendY, { width: 52 });
+      doc.text(labels[level], lx + 8, legendY, { width: 52 });
       lx += 62;
     });
     endY = legendY + legendH - 6;
@@ -1110,5 +1138,8 @@ module.exports = {
   lightenColor,
   RISK_COLORS,
   RISK_ORDER,
-  RISK_LABELS
+  RISK_LABELS,
+  SOFI_ORDER,
+  SOFI_COLORS,
+  SOFI_LABELS
 };

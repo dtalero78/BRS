@@ -4,8 +4,8 @@ const PDFDocument = require('pdfkit');
 const db = require('../config/database');
 const { auth, getOwnedCompanyIds, isSuperAdmin } = require('../middleware/auth');
 const { REQUIRE_PAID_EVALUATION } = require('../config/brand');
-const { drawPieChart, drawBarChart, drawHorizontalBarChart, drawGroupedBarChart, drawTable, createRiskSeries, drawDonutChart, drawSemicircleGauge, drawSimpleRiskBars, drawStackedRiskBars, measureStackedRiskBars, drawColorCodedRiskTable, drawRiskPrioritizationMatrix, drawSectionBanner, RISK_COLORS, RISK_ORDER, RISK_LABELS } = require('../utils/pdf-charts');
-const { aggregateDemographics, aggregateExtendedDemographics, aggregateResultsByForm, getAtRiskDimensions, aggregateStressTypology, buildRiskPrioritizationMatrix, aggregateResultsByArea, aggregateResultsByCargo, buildDemandasPorCargo, resolveFicha, sumCounts } = require('../utils/report-data-aggregator');
+const { drawPieChart, drawBarChart, drawHorizontalBarChart, drawGroupedBarChart, drawTable, createRiskSeries, drawDonutChart, drawSemicircleGauge, drawSimpleRiskBars, drawStackedRiskBars, measureStackedRiskBars, drawColorCodedRiskTable, drawRiskPrioritizationMatrix, drawSectionBanner, RISK_COLORS, RISK_ORDER, RISK_LABELS, SOFI_ORDER, SOFI_COLORS, SOFI_LABELS } = require('../utils/pdf-charts');
+const { aggregateDemographics, aggregateExtendedDemographics, aggregateResultsByForm, summarizeSofi, getAtRiskDimensions, aggregateStressTypology, buildRiskPrioritizationMatrix, aggregateResultsByArea, aggregateResultsByCargo, buildDemandasPorCargo, resolveFicha, sumCounts } = require('../utils/report-data-aggregator');
 const templates = require('../utils/report-templates');
 const { BRAND_NAME } = require('../config/brand');
 
@@ -38,6 +38,7 @@ router.post('/individual', auth, async (req, res) => {
         'e.paid as evaluation_paid',
         'pe.paid_at as pe_paid_at',
         'e.include_coping as evaluation_include_coping',
+        'e.include_sofi as evaluation_include_sofi',
         'c.name as company_name',
         'c.nit as company_nit'
       );
@@ -67,11 +68,15 @@ router.post('/individual', auth, async (req, res) => {
     // bandera, y el informe debe reflejar el alcance contratado. Apagarla no
     // borra nada — volver a encenderla los reimprime.
     const incluyeCoping = participant.evaluation_include_coping !== false;
+    // SOFI-SM: mismo criterio, pero al revés por defecto — solo se imprime si
+    // la evaluación lo aplica explícitamente (include_sofi = true).
+    const incluyeSofi = participant.evaluation_include_sofi === true;
     const resultRows = (await db('results')
       .where('participant_evaluation_id', participantEvaluationId)
       .orderBy('questionnaire_type')
       .select('*'))
-      .filter(row => incluyeCoping || row.questionnaire_type !== 'coping');
+      .filter(row => incluyeCoping || row.questionnaire_type !== 'coping')
+      .filter(row => incluyeSofi || row.questionnaire_type !== 'sofi');
 
     if (resultRows.length === 0) {
       return res.status(400).json({ error: 'No hay resultados calculados. Primero calcule los resultados del participante.' });
@@ -154,6 +159,7 @@ router.post('/organizational', auth, async (req, res) => {
       .select(
         'e.id', 'e.name', 'e.description', 'e.start_date', 'e.end_date', 'e.status', 'e.paid',
         'e.include_coping',
+        'e.include_sofi',
         'e.report_text_overrides',
         'c.name as company_name', 'c.nit as company_nit'
       );
@@ -193,12 +199,15 @@ router.post('/organizational', auth, async (req, res) => {
     // El Brief COPE queda fuera si la evaluación no lo aplica: sin sus filas,
     // el agregador no cuenta nada y la sección del informe no se dibuja.
     const incluyeCoping = evaluation.include_coping !== false;
+    // SOFI-SM: solo si la evaluación lo aplica (default false, al revés que el COPE).
+    const incluyeSofi = evaluation.include_sofi === true;
     const allResults = (await db('results')
       .join('participant_evaluations as pe', 'results.participant_evaluation_id', 'pe.id')
       .join('participants as p', 'pe.participant_id', 'p.id')
       .where('pe.evaluation_id', evaluationId)
       .select('results.*', 'p.demographic_data', 'p.email'))
-      .filter(row => incluyeCoping || row.questionnaire_type !== 'coping');
+      .filter(row => incluyeCoping || row.questionnaire_type !== 'coping')
+      .filter(row => incluyeSofi || row.questionnaire_type !== 'sofi');
 
     // Fetch per-participant data only if individual summaries are requested
     let participantSummaries = [];
@@ -220,7 +229,8 @@ router.post('/organizational', auth, async (req, res) => {
         const resultRows = (await db('results')
           .where('participant_evaluation_id', pe.pe_id)
           .select('*'))
-          .filter(row => incluyeCoping || row.questionnaire_type !== 'coping');
+          .filter(row => incluyeCoping || row.questionnaire_type !== 'coping')
+          .filter(row => incluyeSofi || row.questionnaire_type !== 'sofi');
         if (resultRows.length === 0) continue;
         const resultsByType = {};
         resultRows.forEach(row => {
@@ -472,7 +482,8 @@ const QUESTIONNAIRE_TITLES = {
   'intralaboral_b': 'Cuestionario Intralaboral - Forma B',
   'extralaboral': 'Cuestionario de Factores Extralaborales',
   'estres': 'Cuestionario de Síntomas de Estrés',
-  'coping': 'Brief COPE - Estrategias de Afrontamiento'
+  'coping': 'Brief COPE - Estrategias de Afrontamiento',
+  'sofi': 'Fatiga Laboral (SOFI-SM)'
 };
 
 // Coping uses a different classification scale
@@ -502,11 +513,11 @@ function formatDimensionName(dim) {
 }
 
 function getRiskLabel(level) {
-  return RISK_LABELS[level] || COPING_LEVEL_LABELS[level] || level;
+  return RISK_LABELS[level] || COPING_LEVEL_LABELS[level] || SOFI_LABELS[level] || level;
 }
 
 function getRiskColor(level) {
-  return RISK_COLORS[level] || COPING_LEVEL_COLORS[level] || '#6B7280';
+  return RISK_COLORS[level] || COPING_LEVEL_COLORS[level] || SOFI_COLORS[level] || '#6B7280';
 }
 
 function ensureSpace(doc, needed) {
@@ -537,6 +548,158 @@ function drawRiskBar(doc, x, y, width, score, riskLevel) {
   const safeScore = Number.isFinite(score) ? score : 0;
   const fillWidth = (safeScore / 100) * width;
   doc.rect(x, y, fillWidth, barHeight).fillColor(RISK_COLORS[riskLevel] || COPING_LEVEL_COLORS[riskLevel] || '#6B7280').fill();
+}
+
+// ============================================================
+// SOFI-SM (fatiga laboral) - piezas compartidas por ambos informes
+// ============================================================
+const SOFI_LEVEL_LEGEND_ROWS = () => SOFI_ORDER.map(k => [
+  templates.SOFI_LEVELS[k].name,
+  templates.SOFI_LEVELS[k].range,
+  templates.SOFI_LEVELS[k].action
+]);
+
+function drawSofiLevelTable(doc, m, pageW) {
+  ensureSpace(doc, 110);
+  doc.x = m;
+  doc.fontSize(10).fillColor('#1F2937').font('Helvetica-Bold')
+    .text('Niveles de fatiga (tabla de los autores)', m, doc.y, { width: pageW });
+  doc.moveDown(0.3);
+  const endY = drawTable(doc, m, doc.y, pageW, [
+    { label: 'Nivel', width: 0.34 },
+    { label: 'Puntaje (0-100)', width: 0.22, align: 'center' },
+    { label: 'Acciones', width: 0.44 }
+  ], SOFI_LEVEL_LEGEND_ROWS(), { fontSize: 8, rowHeight: 16 });
+  doc.x = m;
+  doc.y = endY + 10;
+}
+
+// Nota metodológica obligatoria: instrumento complementario, consigna
+// adaptada, cortes orientativos y la cita.
+function drawSofiMethodNote(doc, m, pageW) {
+  ensureSpace(doc, 120);
+  doc.x = m;
+  doc.fontSize(9).fillColor('#1F2937').font('Helvetica-Bold')
+    .text('Nota metodológica', m, doc.y, { width: pageW });
+  doc.moveDown(0.2);
+  doc.fontSize(7.5).fillColor('#4B5563').font('Helvetica');
+  templates.SOFI_METHOD_NOTES.forEach(note => {
+    ensureSpace(doc, 24);
+    doc.text(`•  ${note}`, m, doc.y, { width: pageW, align: 'justify' });
+    doc.moveDown(0.25);
+  });
+  doc.x = m;
+}
+
+function sofiBarData(entries) {
+  return entries
+    .filter(e => e.score != null)
+    .map(e => ({
+      label: e.label,
+      value: Math.round(e.score * 10) / 10,
+      color: SOFI_COLORS[e.level] || '#9CA3AF'
+    }));
+}
+
+function drawSofiIndividualSection(doc, dimensions, m, pageW) {
+  const byKey = {};
+  (dimensions || []).forEach(d => { byKey[d.dimension] = d; });
+  const index = byKey[templates.SOFI_INDEX_KEY] || {};
+  const dims = templates.SOFI_DIMENSIONS.map(k => byKey[k]).filter(Boolean);
+
+  doc.fontSize(9).fillColor('#374151').font('Helvetica')
+    .text(templates.SOFI_INTRO, m, doc.y, { width: pageW, align: 'justify' });
+  doc.moveDown(0.8);
+
+  // Índice global destacado: medidor + nivel + acción.
+  const radius = 58;
+  const top = doc.y;
+  const cx = m + radius + 10;
+  const cy = top + radius + 4;
+  const hasIndex = index.transformedScore != null;
+  const lvl = templates.SOFI_LEVELS[index.riskLevel];
+  drawSemicircleGauge(doc, cx, cy, radius, hasIndex ? index.transformedScore.toFixed(1) : 'N/C', {
+    fillPercent: hasIndex ? Math.max(0, Math.min(1, index.transformedScore / 100)) : 0,
+    fillColor: SOFI_COLORS[index.riskLevel] || '#9CA3AF',
+    label: 'SSM-Index (0-100)'
+  });
+  const tx = cx + radius + 30;
+  const tw = m + pageW - tx;
+  doc.fontSize(10).fillColor('#6B7280').font('Helvetica-Bold')
+    .text('FATIGA GLOBAL (SSM-INDEX)', tx, top + 6, { width: tw });
+  doc.moveDown(0.2);
+  doc.fontSize(16).fillColor(lvl ? SOFI_COLORS[index.riskLevel] : '#6B7280').font('Helvetica-Bold')
+    .text(lvl ? lvl.name : 'No calculable', tx, doc.y, { width: tw });
+  if (lvl) {
+    doc.fontSize(11).fillColor('#1F2937').font('Helvetica-Bold')
+      .text(lvl.action, tx, doc.y, { width: tw });
+    doc.fontSize(8.5).fillColor('#6B7280').font('Helvetica')
+      .text(`Rango del nivel: ${lvl.range} puntos`, tx, doc.y, { width: tw });
+  }
+  doc.x = m;
+  doc.y = Math.max(doc.y, cy + 18) + 10;
+
+  doc.fontSize(9.5).fillColor('#374151').font('Helvetica')
+    .text(templates.generateSofiIndividualText(hasIndex ? index.transformedScore : null, index.riskLevel, dims), m, doc.y, { width: pageW, align: 'justify' });
+  doc.moveDown(1);
+
+  // Barras por dimensión, escala fija 0-100 para que se lean contra los cortes.
+  const bars = sofiBarData(dims.map(d => ({
+    label: templates.DIMENSION_DISPLAY_NAMES[d.dimension] || d.dimension,
+    score: d.transformedScore,
+    level: d.riskLevel
+  })));
+  if (bars.length > 0) {
+    ensureSpace(doc, 160);
+    drawHorizontalBarChart(doc, m, doc.y, pageW, bars, {
+      title: 'Puntaje por dimensión (0-100)', maxValue: 100, labelWidth: 120, barHeight: 12
+    });
+    doc.x = m;
+    doc.moveDown(1.2);
+  }
+
+  // Detalle por dimensión.
+  ensureSpace(doc, 60);
+  doc.fontSize(10).fillColor('#1F2937').font('Helvetica-Bold').text('Detalle por dimensión', m, doc.y, { width: pageW });
+  doc.moveDown(0.3);
+  const rows = dims.map(d => {
+    const l = templates.SOFI_LEVELS[d.riskLevel];
+    return [
+      templates.DIMENSION_DISPLAY_NAMES[d.dimension] || d.dimension,
+      d.transformedScore != null ? d.transformedScore.toFixed(1) : 'N/C',
+      d.rawScore != null ? String(d.rawScore) : 'N/C',
+      l ? l.name : 'No calculable',
+      l ? l.action : 'Ítems sin responder'
+    ];
+  });
+  rows.push([
+    'Fatiga Global (SSM-Index)',
+    hasIndex ? index.transformedScore.toFixed(1) : 'N/C',
+    '—',
+    lvl ? lvl.name : 'No calculable',
+    lvl ? lvl.action : 'Alguna dimensión incompleta'
+  ]);
+  const endY = drawTable(doc, m, doc.y, pageW, [
+    { label: 'Dimensión', width: 0.28 },
+    { label: 'Puntaje (0-100)', width: 0.15, align: 'center' },
+    { label: 'Bruto (0-30)', width: 0.13, align: 'center' },
+    { label: 'Nivel', width: 0.2 },
+    { label: 'Acciones', width: 0.24 }
+  ], rows, { fontSize: 8, rowHeight: 15 });
+  doc.x = m;
+  doc.y = endY + 8;
+
+  // Rangos de la tabla de los autores en una línea: la tabla completa va en el
+  // organizacional; aquí la acción de cada fila ya está en el detalle y así la
+  // sección cabe en una página junto con la nota metodológica.
+  doc.fontSize(7.5).fillColor('#4B5563').font('Helvetica')
+    .text('Niveles (tabla de los autores): ' + SOFI_ORDER.map(k => {
+      const l = templates.SOFI_LEVELS[k];
+      return `${l.name} ${l.range} (${l.action.toLowerCase()})`;
+    }).join('; ') + '.', m, doc.y, { width: pageW, align: 'justify' });
+  doc.moveDown(0.8);
+
+  drawSofiMethodNote(doc, m, pageW);
 }
 
 // ============================================================
@@ -651,6 +814,13 @@ function generateIndividualPDF(doc, { participant, demo, resultsByType, ficha, e
     doc.moveDown(0.3);
     drawHorizontalLine(doc);
     doc.moveDown(0.5);
+
+    // El SOFI-SM tiene su propia escala (4 niveles de fatiga) y su propia
+    // estructura (6 dimensiones + índice global): no pasa por la tabla genérica.
+    if (qType === 'sofi') {
+      drawSofiIndividualSection(doc, dimensions, m, pageW);
+      continue;
+    }
 
     // Separate dimensions, domain totals, and overall totals
     const overallTotals = dimensions.filter(d => d.dimension.startsWith('puntaje_total'));
@@ -1913,6 +2083,103 @@ function generateOrganizationalPDF(doc, { evaluation, demographics, aggResults, 
       });
       doc.y += 245;
     }
+  }
+
+  // ==========================================================
+  // FATIGA LABORAL (SOFI-SM) - instrumento complementario
+  // ==========================================================
+  // Condicional como el COPE: sin filas 'sofi' (evaluación sin include_sofi
+  // o nadie lo respondió) la sección no existe y el informe queda igual.
+  const sofi = summarizeSofi(aggResults.sofi);
+  if (sofi.n > 0) {
+    doc.addPage();
+    drawSectionBanner(doc, m, doc.y, pageW, 'FATIGA LABORAL (SOFI-SM)');
+    doc.y += 40;
+    doc.x = m;
+    doc.moveDown(0.5);
+
+    writeNarrative(templates.SOFI_INTRO);
+    writeNarrative(`Respondieron el cuestionario ${sofi.n} ${sofi.n === 1 ? 'persona' : 'personas'}. Las seis dimensiones evaluadas son:`);
+    doc.fontSize(8.5).fillColor('#374151').font('Helvetica');
+    templates.SOFI_DIMENSIONS.forEach(k => {
+      ensureSpace(doc, 14);
+      doc.font('Helvetica-Bold').text(`•  ${templates.DIMENSION_DISPLAY_NAMES[k]}: `, m + 8, doc.y, { width: pageW - 8, continued: true });
+      doc.font('Helvetica').text(templates.SOFI_DIMENSION_DESCRIPTIONS[k]);
+    });
+    doc.x = m;
+    doc.moveDown(0.8);
+
+    // Distribución de la población por nivel del índice global.
+    const sofiIndexTotal = sumCounts(sofi.indexCounts);
+    if (sofiIndexTotal > 0) {
+      ensureSpace(doc, 190);
+      const sofiR = 70;
+      const sofiCx = m + sofiR + 10;
+      const sofiCy = doc.y + sofiR + 5;
+      drawPieChart(doc, sofiCx, sofiCy, sofiR, SOFI_ORDER.map(k => ({
+        label: `${templates.SOFI_LEVELS[k].name} (${templates.SOFI_LEVELS[k].range})`,
+        value: sofi.indexCounts[k] || 0,
+        color: SOFI_COLORS[k]
+      })), {
+        showPercentages: true,
+        showLegend: true,
+        legendX: sofiCx + sofiR + 30,
+        legendY: sofiCy - 30,
+        title: 'Nivel de Fatiga Global (SSM-Index)'
+      });
+      doc.y = sofiCy + sofiR + 30;
+      doc.x = m;
+      doc.moveDown(0.5);
+    }
+
+    // Promedio por dimensión (escala fija 0-100, color = nivel del promedio).
+    const avgEntries = templates.SOFI_DIMENSIONS
+      .filter(k => sofi.dimAverages[k] != null)
+      .map(k => ({ label: templates.DIMENSION_DISPLAY_NAMES[k], score: sofi.dimAverages[k], level: templates.classifySofiScore(sofi.dimAverages[k]) }));
+    if (sofi.indexMean != null) {
+      avgEntries.push({ label: 'SSM-Index (global)', score: sofi.indexMean, level: templates.classifySofiScore(sofi.indexMean) });
+    }
+    const avgBars = sofiBarData(avgEntries);
+    if (avgBars.length > 0) {
+      ensureSpace(doc, 175);
+      drawHorizontalBarChart(doc, m, doc.y, pageW, avgBars, {
+        title: 'Promedio por dimensión (0-100)', maxValue: 100, labelWidth: 120, barHeight: 14
+      });
+      doc.x = m;
+      doc.moveDown(1.2);
+    }
+
+    // Distribución por nivel en cada dimensión.
+    const sofiScale = {
+      order: SOFI_ORDER, colors: SOFI_COLORS, labels: SOFI_LABELS,
+      highKeys: ['inadecuado_ii', 'inaceptable'], highLabel: '% prior.',
+      darkTextLevels: ['inadecuado']
+    };
+    const stackRows = templates.SOFI_DIMENSIONS
+      .filter(k => sofi.dimCounts[k] && sumCounts(sofi.dimCounts[k]) > 0)
+      .map(k => ({ label: templates.DIMENSION_DISPLAY_NAMES[k], counts: sofi.dimCounts[k] }));
+    if (sofiIndexTotal > 0) stackRows.push({ label: 'Fatiga Global (SSM-Index)', counts: sofi.indexCounts });
+    if (stackRows.length > 0) {
+      const stackOpts = { title: 'Distribución por nivel de fatiga (% de personas)', labelWidth: 120, scale: sofiScale };
+      ensureSpace(doc, measureStackedRiskBars(stackRows.length, stackOpts) + 10);
+      drawStackedRiskBars(doc, m, doc.y, pageW, stackRows, stackOpts);
+      doc.x = m;
+      doc.moveDown(0.6);
+      doc.fontSize(7).fillColor('#6B7280').font('Helvetica')
+        .text('"% prior." = porcentaje de personas en nivel inadecuado II o inaceptable (acciones prioritarias o inmediatas).', m, doc.y, { width: pageW });
+      doc.moveDown(1);
+    }
+
+    // Análisis dinámico.
+    const sofiParagraphs = templates.generateSofiAnalysis(sofi);
+    if (sofiParagraphs.length > 0) {
+      writeSubheading('Análisis');
+      sofiParagraphs.forEach(p => writeNarrative(p));
+      doc.moveDown(0.4);
+    }
+
+    drawSofiLevelTable(doc, m, pageW);
+    drawSofiMethodNote(doc, m, pageW);
   }
 
   // ==========================================================

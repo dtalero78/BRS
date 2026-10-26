@@ -3,6 +3,7 @@
  * for the organizational BRS report.
  */
 const { BRAND_NAME } = require('../config/brand');
+const { LEVELS: SOFI_LEVEL_TABLE, classifyFatigue } = require('./calculate-sofi');
 
 // ============================================================
 // DIMENSION & DOMAIN DISPLAY NAMES
@@ -65,7 +66,15 @@ const DIMENSION_DISPLAY_NAMES = {
   problem_focused_total: 'Afrontamiento Centrado en el Problema',
   emotion_focused_total: 'Afrontamiento Centrado en la Emoción',
   avoidant_total: 'Afrontamiento Evitativo',
-  puntaje_total_coping: 'Puntaje Total Coping'
+  puntaje_total_coping: 'Puntaje Total Coping',
+  // SOFI-SM (fatiga laboral)
+  falta_energia: 'Falta de Energía',
+  cansancio_fisico: 'Cansancio Físico',
+  disconfort_fisico: 'Disconfort Físico',
+  falta_motivacion: 'Falta de Motivación',
+  somnolencia: 'Somnolencia',
+  irritabilidad: 'Irritabilidad',
+  sofi_ssm_index: 'Fatiga Global (SSM-Index)'
 };
 
 const DOMAIN_DISPLAY_NAMES = {
@@ -1117,6 +1126,146 @@ const DEMOGRAPHIC_COLORS = [
   '#6366F1', '#14B8A6'
 ];
 
+// ============================================================
+// SOFI-SM (FATIGA LABORAL) - instrumento complementario
+// ============================================================
+// Orden de presentación de las dimensiones (el del artículo original).
+const SOFI_DIMENSIONS = ['falta_energia', 'cansancio_fisico', 'disconfort_fisico', 'falta_motivacion', 'somnolencia', 'irritabilidad'];
+const SOFI_INDEX_KEY = 'sofi_ssm_index';
+
+// Tabla de niveles de los autores, con el rango de puntaje legible. Sale del
+// motor (calculate-sofi.js) para que informe y cálculo no puedan separarse.
+const SOFI_LEVELS = (() => {
+  const out = {};
+  let min = 0;
+  SOFI_LEVEL_TABLE.forEach(l => {
+    out[l.key] = { name: l.name, action: l.action, range: `${min}–${l.max}` };
+    min = l.max + 1;
+  });
+  return out;
+})();
+
+// Descripción de cada dimensión (artículo original).
+const SOFI_DIMENSION_DESCRIPTIONS = {
+  falta_energia: 'Sentimientos generales de fuerza disminuida.',
+  cansancio_fisico: 'Sensaciones corporales generales, resultado de trabajo dinámico; signo de agotamiento metabólico.',
+  disconfort_fisico: 'Sensaciones corporales más localizadas, resultado de carga estática o isométrica.',
+  falta_motivacion: 'Sentimiento de no estar comprometido ni entusiasmado con el trabajo.',
+  somnolencia: 'Sensaciones de somnolencia.',
+  irritabilidad: 'Irritación, nerviosismo, enojo o irascibilidad (fatiga emocional, carga psíquica).'
+};
+
+const SOFI_INTRO = 'El SOFI-SM (versión española modificada del Swedish Occupational Fatigue Inventory) analiza la fatiga laboral física, mental y psíquica a partir de 18 adjetivos agrupados en seis dimensiones. Cada ítem se califica de 0 (nada) a 10 (totalmente); cada dimensión se expresa de 0 a 100 y el índice global de fatiga (SSM-Index) es el promedio de las seis dimensiones, también de 0 a 100. A mayor puntaje, mayor fatiga.';
+
+const SOFI_REFERENCE = 'Sebastián Cárdenas, M. L., Idoate García, V. M., Llano Lagares, M. y Almanzor Elhadad, F. I. (2008). SOFI-SM: cuestionario para el análisis de la fatiga laboral física, mental y psíquica. 28 de abril. Revista Digital de Salud y Seguridad en el Trabajo, nº 2.';
+
+// Nota metodológica obligatoria en ambos informes.
+const SOFI_METHOD_NOTES = [
+  'El SOFI-SM es un instrumento complementario: no hace parte de la Batería de Instrumentos para la Evaluación de Factores de Riesgo Psicosocial (Resolución 2764 de 2022), y sus resultados no modifican los niveles de riesgo obtenidos con la batería.',
+  'En esta aplicación se pidió a cada persona calificar cómo se siente habitualmente al terminar su jornada de trabajo; el instrumento original pregunta por el momento presente.',
+  'Los puntos de corte son orientativos: los autores los establecieron por analogía con el NASA-TLX y los definieron para el índice global (SSM-Index). Su aplicación a cada dimensión es una extensión de esa misma tabla.',
+  `Referencia: ${SOFI_REFERENCE}`
+];
+
+// Perfiles esperables según el tipo de carga. `distinctive` son las dimensiones
+// que lo distinguen de los demás (la falta de energía es común a todos).
+const SOFI_LOAD_PROFILES = [
+  { key: 'dinamica', label: 'carga física dinámica', dims: ['cansancio_fisico', 'falta_energia'], distinctive: ['cansancio_fisico'] },
+  { key: 'estatica', label: 'carga física estática (posturas mantenidas)', dims: ['disconfort_fisico', 'falta_energia'], distinctive: ['disconfort_fisico'] },
+  { key: 'mental', label: 'carga mental o trabajo en turnos nocturnos', dims: ['falta_energia', 'falta_motivacion', 'somnolencia'], distinctive: ['falta_motivacion', 'somnolencia'] },
+  { key: 'emocional', label: 'carga emocional', dims: ['falta_energia', 'falta_motivacion', 'irritabilidad'], distinctive: ['falta_motivacion', 'irritabilidad'] }
+];
+
+function sofiDimName(key) {
+  return (DIMENSION_DISPLAY_NAMES[key] || key).toLowerCase();
+}
+
+function joinEs(items) {
+  if (items.length <= 1) return items.join('');
+  return `${items.slice(0, -1).join(', ')} y ${items[items.length - 1]}`;
+}
+
+/**
+ * Perfiles de carga compatibles con las dimensiones más altas. Solo se
+ * interpreta cuando las dimensiones que lo distinguen superan el nivel
+ * aceptable: con fatiga baja, el orden entre dimensiones es ruido.
+ * @param {Array<{key, avg}>} ranked - dimensiones ordenadas de mayor a menor promedio
+ */
+function matchSofiProfiles(ranked) {
+  const top = ranked.slice(0, 3).filter(d => d.avg > 25).map(d => d.key);
+  return SOFI_LOAD_PROFILES.filter(p => p.distinctive.every(k => top.includes(k)));
+}
+
+/**
+ * Texto del resultado individual: índice global, nivel y acción.
+ */
+function generateSofiIndividualText(indexScore, levelKey, dimensions = []) {
+  if (indexScore == null || !SOFI_LEVELS[levelKey]) {
+    return 'El índice global de fatiga no pudo calcularse porque alguna dimensión quedó con ítems sin responder. Los resultados por dimensión que sí se completaron se presentan a continuación.';
+  }
+  const lvl = SOFI_LEVELS[levelKey];
+  let text = `El índice global de fatiga (SSM-Index) es ${indexScore.toFixed(1)} sobre 100, lo que corresponde a un ${lvl.name.toLowerCase()} (${lvl.range}): ${lvl.action.toLowerCase()}.`;
+  const ranked = dimensions.filter(d => d.transformedScore != null)
+    .map(d => ({ key: d.dimension, avg: d.transformedScore }))
+    .sort((a, b) => b.avg - a.avg);
+  const elevated = ranked.filter(d => d.avg > 25);
+  if (elevated.length > 0) {
+    text += ` Las dimensiones con puntaje más alto son ${joinEs(elevated.slice(0, 3).map(d => `${sofiDimName(d.key)} (${d.avg.toFixed(1)})`))}.`;
+  } else if (ranked.length > 0) {
+    text += ' Todas las dimensiones se ubican en el nivel aceptable.';
+  }
+  return text;
+}
+
+/**
+ * Análisis organizacional dinámico.
+ * @param {object} summary - { n, indexCounts, indexMean, dimAverages: { key: avg } }
+ * @returns {string[]} párrafos
+ */
+function generateSofiAnalysis(summary) {
+  const { indexCounts = {}, indexMean, dimAverages = {} } = summary || {};
+  const paragraphs = [];
+  const indexN = Object.values(indexCounts).reduce((s, v) => s + (v || 0), 0);
+
+  if (indexN > 0 && indexMean != null) {
+    const pct = k => ((indexCounts[k] || 0) / indexN * 100).toFixed(1);
+    const meanLevel = SOFI_LEVEL_TABLE.find(l => Math.round(indexMean) <= l.max);
+    const priority = ((indexCounts.inadecuado_ii || 0) + (indexCounts.inaceptable || 0)) / indexN * 100;
+    const who = indexN === 1 ? 'De la única persona con índice global calculado, el puntaje' : `De las ${indexN} personas con índice global calculado, el promedio`;
+    let p = `${who} del SSM-Index es ${indexMean.toFixed(1)} sobre 100 (${meanLevel.name.toLowerCase()}). El ${pct('aceptable')}% se ubica en nivel aceptable, el ${pct('inadecuado')}% en nivel inadecuado, el ${pct('inadecuado_ii')}% en nivel inadecuado II y el ${pct('inaceptable')}% en nivel inaceptable.`;
+    if ((indexCounts.inaceptable || 0) > 0) {
+      p += ` Para las personas en nivel inaceptable la tabla de los autores indica acciones inmediatas; en total, el ${priority.toFixed(1)}% del grupo requiere acciones prioritarias o inmediatas.`;
+    } else if (priority > 0) {
+      p += ` El ${priority.toFixed(1)}% del grupo se ubica en un nivel que, según la tabla de los autores, requiere acciones prioritarias.`;
+    }
+    paragraphs.push(p);
+  }
+
+  const ranked = SOFI_DIMENSIONS
+    .filter(k => dimAverages[k] != null)
+    .map(k => ({ key: k, avg: dimAverages[k] }))
+    .sort((a, b) => b.avg - a.avg);
+  if (ranked.length === 0) return paragraphs;
+
+  const top = ranked.slice(0, 2);
+  let p2 = `Por dimensión, los promedios más altos corresponden a ${joinEs(top.map(d => `${sofiDimName(d.key)} (${d.avg.toFixed(1)})`))}`;
+  const low = ranked[ranked.length - 1];
+  p2 += `, y el más bajo a ${sofiDimName(low.key)} (${low.avg.toFixed(1)}).`;
+
+  if (ranked.every(d => d.avg <= 25)) {
+    p2 += ' Todos los promedios se ubican en el nivel aceptable, por lo que no se configura un perfil de fatiga predominante.';
+  } else {
+    const profiles = matchSofiProfiles(ranked);
+    if (profiles.length > 0) {
+      p2 += ` Según los autores del instrumento, este patrón es compatible con el perfil de fatiga asociado a ${joinEs(profiles.map(pr => pr.label))}. Se recomienda contrastarlo con las condiciones reales de los puestos de trabajo y con los resultados del dominio Demandas del Trabajo de la batería antes de definir acciones.`;
+    } else {
+      p2 += ' El patrón observado no coincide claramente con ninguno de los perfiles típicos que describen los autores (carga física dinámica, carga física estática, carga mental o turnos nocturnos, carga emocional), por lo que su interpretación debe apoyarse en el análisis de los puestos de trabajo.';
+    }
+  }
+  paragraphs.push(p2);
+  return paragraphs;
+}
+
 module.exports = {
   DIMENSION_DISPLAY_NAMES,
   DIMENSION_SHORT_NAMES,
@@ -1156,5 +1305,17 @@ module.exports = {
   generateDimensionNarrative,
   generateDomainConclusion,
   generateFormGeneralAnalysis,
-  generateStressAnalysis
+  generateStressAnalysis,
+  SOFI_DIMENSIONS,
+  SOFI_INDEX_KEY,
+  SOFI_LEVELS,
+  SOFI_DIMENSION_DESCRIPTIONS,
+  SOFI_INTRO,
+  SOFI_REFERENCE,
+  SOFI_METHOD_NOTES,
+  SOFI_LOAD_PROFILES,
+  generateSofiIndividualText,
+  generateSofiAnalysis,
+  // Nivel del promedio de un grupo (misma tabla que usa el motor por persona).
+  classifySofiScore: classifyFatigue
 };
