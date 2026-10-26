@@ -201,6 +201,7 @@ async function findPeForConsent(token) {
       'participant_evaluations.consent_accepted_at',
       'participant_evaluations.consent_declined_at',
       'evaluations.consent_text_override',
+      'evaluations.include_sofi',
       'companies.name as company_name'
     )
     .first();
@@ -213,7 +214,7 @@ async function findPeForConsent(token) {
 function consentTextFor(pe) {
   const override = (pe.consent_text_override || '').trim();
   if (override) return override;
-  return buildDefaultConsentText({ companyName: pe.company_name });
+  return buildDefaultConsentText({ companyName: pe.company_name, withFatigue: pe.include_sofi === true });
 }
 
 /**

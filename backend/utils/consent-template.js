@@ -27,8 +27,13 @@ const { isFaceVerificationEnabled } = require('./rekognition');
  *   caras confundiría al participante.
  * @returns {string}
  */
-function buildDefaultConsentText({ companyName, withBiometrics } = {}) {
+function buildDefaultConsentText({ companyName, withBiometrics, withFatigue } = {}) {
   const empresa = (companyName || '').trim() || 'la empresa';
+  // El SOFI-SM pregunta por síntomas (agotamiento, dolor, somnolencia): son
+  // datos de salud, así que quien autoriza tiene que saber que se los piden.
+  const fatiga = withFatigue
+    ? ' También responderás un cuestionario corto sobre la fatiga que sientes al terminar tu jornada de trabajo.'
+    : '';
   const biometricos = withBiometrics === undefined ? isFaceVerificationEnabled() : !!withBiometrics;
 
   const secciones = [];
@@ -44,7 +49,7 @@ Antes de comenzar, léelo con calma. Al final decides si deseas participar.`
 
 ${empresa} está realizando una evaluación de factores de riesgo psicosocial con la Batería de Instrumentos del Ministerio de la Protección Social de Colombia, aplicada a través de la plataforma ${BRAND_NAME}. Su propósito es identificar condiciones del trabajo y del entorno que puedan afectar la salud de las personas, y definir acciones de prevención.
 
-Responderás varios cuestionarios sobre tus condiciones de trabajo, tu vida fuera del trabajo y tus síntomas de estrés. Toma entre 20 y 40 minutos. Puedes hacerlo en varias sesiones: tus respuestas se guardan a medida que avanzas.`
+Responderás varios cuestionarios sobre tus condiciones de trabajo, tu vida fuera del trabajo y tus síntomas de estrés.${fatiga} Toma entre 20 y 40 minutos. Puedes hacerlo en varias sesiones: tus respuestas se guardan a medida que avanzas.`
   );
 
   secciones.push(

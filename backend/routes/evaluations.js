@@ -990,12 +990,15 @@ router.get('/:id/consent-text', auth, authorize('admin', 'evaluator'), async (re
       .join('companies', 'evaluations.company_id', 'companies.id')
       .where('evaluations.id', req.params.id)
       .whereIn('evaluations.company_id', companyIds)
-      .select('evaluations.consent_text_override', 'companies.name as company_name')
+      .select('evaluations.consent_text_override', 'evaluations.include_sofi', 'companies.name as company_name')
       .first();
 
     if (!evaluation) return res.status(404).json({ error: 'Evaluación no encontrada' });
 
-    const defaultText = buildDefaultConsentText({ companyName: evaluation.company_name });
+    const defaultText = buildDefaultConsentText({
+      companyName: evaluation.company_name,
+      withFatigue: evaluation.include_sofi === true
+    });
     res.json({
       text: evaluation.consent_text_override || defaultText,
       defaultText,
