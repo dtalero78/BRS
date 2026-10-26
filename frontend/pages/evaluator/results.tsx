@@ -47,6 +47,7 @@ const CUESTIONARIO_TEXTO: Record<string, string> = {
   extralaboral: 'Extralaboral',
   estres: 'Estrés',
   coping: 'Brief COPE',
+  sofi: 'SOFI-SM',
 };
 
 const getRiskLevelBadge = (riskLevel: string | undefined) => {

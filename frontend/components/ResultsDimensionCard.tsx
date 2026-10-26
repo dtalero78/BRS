@@ -21,6 +21,11 @@ const getRiskLevelColor = (riskLevel: string) => {
     case 'riesgo_medio': return { bg: 'bg-yellow-50', border: 'border-yellow-200', text: 'text-yellow-800', bar: 'bg-yellow-500' };
     case 'riesgo_alto': return { bg: 'bg-orange-50', border: 'border-orange-200', text: 'text-orange-800', bar: 'bg-orange-500' };
     case 'riesgo_muy_alto': return { bg: 'bg-red-50', border: 'border-red-200', text: 'text-red-800', bar: 'bg-red-500' };
+    // SOFI-SM: niveles de fatiga
+    case 'aceptable': return { bg: 'bg-green-50', border: 'border-green-200', text: 'text-green-800', bar: 'bg-green-500' };
+    case 'inadecuado': return { bg: 'bg-yellow-50', border: 'border-yellow-200', text: 'text-yellow-800', bar: 'bg-yellow-500' };
+    case 'inadecuado_ii': return { bg: 'bg-orange-50', border: 'border-orange-200', text: 'text-orange-800', bar: 'bg-orange-500' };
+    case 'inaceptable': return { bg: 'bg-red-50', border: 'border-red-200', text: 'text-red-800', bar: 'bg-red-500' };
     case 'no_calculable': return { bg: 'bg-gray-100', border: 'border-gray-200', text: 'text-gray-800', bar: 'bg-gray-400' };
     default: return { bg: 'bg-gray-50', border: 'border-gray-200', text: 'text-gray-800', bar: 'bg-gray-400' };
   }
@@ -33,6 +38,10 @@ const getRiskLevelLabel = (riskLevel: string) => {
     'riesgo_medio': 'Riesgo Medio',
     'riesgo_alto': 'Riesgo Alto',
     'riesgo_muy_alto': 'Riesgo Muy Alto',
+    'aceptable': 'Fatiga Aceptable',
+    'inadecuado': 'Fatiga Inadecuada',
+    'inadecuado_ii': 'Fatiga Inadecuada II',
+    'inaceptable': 'Fatiga Inaceptable',
     'no_calculable': 'No calculable'
   };
   return labels[riskLevel] || riskLevel;

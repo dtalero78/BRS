@@ -43,6 +43,7 @@ interface Evaluation {
   paidParticipants?: number;
   unpaidCompletedParticipants?: number;
   includeCoping: boolean;
+  includeSofi: boolean;
   totalParticipants: number;
   completedParticipants: number;
   progress: number;
@@ -64,7 +65,9 @@ export default function EvaluatorEvaluations() {
     companyId: '',
     // El Brief COPE viene marcado por defecto para no cambiarle el alcance a
     // quien ya lo venia aplicando; se desmarca en la campana que no lo contrato.
-    includeCoping: true
+    includeCoping: true,
+    // El SOFI-SM, al reves: apagado salvo en la campana que lo contrato.
+    includeSofi: false
   });
 
   // Excel import state
@@ -159,7 +162,8 @@ export default function EvaluatorEvaluations() {
             description: formData.description,
             startDate: formData.startDate,
             endDate: formData.endDate || null,
-            includeCoping: formData.includeCoping
+            includeCoping: formData.includeCoping,
+            includeSofi: formData.includeSofi
           }
         : { ...formData, endDate: formData.endDate || null };
 
@@ -180,7 +184,7 @@ export default function EvaluatorEvaluations() {
         );
         setShowModal(false);
         setEditingEvaluation(null);
-        setFormData({ name: '', description: '', startDate: '', endDate: '', companyId: '', includeCoping: true });
+        setFormData({ name: '', description: '', startDate: '', endDate: '', companyId: '', includeCoping: true, includeSofi: false });
         fetchEvaluations();
       } else {
         const errorData = await response.json();
@@ -248,7 +252,8 @@ export default function EvaluatorEvaluations() {
       startDate: evaluation.startDate.split('T')[0],
       endDate: evaluation.endDate ? evaluation.endDate.split('T')[0] : '',
       companyId: String(evaluation.companyId),
-      includeCoping: evaluation.includeCoping !== false
+      includeCoping: evaluation.includeCoping !== false,
+      includeSofi: evaluation.includeSofi === true
     });
     setShowModal(true);
   };
@@ -428,7 +433,7 @@ export default function EvaluatorEvaluations() {
             <button
               onClick={() => {
                 setEditingEvaluation(null);
-                setFormData({ name: '', description: '', startDate: '', endDate: '', companyId: '', includeCoping: true });
+                setFormData({ name: '', description: '', startDate: '', endDate: '', companyId: '', includeCoping: true, includeSofi: false });
                 setShowModal(true);
               }}
               className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
@@ -537,7 +542,7 @@ export default function EvaluatorEvaluations() {
                 <button
                   onClick={() => {
                     setEditingEvaluation(null);
-                    setFormData({ name: '', description: '', startDate: '', endDate: '', companyId: '', includeCoping: true });
+                    setFormData({ name: '', description: '', startDate: '', endDate: '', companyId: '', includeCoping: true, includeSofi: false });
                     setShowModal(true);
                   }}
                   className="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
@@ -599,6 +604,13 @@ export default function EvaluatorEvaluations() {
                             <div className="ml-2">
                               <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800">
                                 Con Brief COPE
+                              </span>
+                            </div>
+                          )}
+                          {evaluation.includeSofi && (
+                            <div className="ml-2">
+                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-teal-100 text-teal-800">
+                                Con SOFI-SM
                               </span>
                             </div>
                           )}
@@ -798,6 +810,31 @@ export default function EvaluatorEvaluations() {
                       ofrecerse y de imprimirse. Si vuelves a activarlo, reaparecen.
                     </p>
                   )}
+
+                  <label className="mt-3 flex items-start gap-2 cursor-pointer border-t border-gray-200 pt-3">
+                    <input
+                      type="checkbox"
+                      checked={formData.includeSofi}
+                      onChange={(e) => setFormData({ ...formData, includeSofi: e.target.checked })}
+                      className="mt-0.5 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    />
+                    <span className="text-sm">
+                      <span className="font-medium text-gray-800">
+                        Aplicar SOFI-SM - fatiga laboral (18 preguntas)
+                      </span>
+                      <span className="block text-xs text-gray-500 mt-0.5">
+                        Fatiga fisica, mental y emocional al terminar la jornada. Tampoco hace
+                        parte de la bateria oficial: es opcional y no cuenta para dar la
+                        bateria por terminada.
+                      </span>
+                    </span>
+                  </label>
+                  {editingEvaluation && !formData.includeSofi && editingEvaluation.includeSofi && (
+                    <p className="mt-2 text-xs text-amber-700">
+                      Las respuestas del SOFI-SM ya guardadas no se borran; solo dejan de
+                      ofrecerse y de imprimirse. Si vuelves a activarlo, reaparecen.
+                    </p>
+                  )}
                 </div>
 
                 <div className="flex justify-end space-x-3 pt-4">
@@ -806,7 +843,7 @@ export default function EvaluatorEvaluations() {
                     onClick={() => {
                       setShowModal(false);
                       setEditingEvaluation(null);
-                      setFormData({ name: '', description: '', startDate: '', endDate: '', companyId: '', includeCoping: true });
+                      setFormData({ name: '', description: '', startDate: '', endDate: '', companyId: '', includeCoping: true, includeSofi: false });
                     }}
                     className="px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
                   >

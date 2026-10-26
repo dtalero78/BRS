@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, ReactNode } from 'react';
 import { useRouter } from 'next/router';
 import toast from 'react-hot-toast';
-import { ClipboardList, Briefcase, HardHat, Home, Brain, Shield, FileText, CheckCircle2, ArrowLeft, ChevronLeft, ChevronDown, Check, ScanFace, ShieldAlert, PlayCircle, LucideIcon } from 'lucide-react';
+import { ClipboardList, Briefcase, HardHat, Home, Brain, Shield, BatteryLow, FileText, CheckCircle2, ArrowLeft, ChevronLeft, ChevronDown, Check, ScanFace, ShieldAlert, PlayCircle, LucideIcon } from 'lucide-react';
 import { BRAND } from '../../../config/brand';
 import FaceCapture from '../../../components/FaceCapture';
 import { matchFichaOption } from '../../../components/fichaFields';
@@ -67,6 +67,8 @@ interface QuestionnaireData {
     preguntas?: Question[];
     campos?: any[];
     malestares?: any[];
+    // SOFI-SM: escala numérica 0-10 en vez de etiquetas verbales.
+    escala?: { min: number; max: number; etiqueta_min: string; etiqueta_max: string };
   };
   opciones_respuesta: {
     escala_principal: string[];
@@ -92,6 +94,7 @@ const QUESTIONNAIRE_TYPE_MAP: { [key: string]: string } = {
   'extralaboral': 'extralaboral',
   'estres': 'estres',
   'coping': 'coping',
+  'sofi': 'sofi',
 };
 
 interface EvaluationData {
@@ -549,7 +552,8 @@ const ParticipantEvaluationPage = () => {
         'forma-b': 'intralaboral_b',
         'extralaboral': 'extralaboral',
         'estres': 'estres',
-        'coping': 'coping'
+        'coping': 'coping',
+        'sofi': 'sofi'
       };
 
       // First check localStorage for backup
@@ -1058,6 +1062,15 @@ const ParticipantEvaluationPage = () => {
 
     const isCopingQuestionnaire = currentQuestionnaire.type === 'coping';
     const isStressQuestionnaire = currentQuestionnaire.type === 'estres';
+
+    // SOFI-SM: 0 a 10 en orden ascendente, sin invertir (más es más fatiga).
+    const escala = currentQuestionnaire.questionnaire.escala;
+    if (escala) {
+      return Array.from({ length: escala.max - escala.min + 1 }, (_, i) => ({
+        label: String(escala.min + i),
+        value: escala.min + i
+      }));
+    }
 
     if (isCopingQuestionnaire) {
       const options = currentQuestionnaire.opciones_respuesta.escala_coping
@@ -1630,6 +1643,48 @@ const ParticipantEvaluationPage = () => {
       if (!question) return null;
       const key = `q_${question.numero}`;
 
+      // SOFI-SM: 11 botones numéricos en fila (dos filas en pantallas chicas)
+      // con el significado de los extremos debajo. Una tarjeta por número,
+      // como el resto de escalas, serían 11 tarjetas apiladas para un adjetivo.
+      const escala = currentQuestionnaire.questionnaire.escala;
+      if (escala) {
+        return (
+          <fieldset className="border-0 p-0">
+            <legend className="sr-only">{question.texto}</legend>
+            <div className="grid grid-cols-6 gap-2 sm:grid-cols-11">
+              {getResponseOptions().map((option) => {
+                const selected = responses[key] === option.value;
+                return (
+                  <label key={option.value} className="cursor-pointer">
+                    <input
+                      type="radio"
+                      name={`question_${question.numero}`}
+                      value={option.value}
+                      checked={selected}
+                      onChange={() => handleResponseChange(question.numero, option.value)}
+                      className="peer sr-only"
+                    />
+                    <span
+                      className={`flex h-14 items-center justify-center rounded-xl border-2 text-lg font-semibold tabular-nums transition-colors peer-focus-visible:ring-2 peer-focus-visible:ring-blue-500 peer-focus-visible:ring-offset-2 ${
+                        selected
+                          ? 'border-blue-600 bg-blue-600 text-white'
+                          : 'border-gray-200 bg-white text-gray-700 active:bg-gray-50 sm:hover:border-blue-400'
+                      }`}
+                    >
+                      {option.label}
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
+            <div className="mt-3 flex justify-between text-sm text-gray-500">
+              <span>{escala.min} = {escala.etiqueta_min}</span>
+              <span>{escala.max} = {escala.etiqueta_max}</span>
+            </div>
+          </fieldset>
+        );
+      }
+
       return (
         <fieldset className="border-0 p-0">
           <legend className="sr-only">{question.pregunta || question.texto}</legend>
@@ -1749,6 +1804,12 @@ const ParticipantEvaluationPage = () => {
               </p>
             )}
 
+            {/* El SOFI-SM pregunta por adjetivos sueltos ("Agotado(a)"): sin
+                este encabezado la palabra sola no dice qué se está calificando. */}
+            {currentQuestionnaire.type === 'sofi' && (
+              <p className="mb-2 text-base text-gray-500">Al terminar mi jornada de trabajo me siento…</p>
+            )}
+
             <h1 className="text-[22px] font-semibold leading-snug tracking-tight text-gray-900 sm:text-3xl">
               {question?.pregunta || question?.texto}
             </h1>
@@ -1822,17 +1883,16 @@ const ParticipantEvaluationPage = () => {
             const totalCount = availableQuestionnaires.length;
             const allDone = totalCount > 0 && completedCount === totalCount;
 
-            // El Brief COPE no hace parte de la batería oficial del Ministerio, así
-            // que el progreso se muestra en dos barras: cuestionarios obligatorios
-            // (todos menos el COPE) y el Brief COPE por separado.
-            const requiredQuestionnaires = availableQuestionnaires.filter(q => q.id !== 'coping');
-            const copingQuestionnaire = availableQuestionnaires.find(q => q.id === 'coping');
+            // El Brief COPE y el SOFI-SM no hacen parte de la batería oficial del
+            // Ministerio, así que el progreso se muestra aparte: una barra para
+            // los cuestionarios obligatorios y una por cada instrumento opcional.
+            const OPTIONAL_LABELS: Record<string, string> = { coping: 'Brief COPE', sofi: 'Fatiga laboral (SOFI-SM)' };
+            const requiredQuestionnaires = availableQuestionnaires.filter(q => !OPTIONAL_LABELS[q.id]);
+            const optionalQuestionnaires = availableQuestionnaires.filter(q => OPTIONAL_LABELS[q.id]);
             const requiredDone = requiredQuestionnaires.filter(q => q.completed).length;
             const requiredTotal = requiredQuestionnaires.length;
             const requiredPct = requiredTotal > 0 ? Math.round((requiredDone / requiredTotal) * 100) : 0;
             const requiredAllDone = requiredTotal > 0 && requiredDone === requiredTotal;
-            const copingDone = copingQuestionnaire?.completed ? 1 : 0;
-            const copingPct = copingQuestionnaire ? copingDone * 100 : 0;
 
             const questionnaireIcons: Record<string, LucideIcon> = {
               'ficha-datos': ClipboardList,
@@ -1841,6 +1901,7 @@ const ParticipantEvaluationPage = () => {
               'extralaboral': Home,
               'estres': Brain,
               'coping': Shield,
+              'sofi': BatteryLow,
             };
 
             return (
@@ -1864,10 +1925,10 @@ const ParticipantEvaluationPage = () => {
                   )}
                 </div>
 
-                {/* Progress bars (compact) — obligatorios + Brief COPE por separado */}
+                {/* Progress bars (compact) — obligatorios + cada opcional por separado */}
                 {completedCount > 0 && (
                   <div className="mb-6 space-y-4">
-                    {/* Cuestionarios obligatorios (batería oficial, sin el Brief COPE) */}
+                    {/* Cuestionarios obligatorios (batería oficial, sin los opcionales) */}
                     <div>
                       <div className="flex items-center justify-between mb-2">
                         <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">
@@ -1885,25 +1946,25 @@ const ParticipantEvaluationPage = () => {
                       </div>
                     </div>
 
-                    {/* Brief COPE (opcional, fuera de la batería oficial) */}
-                    {copingQuestionnaire && (
-                      <div>
+                    {/* Instrumentos opcionales, fuera de la batería oficial */}
+                    {optionalQuestionnaires.map(q => (
+                      <div key={q.id}>
                         <div className="flex items-center justify-between mb-2">
                           <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">
-                            Brief COPE <span className="normal-case text-gray-400">(opcional)</span>
+                            {OPTIONAL_LABELS[q.id]} <span className="normal-case text-gray-400">(opcional)</span>
                           </span>
                           <span className="text-xs font-semibold text-gray-700">
-                            {copingPct}%
+                            {q.completed ? 100 : 0}%
                           </span>
                         </div>
                         <div className="w-full bg-gray-200 rounded-full h-1.5 overflow-hidden">
                           <div
-                            className={`h-1.5 rounded-full transition-all duration-500 ${copingDone ? 'bg-green-500' : 'bg-indigo-400'}`}
-                            style={{ width: `${copingPct}%` }}
+                            className={`h-1.5 rounded-full transition-all duration-500 ${q.completed ? 'bg-green-500' : 'bg-indigo-400'}`}
+                            style={{ width: `${q.completed ? 100 : 0}%` }}
                           />
                         </div>
                       </div>
-                    )}
+                    ))}
                   </div>
                 )}
 

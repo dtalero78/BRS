@@ -5,6 +5,7 @@ const router = express.Router();
 const db = require('../config/database');
 const calculateResults = require('../utils/calculate-results');
 const { calculateCopingResults } = require('../utils/calculate-coping');
+const { calculateSofiResults } = require('../utils/calculate-sofi');
 const { isQuestionnaireComplete } = require('../utils/questionnaire-totals');
 const { toResponseList } = require('../utils/response-format');
 const { notifyEvaluationCompleted } = require('../services/webhook-emitter');
@@ -304,6 +305,17 @@ function copingIncluded(row) {
   return !row || row.include_coping !== false;
 }
 
+/**
+ * ¿La evaluación de este PE aplica el SOFI-SM (fatiga laboral)?
+ *
+ * Al revés que el COPE, se lee en negativo (`=== true`): el default de la
+ * columna es `false` y lo seguro es NO ofrecer un instrumento que la campaña
+ * no contrató.
+ */
+function sofiIncluded(row) {
+  return !!row && row.include_sofi === true;
+}
+
 // ---------------------------------------------------------------------------
 // Verificación facial (opt-in por instancia vía FACE_VERIFICATION_ENABLED)
 // ---------------------------------------------------------------------------
@@ -577,7 +589,9 @@ async function autoCalculateResults(peId) {
 
       const calculated = responseRecord.questionnaire_type === 'coping'
         ? calculateCopingResults(formattedResponses)
-        : await calculateResults(responseRecord.questionnaire_type, formattedResponses, { occupationalGroup });
+        : responseRecord.questionnaire_type === 'sofi'
+          ? calculateSofiResults(formattedResponses)
+          : await calculateResults(responseRecord.questionnaire_type, formattedResponses, { occupationalGroup });
 
       allResults.push(...calculated);
     }
@@ -694,16 +708,18 @@ router.get('/:token/questionnaire/:type', async (req, res) => {
       .join('evaluations', 'evaluations.id', 'participant_evaluations.evaluation_id')
       .where('participant_evaluations.access_token', token)
       .where('participant_evaluations.token_expires_at', '>', new Date())
-      .select('participants.*', 'evaluations.include_coping')
+      .select('participants.*', 'evaluations.include_coping', 'evaluations.include_sofi')
       .first();
 
     if (!participantEvaluation) {
       return res.status(404).json({ error: 'Token inválido o expirado' });
     }
 
-    // Una evaluación que no aplica el Brief COPE tampoco lo sirve por URL
-    // directa: el hub deja de listarlo, pero la ruta es pública y adivinable.
-    if (type === 'coping' && !copingIncluded(participantEvaluation)) {
+    // Una evaluación que no aplica el Brief COPE (o el SOFI-SM) tampoco lo
+    // sirve por URL directa: el hub deja de listarlo, pero la ruta es pública
+    // y adivinable.
+    if ((type === 'coping' && !copingIncluded(participantEvaluation))
+        || (type === 'sofi' && !sofiIncluded(participantEvaluation))) {
       return res.status(404).json({ error: 'Cuestionario no disponible en esta evaluación' });
     }
 
@@ -740,6 +756,9 @@ router.get('/:token/questionnaire/:type', async (req, res) => {
         break;
       case 'coping':
         questionnaire = questionnairesData.cuestionarios.coping;
+        break;
+      case 'sofi':
+        questionnaire = questionnairesData.cuestionarios.sofi;
         break;
       default:
         return res.status(404).json({ error: 'Tipo de cuestionario no encontrado' });
@@ -801,7 +820,8 @@ router.get('/:token/questionnaires', async (req, res) => {
         'participants.*',
         'participant_evaluations.id as participant_evaluation_id',
         'participant_evaluations.integration_metadata',
-        'evaluations.include_coping'
+        'evaluations.include_coping',
+        'evaluations.include_sofi'
       )
       .first();
 
@@ -865,6 +885,7 @@ router.get('/:token/questionnaires', async (req, res) => {
       'extralaboral': 'extralaboral',
       'estres': 'estres',
       'coping': 'coping',
+      'sofi': 'sofi',
     };
 
     // All participants must start with demographic questionnaire
@@ -927,6 +948,18 @@ router.get('/:token/questionnaires', async (req, res) => {
       });
     }
 
+    // El SOFI-SM, igual: instrumento adicional que solo aplica si la
+    // evaluación lo activó.
+    if (sofiIncluded(participantEvaluation)) {
+      available.push({
+        id: 'sofi',
+        name: questionnairesData.cuestionarios.sofi?.nombre || 'SOFI-SM - Fatiga Laboral',
+        description: 'Fatiga al terminar la jornada de trabajo',
+        totalQuestions: questionnairesData.cuestionarios.sofi?.total_preguntas || 18,
+        completed: completedTypes.includes(idToType['sofi']),
+      });
+    }
+
     res.json({
       participant: {
         id: participantEvaluation.id,
@@ -948,7 +981,7 @@ router.get('/:token/questionnaires', async (req, res) => {
 });
 
 // Save responses by token
-const VALID_QUESTIONNAIRE_TYPES = ['ficha_datos', 'intralaboral_a', 'intralaboral_b', 'extralaboral', 'estres', 'coping'];
+const VALID_QUESTIONNAIRE_TYPES = ['ficha_datos', 'intralaboral_a', 'intralaboral_b', 'extralaboral', 'estres', 'coping', 'sofi'];
 
 router.post('/:token/responses', async (req, res) => {
   try {
@@ -976,7 +1009,8 @@ router.post('/:token/responses', async (req, res) => {
         'participant_evaluations.id as pe_id',
         'participant_evaluations.status as pe_status',
         'participant_evaluations.integration_metadata as pe_integration_metadata',
-        'evaluations.include_coping'
+        'evaluations.include_coping',
+        'evaluations.include_sofi'
       )
       .first();
 
@@ -993,6 +1027,12 @@ router.post('/:token/responses', async (req, res) => {
       return res.status(403).json({
         error: 'Este cuestionario no forma parte de tu evaluación.',
         code: 'COPING_NOT_INCLUDED'
+      });
+    }
+    if (questionnaireType === 'sofi' && !sofiIncluded(participantEvaluation)) {
+      return res.status(403).json({
+        error: 'Este cuestionario no forma parte de tu evaluación.',
+        code: 'SOFI_NOT_INCLUDED'
       });
     }
 

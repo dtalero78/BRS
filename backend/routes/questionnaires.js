@@ -48,6 +48,9 @@ router.get('/:type', auth, async (req, res) => {
       case 'coping':
         questionnaire = data.cuestionarios.coping;
         break;
+      case 'sofi':
+        questionnaire = data.cuestionarios.sofi;
+        break;
       default:
         return res.status(404).json({ error: 'Tipo de cuestionario no encontrado' });
     }

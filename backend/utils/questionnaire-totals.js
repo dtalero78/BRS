@@ -14,6 +14,7 @@ function loadTotals() {
     extralaboral: c.extralaboral?.total_preguntas || 31,
     estres: c.estres?.total_sintomas || 31,
     coping: c.coping?.total_preguntas || 28,
+    sofi: c.sofi?.total_preguntas || 18,
     ficha_datos: c.ficha_datos_generales?.campos?.length || 18,
   };
   return cache;

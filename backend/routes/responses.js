@@ -11,10 +11,12 @@ const { toResponseList } = require('../utils/response-format');
 // request valido fallara con 400. Debe ser un entero positivo.
 const saveResponsesSchema = Joi.object({
   participantId: Joi.number().integer().positive().required(),
-  questionnaireType: Joi.string().valid('intralaboral_a', 'intralaboral_b', 'extralaboral', 'stress', 'coping').required(),
+  questionnaireType: Joi.string().valid('intralaboral_a', 'intralaboral_b', 'extralaboral', 'stress', 'coping', 'sofi').required(),
   responses: Joi.array().items(Joi.object({
     questionNumber: Joi.number().integer().min(1).required(),
-    responseValue: Joi.number().integer().min(0).max(4).required(),
+    // El SOFI-SM se responde de 0 a 10; el resto de la batería, de 0 a 4.
+    responseValue: Joi.number().integer().min(0).required()
+      .when(Joi.ref('/questionnaireType'), { is: 'sofi', then: Joi.number().max(10), otherwise: Joi.number().max(4) }),
     dimension: Joi.string().allow(''),
     domain: Joi.string().allow('')
   })).min(1).required()
@@ -34,7 +36,7 @@ router.post('/', auth, async (req, res) => {
       .leftJoin('evaluations', 'pe.evaluation_id', 'evaluations.id')
       .where('participants.id', participantId)
       .whereIn('participants.company_id', await getOwnedCompanyIds(req.user.userId))
-      .select('participants.*', 'pe.id as pe_id', 'pe.status as pe_status', 'evaluations.name as evaluation_name', 'evaluations.include_coping')
+      .select('participants.*', 'pe.id as pe_id', 'pe.status as pe_status', 'evaluations.name as evaluation_name', 'evaluations.include_coping', 'evaluations.include_sofi')
       .first();
 
     if (!participantEvaluation) {
@@ -50,6 +52,9 @@ router.post('/', auth, async (req, res) => {
     // terminaría con una sección que la evaluación no contrató.
     if (questionnaireType === 'coping' && participantEvaluation.include_coping === false) {
       return res.status(400).json({ error: 'Esta evaluación no aplica el Brief COPE' });
+    }
+    if (questionnaireType === 'sofi' && participantEvaluation.include_sofi !== true) {
+      return res.status(400).json({ error: 'Esta evaluación no aplica el SOFI-SM' });
     }
 
     const thisQuestionnaireDone = isQuestionnaireComplete(questionnaireType, responses);

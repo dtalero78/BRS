@@ -62,6 +62,14 @@ export const DIMENSION_NAMES: Record<string, string> = {
   emotion_focused_total: 'Afrontamiento Centrado en la Emoción',
   avoidant_total: 'Afrontamiento Evitativo',
   puntaje_total_coping: 'Puntaje Total Coping',
+  // SOFI-SM (fatiga laboral)
+  falta_energia: 'Falta de Energía',
+  cansancio_fisico: 'Cansancio Físico',
+  disconfort_fisico: 'Disconfort Físico',
+  falta_motivacion: 'Falta de Motivación',
+  somnolencia: 'Somnolencia',
+  irritabilidad: 'Irritabilidad',
+  sofi_ssm_index: 'Fatiga Global (SSM-Index)',
 };
 
 // Devuelve el nombre legible de una dimensión, con un fallback humanizado

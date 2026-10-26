@@ -33,7 +33,9 @@ const createEvaluationSchema = Joi.object({
   companyId: Joi.number().integer().required(),
   // El Brief COPE no hace parte de la batería oficial: se aplica solo si esta
   // evaluación lo incluye. Ausente = true (comportamiento histórico).
-  includeCoping: Joi.boolean()
+  includeCoping: Joi.boolean(),
+  // SOFI-SM (fatiga laboral): igual de opcional, pero ausente = false.
+  includeSofi: Joi.boolean()
 });
 
 const updateEvaluationSchema = Joi.object({
@@ -42,7 +44,8 @@ const updateEvaluationSchema = Joi.object({
   startDate: Joi.date(),
   endDate: Joi.date().min(Joi.ref('startDate')).allow(null),
   status: Joi.string().valid('active', 'completed', 'cancelled'),
-  includeCoping: Joi.boolean()
+  includeCoping: Joi.boolean(),
+  includeSofi: Joi.boolean()
 });
 
 // Get all evaluations for the evaluator's companies
@@ -108,6 +111,7 @@ router.get('/', auth, async (req, res) => {
           paidParticipants: parseInt(evaluation.paid_participants) || 0,
           unpaidCompletedParticipants: parseInt(evaluation.unpaid_completed_participants) || 0,
           includeCoping: evaluation.include_coping !== false,
+          includeSofi: evaluation.include_sofi === true,
           totalParticipants: total,
           completedParticipants: completed,
           progress: total > 0 ? Math.round((completed / total) * 100) : 0,
@@ -178,6 +182,7 @@ router.get('/:id', auth, async (req, res) => {
       endDate: evaluation.end_date,
       status: evaluation.status,
       includeCoping: evaluation.include_coping !== false,
+      includeSofi: evaluation.include_sofi === true,
       totalParticipants: total,
       completedParticipants: completed,
       progress: total > 0
@@ -208,7 +213,7 @@ router.post('/', auth, authorize('admin', 'evaluator'), async (req, res) => {
     const { error } = createEvaluationSchema.validate(req.body);
     if (error) return res.status(400).json({ error: error.details[0].message });
 
-    const { name, description, startDate, endDate, companyId, includeCoping } = req.body;
+    const { name, description, startDate, endDate, companyId, includeCoping, includeSofi } = req.body;
 
     // Validate company ownership
     if (!companyId) {
@@ -228,7 +233,8 @@ router.post('/', auth, authorize('admin', 'evaluator'), async (req, res) => {
         start_date: startDate,
         end_date: endDate,
         status: 'active',
-        include_coping: includeCoping === undefined ? true : !!includeCoping
+        include_coping: includeCoping === undefined ? true : !!includeCoping,
+        include_sofi: !!includeSofi
       })
       .returning('*');
 
@@ -249,6 +255,7 @@ router.post('/', auth, authorize('admin', 'evaluator'), async (req, res) => {
       endDate: evaluation.end_date,
       status: evaluation.status,
       includeCoping: evaluation.include_coping !== false,
+      includeSofi: evaluation.include_sofi === true,
       totalParticipants: 0,
       completedParticipants: 0,
       progress: 0,
@@ -289,6 +296,7 @@ router.put('/:id', auth, authorize('admin', 'evaluator'), async (req, res) => {
     // Apagarlo no borra nada: las respuestas y resultados del COPE ya guardados
     // siguen en la base, solo dejan de ofrecerse y de imprimirse.
     if (req.body.includeCoping !== undefined) updateData.include_coping = !!req.body.includeCoping;
+    if (req.body.includeSofi !== undefined) updateData.include_sofi = !!req.body.includeSofi;
 
     const [evaluation] = await db('evaluations')
       .where('id', id)
@@ -324,6 +332,7 @@ router.put('/:id', auth, authorize('admin', 'evaluator'), async (req, res) => {
       endDate: evaluation.end_date,
       status: evaluation.status,
       includeCoping: evaluation.include_coping !== false,
+      includeSofi: evaluation.include_sofi === true,
       totalParticipants: totalUpdate,
       completedParticipants: completedUpdate,
       progress: totalUpdate > 0

@@ -653,6 +653,33 @@
         {"numero": 27, "texto": "Me echo la culpa de lo que ha sucedido", "subescala": "autoinculpacion"},
         {"numero": 28, "texto": "Consigo que otras personas me ayuden o aconsejen", "subescala": "apoyo_instrumental"}
       ]
+    },
+    "sofi": {
+      "nombre": "SOFI-SM - Fatiga Laboral",
+      "descripcion": "Evaluación de la fatiga laboral física, mental y emocional (Swedish Occupational Fatigue Inventory, versión española modificada)",
+      "total_preguntas": 18,
+      "instrucciones": "Piense en cómo se siente normalmente al terminar su jornada de trabajo. Para cada palabra, indique en qué medida describe cómo se siente, desde 0 (nada) hasta 10 (totalmente). No hay respuestas correctas o incorrectas.",
+      "escala": {"min": 0, "max": 10, "etiqueta_min": "Nada", "etiqueta_max": "Totalmente"},
+      "preguntas": [
+        {"numero": 1, "texto": "Agotado(a)", "dimension": "falta_energia"},
+        {"numero": 2, "texto": "Respirando con dificultad", "dimension": "cansancio_fisico"},
+        {"numero": 3, "texto": "Irritable", "dimension": "irritabilidad"},
+        {"numero": 4, "texto": "Con las articulaciones agarrotadas", "dimension": "disconfort_fisico"},
+        {"numero": 5, "texto": "Apático(a)", "dimension": "falta_motivacion"},
+        {"numero": 6, "texto": "Somnoliento(a)", "dimension": "somnolencia"},
+        {"numero": 7, "texto": "Entumecido(a)", "dimension": "disconfort_fisico"},
+        {"numero": 8, "texto": "Pasivo(a)", "dimension": "falta_motivacion"},
+        {"numero": 9, "texto": "Durmiéndome", "dimension": "somnolencia"},
+        {"numero": 10, "texto": "Con palpitaciones", "dimension": "cansancio_fisico"},
+        {"numero": 11, "texto": "Enojado(a)", "dimension": "irritabilidad"},
+        {"numero": 12, "texto": "Exhausto(a)", "dimension": "falta_energia"},
+        {"numero": 13, "texto": "Bostezando", "dimension": "somnolencia"},
+        {"numero": 14, "texto": "Con calor", "dimension": "cansancio_fisico"},
+        {"numero": 15, "texto": "Extenuado(a)", "dimension": "falta_energia"},
+        {"numero": 16, "texto": "Furioso(a)", "dimension": "irritabilidad"},
+        {"numero": 17, "texto": "Dolorido(a)", "dimension": "disconfort_fisico"},
+        {"numero": 18, "texto": "Indiferente", "dimension": "falta_motivacion"}
+      ]
     }
   },
   "dominios_dimensiones": {

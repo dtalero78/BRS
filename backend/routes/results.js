@@ -5,6 +5,7 @@ const { REQUIRE_PAID_EVALUATION } = require('../config/brand');
 const db = require('../config/database');
 const calculateResults = require('../utils/calculate-results');
 const { calculateCopingResults } = require('../utils/calculate-coping');
+const { calculateSofiResults } = require('../utils/calculate-sofi');
 
 // Calculate and save results for a participant
 router.post('/calculate/:participantId', auth, async (req, res) => {
@@ -102,6 +103,8 @@ router.post('/calculate/:participantId', auth, async (req, res) => {
         let calculatedResults;
         if (questionnaireType === 'coping') {
           calculatedResults = calculateCopingResults(formattedResponses);
+        } else if (questionnaireType === 'sofi') {
+          calculatedResults = calculateSofiResults(formattedResponses);
         } else {
           // Pass occupational group for extralaboral and stress baremos selection
           calculatedResults = await calculateResults(questionnaireType, formattedResponses, { occupationalGroup });

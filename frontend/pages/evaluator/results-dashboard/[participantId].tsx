@@ -47,6 +47,7 @@ const getQuestionnaireLabel = (type: string) => {
     case 'extralaboral': return 'Extralaboral';
     case 'estres': return 'Estrés';
     case 'coping': return 'Brief COPE - Afrontamiento';
+    case 'sofi': return 'SOFI-SM - Fatiga Laboral';
     default: return type;
   }
 };
@@ -172,6 +173,17 @@ const groupResultsByDomain = (results: { [key: string]: Result[] }): DomainGroup
         if (dims.length > 0) {
           domains.push({ name, dimensions: dims, averageRisk: computeAverageRisk(dims), totalDimensions: dims.length });
         }
+      });
+    } else if (questionnaireType === 'sofi') {
+      // El nivel del grupo es el del SSM-Index, que ya es el índice global de
+      // la prueba. computeAverageRisk no entiende la escala de fatiga y lo
+      // leería como "sin riesgo".
+      const ssm = questionnaireResults.find(r => r.dimension === 'sofi_ssm_index');
+      domains.push({
+        name: getQuestionnaireLabel(questionnaireType),
+        dimensions: questionnaireResults,
+        averageRisk: ssm?.riskLevel || 'no_calculable',
+        totalDimensions: questionnaireResults.filter(r => r.dimension !== 'sofi_ssm_index').length
       });
     } else {
       // For other questionnaires, treat as single domain
@@ -364,11 +376,11 @@ export default function ResultsDashboard() {
                     <div>
                       <span className="text-sm text-gray-500">Riesgo promedio:</span>
                       <span className={`ml-2 px-2 py-0.5 rounded text-xs font-medium ${
-                        domain.averageRisk === 'sin_riesgo' ? 'bg-green-100 text-green-800' :
+                        domain.averageRisk === 'sin_riesgo' || domain.averageRisk === 'aceptable' ? 'bg-green-100 text-green-800' :
                         domain.averageRisk === 'riesgo_bajo' ? 'bg-blue-100 text-blue-800' :
-                        domain.averageRisk === 'riesgo_medio' ? 'bg-yellow-100 text-yellow-800' :
-                        domain.averageRisk === 'riesgo_alto' ? 'bg-orange-100 text-orange-800' :
-                        domain.averageRisk === 'riesgo_muy_alto' ? 'bg-red-100 text-red-800' :
+                        domain.averageRisk === 'riesgo_medio' || domain.averageRisk === 'inadecuado' ? 'bg-yellow-100 text-yellow-800' :
+                        domain.averageRisk === 'riesgo_alto' || domain.averageRisk === 'inadecuado_ii' ? 'bg-orange-100 text-orange-800' :
+                        domain.averageRisk === 'riesgo_muy_alto' || domain.averageRisk === 'inaceptable' ? 'bg-red-100 text-red-800' :
                         'bg-gray-100 text-gray-800'
                       }`}>
                         {domain.averageRisk === 'no_calculable' ? 'No calculable' : domain.averageRisk.replace('_', ' ')}

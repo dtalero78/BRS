@@ -43,6 +43,11 @@ const getRiskLevelColor = (riskLevel: string) => {
     case 'medio': return 'bg-yellow-100 text-yellow-800 border-yellow-200';
     case 'alto': return 'bg-orange-100 text-orange-800 border-orange-200';
     case 'muy_alto': return 'bg-red-100 text-red-800 border-red-200';
+    // SOFI-SM: cuatro niveles de fatiga (tabla de los autores)
+    case 'aceptable': return 'bg-green-100 text-green-800 border-green-200';
+    case 'inadecuado': return 'bg-yellow-100 text-yellow-800 border-yellow-200';
+    case 'inadecuado_ii': return 'bg-orange-100 text-orange-800 border-orange-200';
+    case 'inaceptable': return 'bg-red-100 text-red-800 border-red-200';
     case 'no_calculable': return 'bg-gray-100 text-gray-800 border-gray-200';
     default: return 'bg-gray-100 text-gray-800 border-gray-200';
   }
@@ -60,6 +65,10 @@ const getRiskLevelLabel = (riskLevel: string) => {
     case 'medio': return 'Medio';
     case 'alto': return 'Alto';
     case 'muy_alto': return 'Muy Alto';
+    case 'aceptable': return 'Aceptable';
+    case 'inadecuado': return 'Inadecuado';
+    case 'inadecuado_ii': return 'Inadecuado II';
+    case 'inaceptable': return 'Inaceptable';
     case 'no_calculable': return 'No calculable';
     default: return riskLevel;
   }
@@ -77,6 +86,7 @@ const getQuestionnaireLabel = (type: string) => {
     case 'extralaboral': return 'Extralaboral';
     case 'estres': return 'Estrés';
     case 'coping': return 'Brief COPE - Afrontamiento';
+    case 'sofi': return 'SOFI-SM - Fatiga Laboral';
     default: return type;
   }
 };
@@ -125,6 +135,17 @@ export default function ParticipantResults() {
   const isCopingSelected = selectedQuestionnaire === 'coping';
 
   const calculateRiskSummary = (results: Result[]) => {
+    if (selectedQuestionnaire === 'sofi') {
+      // Solo las 6 dimensiones: el SSM-Index es su promedio y contarlo
+      // duplicaría el nivel en el resumen.
+      const summary = { aceptable: 0, inadecuado: 0, inadecuado_ii: 0, inaceptable: 0 };
+      results.filter(r => r.dimension !== 'sofi_ssm_index').forEach(result => {
+        if (result.riskLevel in summary) {
+          summary[result.riskLevel as keyof typeof summary]++;
+        }
+      });
+      return summary;
+    }
     if (isCopingSelected) {
       const summary = { muy_bajo: 0, bajo: 0, medio: 0, alto: 0, muy_alto: 0 };
       results.forEach(result => {
@@ -309,11 +330,11 @@ export default function ParticipantResults() {
                           <div className="w-full bg-gray-200 rounded-full h-2.5">
                             <div
                               className={`h-2.5 rounded-full ${
-                                result.riskLevel === 'sin_riesgo' || result.riskLevel === 'muy_bajo' ? 'bg-green-500' :
+                                result.riskLevel === 'sin_riesgo' || result.riskLevel === 'muy_bajo' || result.riskLevel === 'aceptable' ? 'bg-green-500' :
                                 result.riskLevel === 'riesgo_bajo' || result.riskLevel === 'bajo' ? 'bg-blue-500' :
-                                result.riskLevel === 'riesgo_medio' || result.riskLevel === 'medio' ? 'bg-yellow-500' :
-                                result.riskLevel === 'riesgo_alto' || result.riskLevel === 'alto' ? 'bg-orange-500' :
-                                result.riskLevel === 'riesgo_muy_alto' || result.riskLevel === 'muy_alto' ? 'bg-red-500' :
+                                result.riskLevel === 'riesgo_medio' || result.riskLevel === 'medio' || result.riskLevel === 'inadecuado' ? 'bg-yellow-500' :
+                                result.riskLevel === 'riesgo_alto' || result.riskLevel === 'alto' || result.riskLevel === 'inadecuado_ii' ? 'bg-orange-500' :
+                                result.riskLevel === 'riesgo_muy_alto' || result.riskLevel === 'muy_alto' || result.riskLevel === 'inaceptable' ? 'bg-red-500' :
                                 'bg-gray-400'
                               }`}
                               style={{ width: result.transformedScore != null ? `${Math.min(result.transformedScore, 100)}%` : '0%' }}
