@@ -793,7 +793,8 @@ router.get('/:token/questionnaire/:type', async (req, res) => {
           Object.values(questionnaire.secciones).flatMap(s => s.preguntas || []) : []),
         secciones: questionnaire.secciones,
         campos: questionnaire.campos, // For demographic form
-        malestares: questionnaire.malestares // For stress questionnaire
+        malestares: questionnaire.malestares, // For stress questionnaire
+        escala: questionnaire.escala // SOFI-SM: escala numérica 0-10
       },
       opciones_respuesta: questionnairesData.opciones_respuesta,
       existingData: existingData // Pre-fill data for demographic form

@@ -173,6 +173,12 @@ export default function ParticipantResults() {
   };
 
   const calculateAverageScore = (results: Result[]) => {
+    // En el SOFI-SM el índice global ya es el promedio de las dimensiones:
+    // promediarlo otra vez junto a ellas daría un número que no es ninguno.
+    if (selectedQuestionnaire === 'sofi') {
+      const ssm = results.find(r => r.dimension === 'sofi_ssm_index');
+      return ssm?.transformedScore != null ? ssm.transformedScore.toFixed(2) : 'N/C';
+    }
     // Excluir dimensiones sin puntaje (no_calculable) para no sesgar el promedio (R4)
     const scored = results.filter(r => r.transformedScore != null);
     if (scored.length === 0) return 'N/C';
@@ -263,7 +269,7 @@ export default function ParticipantResults() {
             <div className="grid grid-cols-1 md:grid-cols-6 gap-4 mb-6">
               <div className="bg-white rounded-lg shadow-sm p-4 border border-gray-200">
                 <div className="text-2xl font-bold text-gray-900">{averageScore}</div>
-                <div className="text-sm text-gray-500">Puntaje Promedio</div>
+                <div className="text-sm text-gray-500">{selectedQuestionnaire === 'sofi' ? 'Fatiga Global (SSM)' : 'Puntaje Promedio'}</div>
               </div>
               
               {Object.entries(riskSummary).map(([level, count]) => (
