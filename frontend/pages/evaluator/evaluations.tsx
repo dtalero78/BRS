@@ -21,6 +21,7 @@ import {
   ShieldCheckIcon
 } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
+import { BRAND } from '../../config/brand';
 import PhotoImportModal from '../../components/PhotoImportModal';
 import ManualEntryModal from '../../components/ManualEntryModal';
 
@@ -51,24 +52,32 @@ interface Evaluation {
   updatedAt: string;
 }
 
+// Pruebas adicionales que esta instancia ofrece (ver `optionalTests` en la
+// marca). Shaddai, por ejemplo, aplica el SOFI-SM y no el Brief COPE.
+const OFFERS_COPING = BRAND.optionalTests.includes('coping');
+const OFFERS_SOFI = BRAND.optionalTests.includes('sofi');
+
+// El Brief COPE viene marcado por defecto donde se ofrece, para no cambiarle el
+// alcance a quien ya lo venia aplicando. Donde NO se ofrece hay que mandarlo en
+// false de forma explicita: el default de la columna en la base es `true`.
+// El SOFI-SM arranca apagado siempre: se marca en la campana que lo contrato.
+const emptyForm = () => ({
+  name: '',
+  description: '',
+  startDate: '',
+  endDate: '',
+  companyId: '',
+  includeCoping: OFFERS_COPING,
+  includeSofi: false
+});
+
 export default function EvaluatorEvaluations() {
   const [evaluations, setEvaluations] = useState<Evaluation[]>([]);
   const [companies, setCompanies] = useState<Company[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editingEvaluation, setEditingEvaluation] = useState<Evaluation | null>(null);
-  const [formData, setFormData] = useState({
-    name: '',
-    description: '',
-    startDate: '',
-    endDate: '',
-    companyId: '',
-    // El Brief COPE viene marcado por defecto para no cambiarle el alcance a
-    // quien ya lo venia aplicando; se desmarca en la campana que no lo contrato.
-    includeCoping: true,
-    // El SOFI-SM, al reves: apagado salvo en la campana que lo contrato.
-    includeSofi: false
-  });
+  const [formData, setFormData] = useState(emptyForm);
 
   // Excel import state
   const [showImportModal, setShowImportModal] = useState(false);
@@ -184,7 +193,7 @@ export default function EvaluatorEvaluations() {
         );
         setShowModal(false);
         setEditingEvaluation(null);
-        setFormData({ name: '', description: '', startDate: '', endDate: '', companyId: '', includeCoping: true, includeSofi: false });
+        setFormData(emptyForm());
         fetchEvaluations();
       } else {
         const errorData = await response.json();
@@ -433,7 +442,7 @@ export default function EvaluatorEvaluations() {
             <button
               onClick={() => {
                 setEditingEvaluation(null);
-                setFormData({ name: '', description: '', startDate: '', endDate: '', companyId: '', includeCoping: true, includeSofi: false });
+                setFormData(emptyForm());
                 setShowModal(true);
               }}
               className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
@@ -542,7 +551,7 @@ export default function EvaluatorEvaluations() {
                 <button
                   onClick={() => {
                     setEditingEvaluation(null);
-                    setFormData({ name: '', description: '', startDate: '', endDate: '', companyId: '', includeCoping: true, includeSofi: false });
+                    setFormData(emptyForm());
                     setShowModal(true);
                   }}
                   className="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
@@ -784,58 +793,69 @@ export default function EvaluatorEvaluations() {
                   />
                 </div>
 
-                {/* Pruebas adicionales a la bateria oficial */}
-                <div className="rounded-md border border-gray-200 bg-gray-50 p-3">
-                  <label className="flex items-start gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={formData.includeCoping}
-                      onChange={(e) => setFormData({ ...formData, includeCoping: e.target.checked })}
-                      className="mt-0.5 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                    />
-                    <span className="text-sm">
-                      <span className="font-medium text-gray-800">
-                        Aplicar Brief COPE (28 preguntas)
+                {/* Pruebas adicionales a la bateria oficial. Solo las que esta
+                    instancia ofrece; una que no ofrece se muestra igual si la
+                    evaluacion ya la tiene activa, para poder apagarla. */}
+                {(OFFERS_COPING || OFFERS_SOFI || editingEvaluation?.includeCoping || editingEvaluation?.includeSofi) && (
+                <div className="rounded-md border border-gray-200 bg-gray-50 px-3 divide-y divide-gray-200">
+                  {(OFFERS_COPING || editingEvaluation?.includeCoping) && (
+                  <div className="py-3">
+                    <label className="flex items-start gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={formData.includeCoping}
+                        onChange={(e) => setFormData({ ...formData, includeCoping: e.target.checked })}
+                        className="mt-0.5 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                      />
+                      <span className="text-sm">
+                        <span className="font-medium text-gray-800">
+                          Aplicar Brief COPE (28 preguntas)
+                        </span>
+                        <span className="block text-xs text-gray-500 mt-0.5">
+                          Estrategias de afrontamiento. No hace parte de la bateria oficial del
+                          Ministerio: si lo desactivas, los participantes no veran este
+                          cuestionario y su seccion no aparecera en el informe.
+                        </span>
                       </span>
-                      <span className="block text-xs text-gray-500 mt-0.5">
-                        Estrategias de afrontamiento. No hace parte de la bateria oficial del
-                        Ministerio: si lo desactivas, los participantes no veran este
-                        cuestionario y su seccion no aparecera en el informe.
-                      </span>
-                    </span>
-                  </label>
-                  {editingEvaluation && !formData.includeCoping && editingEvaluation.includeCoping && (
-                    <p className="mt-2 text-xs text-amber-700">
-                      Las respuestas del Brief COPE ya guardadas no se borran; solo dejan de
-                      ofrecerse y de imprimirse. Si vuelves a activarlo, reaparecen.
-                    </p>
+                    </label>
+                    {editingEvaluation && !formData.includeCoping && editingEvaluation.includeCoping && (
+                      <p className="mt-2 text-xs text-amber-700">
+                        Las respuestas del Brief COPE ya guardadas no se borran; solo dejan de
+                        ofrecerse y de imprimirse. Si vuelves a activarlo, reaparecen.
+                      </p>
+                    )}
+                  </div>
                   )}
-
-                  <label className="mt-3 flex items-start gap-2 cursor-pointer border-t border-gray-200 pt-3">
-                    <input
-                      type="checkbox"
-                      checked={formData.includeSofi}
-                      onChange={(e) => setFormData({ ...formData, includeSofi: e.target.checked })}
-                      className="mt-0.5 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                    />
-                    <span className="text-sm">
-                      <span className="font-medium text-gray-800">
-                        Aplicar SOFI-SM - fatiga laboral (18 preguntas)
+                  {(OFFERS_SOFI || editingEvaluation?.includeSofi) && (
+                  <div className="py-3">
+                    <label className="flex items-start gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={formData.includeSofi}
+                        onChange={(e) => setFormData({ ...formData, includeSofi: e.target.checked })}
+                        className="mt-0.5 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                      />
+                      <span className="text-sm">
+                        <span className="font-medium text-gray-800">
+                          Aplicar SOFI-SM - fatiga laboral (18 preguntas)
+                        </span>
+                        <span className="block text-xs text-gray-500 mt-0.5">
+                          Fatiga fisica, mental y emocional al terminar la jornada. Tampoco hace
+                          parte de la bateria oficial: es opcional y no cuenta para dar la
+                          bateria por terminada.
+                        </span>
                       </span>
-                      <span className="block text-xs text-gray-500 mt-0.5">
-                        Fatiga fisica, mental y emocional al terminar la jornada. Tampoco hace
-                        parte de la bateria oficial: es opcional y no cuenta para dar la
-                        bateria por terminada.
-                      </span>
-                    </span>
-                  </label>
-                  {editingEvaluation && !formData.includeSofi && editingEvaluation.includeSofi && (
-                    <p className="mt-2 text-xs text-amber-700">
-                      Las respuestas del SOFI-SM ya guardadas no se borran; solo dejan de
-                      ofrecerse y de imprimirse. Si vuelves a activarlo, reaparecen.
-                    </p>
+                    </label>
+                    {editingEvaluation && !formData.includeSofi && editingEvaluation.includeSofi && (
+                      <p className="mt-2 text-xs text-amber-700">
+                        Las respuestas del SOFI-SM ya guardadas no se borran; solo dejan de
+                        ofrecerse y de imprimirse. Si vuelves a activarlo, reaparecen.
+                      </p>
+                    )}
+                  </div>
                   )}
                 </div>
+                )}
 
                 <div className="flex justify-end space-x-3 pt-4">
                   <button
@@ -843,7 +863,7 @@ export default function EvaluatorEvaluations() {
                     onClick={() => {
                       setShowModal(false);
                       setEditingEvaluation(null);
-                      setFormData({ name: '', description: '', startDate: '', endDate: '', companyId: '', includeCoping: true, includeSofi: false });
+                      setFormData(emptyForm());
                     }}
                     className="px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
                   >

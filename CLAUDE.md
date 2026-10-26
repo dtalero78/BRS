@@ -604,6 +604,8 @@ La "prueba SOFI" que el contrato de licencia con Shaddai incluye como desarrollo
 
 No hace parte de la batería oficial: como el Brief COPE, es un instrumento adicional que cada evaluación activa con `evaluations.include_sofi`. **El default es `false`**, al revés que el COPE: ahí el `true` protegía datos ya recogidos, aquí no hay ninguno.
 
+**Qué pruebas adicionales ofrece cada instancia lo decide la marca** (`optionalTests` en `frontend/config/brand.ts`): BRS ofrece COPE y SOFI-SM; **Shaddai solo el SOFI-SM** (no vende el COPE). El modal de evaluación solo muestra las casillas de la marca, salvo que una evaluación ya tenga activa una prueba que la marca no ofrece: entonces se muestra para poder apagarla. Donde el COPE no se ofrece, el frontend manda `includeCoping: false` explícito al crear — el default de la columna es `true` y omitirlo lo encendería sin que nadie lo vea.
+
 ### El instrumento
 18 adjetivos, 6 dimensiones de 3 ítems, cada ítem de **0 (nada) a 10 (totalmente)**. No hay ítems invertidos. La numeración (`bateria_riesgo_psicosocial_preguntas.json` → `cuestionarios.sofi`) sigue el orden de aplicación del artículo, con las dimensiones intercaladas a propósito.
 
@@ -639,6 +641,7 @@ La asignación ítem → dimensión vive en dos sitios (el JSON y `DIMENSIONS` e
 - `backend/routes/reports.js` + utils del informe — sección de fatiga laboral
 - `frontend/pages/participant/evaluation/[token].tsx` — escala 0-10 y barras de progreso de opcionales
 - `frontend/pages/evaluator/evaluations.tsx` — casilla + insignia "Con SOFI-SM"
+- `frontend/config/brand.ts` — `optionalTests`: qué pruebas adicionales ofrece cada marca
 - `frontend/pages/evaluator/results*`, `components/ResultsDimensionCard.tsx`, `config/dimensionNames.ts` — niveles de fatiga
 
 > Pendiente: la importación por Excel y por foto todavía no reconocen el SOFI-SM; hoy solo se responde por el enlace del participante.

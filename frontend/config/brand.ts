@@ -53,6 +53,13 @@ export interface Brand {
    */
   bulkWhatsApp: boolean;
   /**
+   * Pruebas adicionales a la bateria oficial que el evaluador puede activar al
+   * crear una evaluacion. Cada licenciatario vende las suyas: Shaddai aplica el
+   * SOFI-SM y no el Brief COPE. Una prueba fuera de esta lista no se ofrece en
+   * el modal y las evaluaciones nuevas la crean apagada.
+   */
+  optionalTests: Array<'coping' | 'sofi'>;
+  /**
    * Video de instrucciones que se abre solo la primera vez que el participante
    * entra al panel de cuestionarios. Sin este campo la marca no muestra ningún
    * video y el panel abre directo (comportamiento de BRS).
@@ -80,6 +87,7 @@ const BRANDS: Record<string, Brand> = {
     hasMarketingSite: true,
     // BRS no tiene sender propio de WhatsApp aprobado.
     bulkWhatsApp: false,
+    optionalTests: ['coping', 'sofi'],
   },
   shaddai: {
     key: 'shaddai',
@@ -101,6 +109,8 @@ const BRANDS: Record<string, Brand> = {
     hasMarketingSite: false,
     // Sender propio "Shaddai Consultants" (whatsapp:+15559533027).
     bulkWhatsApp: true,
+    // Shaddai contrató el SOFI-SM; el Brief COPE no hace parte de su servicio.
+    optionalTests: ['sofi'],
     introVideo: '/brand/shaddai/intro.mp4',
     introVideoPoster: '/brand/shaddai/intro-poster.jpg',
   },
