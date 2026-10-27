@@ -1382,7 +1382,16 @@ export default function EvaluatorParticipants() {
                               <CameraIcon className="h-5 w-5" />
                             </button>
                             <button
-                              onClick={() => setManualTarget(participant)}
+                              onClick={() => {
+                                // Sin evaluacion el commit iria a /photo-import/0/commit
+                                // y volveria un 404 "Evaluacion no encontrada", que se
+                                // lee como "no guardo" en vez de como lo que es.
+                                if (!participant.evaluationId) {
+                                  toast.error('Este participante no está asignado a ninguna evaluación. Asígnalo primero.');
+                                  return;
+                                }
+                                setManualTarget(participant);
+                              }}
                               className="text-gray-500 hover:text-indigo-700"
                               title="Ingresar respuestas manualmente"
                             >
