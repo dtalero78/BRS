@@ -1543,21 +1543,37 @@ function generateOrganizationalPDF(doc, { evaluation, demographics, aggResults, 
     writeChartAnalysis(templates.generateDemographicAnalysis('horasTrabajo', demographics.horasTrabajo, demographics.total));
   }
 
-  // Top departamentos / áreas
+  // Departamentos / áreas — horizontal (texto libre, nombres largos) con un
+  // bucket "Otros" para que la suma de las barras SIEMPRE sea el total real:
+  // antes se cortaba a las 8 más grandes y el resto desaparecía sin dejar
+  // rastro (una evaluación con 15+ áreas distintas mostraba "15 personas"
+  // en el gráfico cuando en realidad habían respondido 30).
   if (demographics.departamento && Object.keys(demographics.departamento).length > 0) {
-    ensureSpace(doc, 210);
-    if (doc.y > 550) doc.addPage();
-    const topDeps = Object.entries(demographics.departamento)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 8)
-      .map(([label, value], i) => ({
-        label, value, color: templates.DEMOGRAPHIC_COLORS[i % templates.DEMOGRAPHIC_COLORS.length]
-      }));
-    drawBarChart(doc, m, doc.y + 10, pageW, 160, topDeps, {
-      title: 'Distribución por Departamento / Área (Top 8)', showValues: true
+    const depEntries = Object.entries(demographics.departamento).sort((a, b) => b[1] - a[1]);
+    const DEP_TOP = 7;
+    const topDeps = depEntries.slice(0, DEP_TOP).map(([label, value], i) => ({
+      label, value, color: templates.DEMOGRAPHIC_COLORS[i % templates.DEMOGRAPHIC_COLORS.length]
+    }));
+    const otrosCount = depEntries.slice(DEP_TOP).reduce((sum, [, v]) => sum + v, 0);
+    if (otrosCount > 0) {
+      topDeps.push({
+        label: `Otros (${depEntries.length - DEP_TOP} áreas)`,
+        value: otrosCount,
+        color: '#9CA3AF'
+      });
+    }
+    const depChartH = topDeps.length * 19 + 30;
+    if (doc.y + depChartH + 40 > 750) doc.addPage();
+    drawHorizontalBarChart(doc, m, doc.y + 18, pageW, topDeps, {
+      title: 'Distribución por Departamento / Área',
+      showValues: true,
+      labelWidth: 210,
+      maxLabelChars: 45
     });
-    doc.y += 180;
-    doc.moveDown(0.5);
+    doc.moveDown(1);
+    // El párrafo de abajo sí lista TODAS las áreas con su nombre completo y
+    // conteo (generateDemographicAnalysis('departamento', ...) ya no tiene
+    // topN) — es la respuesta a "¿puedo ver los nombres completos?".
     writeChartAnalysis(templates.generateDemographicAnalysis('departamento', demographics.departamento, demographics.total));
   }
 

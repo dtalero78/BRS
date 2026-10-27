@@ -277,7 +277,7 @@ function drawHorizontalBarChart(doc, x, y, chartWidth, data, options = {}) {
     const barW = maxVal > 0 ? (d.value / maxVal) * plotW : 0;
 
     // Label on left
-    const maxChars = 22;
+    const maxChars = options.maxLabelChars || 22;
     const displayLabel = d.label.length > maxChars ? d.label.substring(0, maxChars - 1) + '…' : d.label;
     doc.fontSize(6).fillColor('#374151').font('Helvetica');
     doc.text(displayLabel, x, by + (barH - 6) / 2, { width: labelWidth - 4, align: 'right' });

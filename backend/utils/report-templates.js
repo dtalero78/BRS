@@ -1078,9 +1078,11 @@ const DEMOGRAPHIC_ANALYSIS_META = {
     context: 'La duración de la jornada se relaciona directamente con las demandas de la jornada de trabajo y con la influencia del trabajo sobre el entorno extralaboral, especialmente cuando se superan las jornadas legalmente establecidas.'
   },
   departamento: {
-    intro: 'Por área o departamento de trabajo, la población se concentra principalmente en:',
-    context: 'La distribución por área permite focalizar organizacionalmente las acciones de intervención, priorizando las dependencias con mayor número de trabajadores o con mayor exposición a los factores de riesgo.',
-    topN: 6
+    intro: 'Por área o departamento de trabajo, la población se distribuye así:',
+    context: 'La distribución por área permite focalizar organizacionalmente las acciones de intervención, priorizando las dependencias con mayor número de trabajadores o con mayor exposición a los factores de riesgo.'
+    // Sin topN a propósito: la gráfica de abajo solo pinta las áreas más
+    // grandes (+ "Otros"), así que este párrafo es la única parte del
+    // informe que lista TODAS las áreas con su nombre completo y conteo.
   }
 };
 

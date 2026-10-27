@@ -244,6 +244,32 @@ function groupTipoVivienda(tipo) {
   return tipo;
 }
 
+/**
+ * Acumula un conteo de texto libre fusionando SOLO variantes literales
+ * (mayúsculas/tildes/espacios) del mismo valor, sin mapear a categorías.
+ *
+ * A diferencia de los group*() de arriba, campos como "departamento/área"
+ * son de escritura libre: la ficha oficial no define una lista cerrada de
+ * áreas posibles, así que no hay un vocabulario fijo contra el cual
+ * clasificar. Lo único seguro de fusionar es la MISMA respuesta escrita de
+ * forma distinta ("Produccion" vs "PRODUCCIÓN"); dos áreas con nombres
+ * genuinamente distintos (p. ej. "Cuerpo voluntario de bomberos" vs "Cuerpo
+ * de bomberos voluntario de Tauramena") se quedan como barras separadas a
+ * propósito — fusionarlas por palabras clave inventaría una equivalencia
+ * que nadie confirmó.
+ *
+ * `dedupeKeys` vive por fuera (un Map/objeto nuevo por corrida de
+ * aggregateExtendedDemographics) y recuerda qué grafía ya se usó como
+ * etiqueta para cada valor normalizado, para que la primera vista gane.
+ */
+function accumulateFreeText(acc, dedupeKeys, rawValue) {
+  const key = normalizarTexto(rawValue);
+  if (!key) return;
+  const label = dedupeKeys[key] || rawValue;
+  dedupeKeys[key] = label;
+  acc[label] = (acc[label] || 0) + 1;
+}
+
 // ============================================================
 // RESULTS AGGREGATION BY FORM
 // ============================================================
@@ -784,6 +810,8 @@ function aggregateExtendedDemographics(fichaResponses) {
   base.antiguedadEmpresa = { 'Menos de 1 año': 0, '1 a 5 años': 0, '6 a 10 años': 0, 'Más de 10 años': 0 };
   base.horasTrabajo = { '8 horas o menos': 0, '9 a 10 horas': 0, '11 a 12 horas': 0, 'Más de 12 horas': 0 };
 
+  const depDedupeKeys = {};
+
   fichaResponses.forEach(row => {
     const ficha = resolveFicha(row.responses);
 
@@ -815,7 +843,7 @@ function aggregateExtendedDemographics(fichaResponses) {
 
     if (ficha.departamento && typeof ficha.departamento === 'string') {
       const dep = ficha.departamento.trim();
-      if (dep) base.departamento[dep] = (base.departamento[dep] || 0) + 1;
+      if (dep) accumulateFreeText(base.departamento, depDedupeKeys, dep);
     }
 
     if (ficha.ciudadTrabajo && typeof ficha.ciudadTrabajo === 'string') {
@@ -893,6 +921,7 @@ module.exports = {
   groupEducation,
   groupMaritalStatus,
   groupTipoVivienda,
+  accumulateFreeText,
   FICHA_FIELD_MAP,
   normalizeTipoCargo,
   newRiskCounts,
