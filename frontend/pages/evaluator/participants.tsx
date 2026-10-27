@@ -544,14 +544,11 @@ export default function EvaluatorParticipants() {
       return;
     }
 
-    // Gating por pago: solo se exportan participantes de evaluaciones habilitadas (pagadas).
-    const exportable = filteredParticipants.filter(p => p.evaluationPaid);
-    const excluded = filteredParticipants.length - exportable.length;
-
-    if (exportable.length === 0) {
-      toast.error('La exportación no está habilitada: ninguna de estas pruebas está pagada. Págalas en el menú Pagos.');
-      return;
-    }
+    // Sin candado de pago: este archivo solo trae avance (estado, % completado,
+    // fechas) y datos demográficos, no resultados de riesgo. El pago bloquea el
+    // informe y la exportación de /evaluator/results (que sí trae resultados),
+    // no el seguimiento operativo de quién ha respondido.
+    const exportable = filteredParticipants;
 
     const statusLabel = (s: string) =>
       s === 'completed' ? 'Completado'
@@ -622,9 +619,6 @@ export default function EvaluatorParticipants() {
     const ts = new Date().toISOString().slice(0, 10);
     XLSX.writeFile(wb, `participantes_${ts}.xls`, { bookType: 'xls' });
     toast.success(`Exportados ${rows.length} participantes`);
-    if (excluded > 0) {
-      toast(`${excluded} participante(s) no se exportaron: su evaluación no tiene el pago registrado.`, { icon: '⚠️' });
-    }
   };
 
   // Indice de busqueda: un solo texto por participante con todo lo que se ve en
