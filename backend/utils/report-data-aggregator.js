@@ -45,12 +45,46 @@ function buildResponseMap(rawResponses) {
 function detectFichaScheme(responseMap) {
   const q1 = (responseMap['1'] || '').toString().trim();
   if (/^\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4}$/.test(q1)) return 'photo';
+  // El flujo foto/OCR a veces guarda la fecha como el serial crudo de Excel
+  // (p. ej. "46134"), sin separadores — el regex de arriba no lo reconoce. Un
+  // nombre de persona ('official') nunca es un número puro, así que esto es
+  // seguro en ambos sentidos.
+  if (/^\d{4,6}$/.test(q1)) return 'photo';
+
+  // La pregunta 19 solo existe en el esquema 'official' (ahí vive el estado
+  // civil); el flujo foto nunca llega a esa pregunta. Señal determinística:
+  // no depende de interpretar texto libre, así que va antes del heurístico
+  // de tipoCargo de abajo.
+  if (responseMap['19'] !== undefined && responseMap['19'] !== null && responseMap['19'] !== '') {
+    return 'official';
+  }
+
   // tipoCargo value is one of 4 known options; presence in Q14 (photo) vs Q13 (official)
   const q13 = (responseMap['13'] || '').toString();
   const q14 = (responseMap['14'] || '').toString();
   const isTipoCargo = (s) => /jefatura|profesional|auxiliar|operario|tecnic|asistent|ayudant/i.test(s);
   if (isTipoCargo(q14) && !isTipoCargo(q13)) return 'photo';
   if (isTipoCargo(q13) && !isTipoCargo(q14)) return 'official';
+
+  // Última señal, para cuando Q13 y Q14 matchean los dos (o ninguno) y el
+  // heurístico de arriba queda sin veredicto: Q5 es estado civil en 'photo'
+  // (vocabulario cerrado de ~7 categorías) y "ocupación" en 'official' (texto
+  // libre, muy improbable que contenga estas palabras por azar).
+  //
+  // Caso real (2026-10-28, FUNDACIÓN CORPORACIÓN PROSPERAR / Shaddai): el
+  // cargo real de una persona era "asistente presidencia" (Q13) y su
+  // categoría oficial "Auxiliar, asistente administrativo..." (Q14) — las dos
+  // contienen "asistente", el heurístico de arriba quedaba en empate y caía
+  // al default 'official' para una ficha que físicamente era 'photo'. Con el
+  // esquema equivocado, el mapeo de TODA la ficha corría una posición: estado
+  // civil, antigüedad, ciudad de trabajo y cargo quedaban vacíos o con el
+  // valor de otra pregunta para esa única persona — la empresa tenía 4
+  // participantes completados pero esas gráficas solo mostraban 3.
+  const q5 = (responseMap['5'] || '').toString();
+  if (/solter|casad|uni[oó]n libre|convive|separad|divorciad|viud|sacerdote|monja/i.test(q5)) {
+    return 'photo';
+  }
+
   return 'official';
 }
 
