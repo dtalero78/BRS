@@ -677,6 +677,33 @@ La asignación ítem → dimensión vive en dos sitios (el JSON y `DIMENSIONS` e
 
 > Pendiente: la importación por Excel y por foto todavía no reconocen el SOFI-SM; hoy solo se responde por el enlace del participante.
 
+## SOCIALIZACIÓN EN VIDEO (opt-in por instancia)
+
+Video que el participante ve **completo** al entrar por primera vez, **antes del consentimiento**. Pedido de Shaddai (2026-10-30): la empresa necesita el registro de que cada persona vio la socialización. Queda en `participant_evaluations.socialization_completed_at`.
+
+**Se prende con `SOCIALIZATION_VIDEO=<clave>`** en la app de la instancia (hoy: `shaddai-riesgos` en `brs-shaddai`). La clave elige el video en `backend/config/socialization.js` (título, duración, corte horizontal y vertical, posters); los archivos viven en `frontend/public/brand/<marca>/`. Sin la env var nada cambia. El video se configura en el backend y no en `brand.ts` por la misma razón que la verificación facial: el guard necesita saber si es obligatorio y cuánto dura, y con dos fuentes la pantalla y el guard podrían contradecirse y dejar al participante bloqueado.
+
+**Va antes del consentimiento** porque explica el propósito y la confidencialidad: así el consentimiento se firma informado. Ver un video no trata ningún dato, así que no necesita autorización previa.
+
+### Obligatoria, y el backend lo exige
+- `POST /:token/responses` responde `403 SOCIALIZATION_REQUIRED` mientras no esté completa (es el primer guard, antes del de consentimiento).
+- **Solo se exige al primer ingreso**: un PE que ya tiene alguna respuesta guardada (empezó antes de prender el video, o el evaluador le cargó la batería en papel) o que ya está `completed` queda exento. A un PE nuevo no le pasa: su primera respuesta exige la socialización.
+- **"La vio completa" lo decide el servidor, con su propio reloj.** `POST /:token/socialization/progress {position}` acepta un avance de como mucho `visto + transcurrido×1.1 + 3 s` desde el reporte anterior; un POST directo con `position: 410` queda en 3 s. Completa = llegó a `seconds − 2`.
+- La pantalla (`components/SocializationVideo.tsx`) no tiene controles nativos (con ellos se arrastra la barra al final): solo play/pausa, devuelve cualquier salto hacia adelante, fuerza velocidad 1×, reporta cada 10 s y retoma donde quedó si se cierra a mitad. "Continuar" se habilita cuando el backend confirma.
+- Corte vertical en pantallas en retrato, horizontal en el resto; se elige al montar (cambiarlo a mitad reiniciaría el video).
+
+**Es distinto del video de instrucciones** (`BRAND.introVideo`, 71 s, cómo usar la plataforma): ese sigue saliendo al llegar al menú, se puede omitir y solo se recuerda en `localStorage`.
+
+El evaluador ve la insignia **"Socializado"** en `/evaluator/participants` y la columna "Socialización vista en" en el Excel (solo aparece si alguna fila la tiene).
+
+### Archivos
+- `backend/migrations/20261030000001_add_socialization_video.js` — `socialization_watched_seconds`, `socialization_reported_at`, `socialization_completed_at`
+- `backend/config/socialization.js` — catálogo de videos + `getSocializationVideo()`
+- `backend/routes/participant-access.js` — `GET /:token/socialization`, `POST /:token/socialization/progress`, guard en `/responses`
+- `backend/routes/participants.js` — `socializationCompletedAt` en la lista
+- `frontend/components/SocializationVideo.tsx`, `participant/evaluation/[token].tsx`, `evaluator/participants.tsx`
+- Fuente del video: `PA VIDEOS/ShaddaiRiesgos` (motor HTML, `index.html` horizontal, `index-v.html` vertical)
+
 ## CONSENTIMIENTO INFORMADO DEL PARTICIPANTE
 
 **Obligatorio en TODAS las instancias** (no es opt-in como la verificación facial). Es la primera pantalla que ve el participante al abrir su enlace, antes del menú de cuestionarios.
@@ -984,6 +1011,7 @@ git push origin main
 - [x] **Auto-redirect de retorno desactivado** — el participante ya no es redirigido a la app externa al terminar; se queda en la pantalla de éxito de BRS (webhook sigue notificando)
 - [x] **Brief COPE opcional por evaluación** — `evaluations.include_coping` decide si la campaña aplica el COPE-28; si no, el participante no lo ve y su sección no sale en el informe
 - [x] **SOFI-SM (fatiga laboral) opcional por evaluación** — la "prueba SOFI" del contrato con Shaddai; `evaluations.include_sofi` (default apagado), escala 0-10, SSM-Index con la tabla de cortes de los autores
+- [x] **Socialización en video** — video obligatorio antes del consentimiento (opt-in por instancia, `SOCIALIZATION_VIDEO`; hoy Shaddai), con registro de quién lo vio completo validado contra el reloj del servidor
 - [x] **Consentimiento informado del participante** — pantalla bloqueante antes del menú, en todas las instancias; registro de aceptación/rechazo con IP y snapshot del texto; editable por evaluación
 - [x] **Co-marca por empresa** — `companies.logo_url` pinta el logo de la empresa junto al de la plataforma en la pantalla del participante (hoy: REGIS en Universidad Manuela Beltrán); sin UI todavía, se asigna por SQL
 - [x] **Puerta general de acceso** — enlace único `/acceso` donde el participante entra con su número de documento, sin repartir enlaces individuales; límite de intentos fallidos por IP que se reinicia con cada acierto

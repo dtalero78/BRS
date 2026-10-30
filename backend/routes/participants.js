@@ -274,6 +274,9 @@ router.get('/', auth, async (req, res) => {
         // de "nunca abrió el link" para no perseguir a quien ya dijo que no.
         'pe.consent_accepted_at',
         'pe.consent_declined_at',
+        // Socialización en video (instancias con SOCIALIZATION_VIDEO): cuándo la
+        // vio completa. Es el registro que la empresa pide de la socialización.
+        'pe.socialization_completed_at',
         'companies.name as company_name'
       );
 
@@ -374,6 +377,7 @@ router.get('/', auth, async (req, res) => {
         whatsappSentAt: p.whatsapp_sent_at || null,
         consentAcceptedAt: p.consent_accepted_at || null,
         consentDeclinedAt: p.consent_declined_at || null,
+        socializationCompletedAt: p.socialization_completed_at || null,
         evaluationUrl: p.access_token ? `${getBaseUrl(req)}/participant/evaluation/${p.access_token}` : null
       };
     }));

@@ -17,6 +17,7 @@ const {
   FACE_MATCH_THRESHOLD,
 } = require('../utils/rekognition');
 const { buildDefaultConsentText } = require('../utils/consent-template');
+const { getSocializationVideo } = require('../config/socialization');
 
 // ---------------------------------------------------------------------------
 // Puerta general: entrar con el número de documento
@@ -289,6 +290,141 @@ async function hasConsent(peId) {
     .first();
   return !!row;
 }
+
+// ---------------------------------------------------------------------------
+// Socialización en video (opt-in por instancia vía SOCIALIZATION_VIDEO)
+// ---------------------------------------------------------------------------
+// Video que el participante ve completo ANTES del consentimiento: explica el
+// propósito y la confidencialidad, así que el consentimiento se firma ya
+// informado. Ver un video no trata ningún dato, por eso puede ir primero.
+//
+// Queda registrado cuándo lo terminó (`socialization_completed_at`). El avance
+// se valida contra el reloj del servidor: un POST directo no puede declarar
+// "ya lo vi" sin que haya pasado el tiempo del video.
+
+async function findPeForSocialization(token) {
+  return db('participant_evaluations')
+    .where('access_token', token)
+    .where('token_expires_at', '>', new Date())
+    .select(
+      'id',
+      'status',
+      'socialization_watched_seconds',
+      'socialization_reported_at',
+      'socialization_completed_at'
+    )
+    .first();
+}
+
+/**
+ * ¿Este PE todavía debe ver la socialización antes de responder?
+ *
+ * Se exige al PRIMER ingreso, no a quien ya venía respondiendo: un PE con
+ * respuestas guardadas (empezó antes de prender el video, o el evaluador le
+ * cargó la batería en papel) no se frena a mitad de camino con 7 minutos de
+ * video. Para un PE nuevo no hay ambigüedad: su primera respuesta exige la
+ * socialización terminada, así que nunca llega a tener respuestas sin ella.
+ */
+async function socializationPending(pe) {
+  if (!getSocializationVideo()) return false;
+  if (pe.socialization_completed_at) return false;
+  if (pe.status === 'completed') return false;
+  const respuesta = await db('responses').where('participant_evaluation_id', pe.id).first('id');
+  return !respuesta;
+}
+
+/**
+ * GET /:token/socialization → si hay que mostrar el video, cuál y desde dónde
+ * retomarlo. `required: false` deja el flujo como siempre.
+ */
+router.get('/:token/socialization', async (req, res) => {
+  try {
+    const video = getSocializationVideo();
+    if (!video) return res.json({ required: false });
+
+    const pe = await findPeForSocialization(req.params.token);
+    if (!pe) return res.status(404).json({ error: 'Token inválido o expirado' });
+
+    if (!(await socializationPending(pe))) {
+      return res.json({ required: false, completed: !!pe.socialization_completed_at });
+    }
+
+    res.json({
+      required: true,
+      completed: false,
+      watchedSeconds: Number(pe.socialization_watched_seconds) || 0,
+      seconds: video.seconds,
+      title: video.title,
+      horizontal: video.horizontal,
+      vertical: video.vertical,
+    });
+  } catch (error) {
+    console.error('Get socialization error:', error);
+    res.status(500).json({ error: 'Error interno del servidor' });
+  }
+});
+
+/**
+ * Un reporte cada ~10 s durante los 7 minutos del video son ~40; el tope deja
+ * margen para pausas, recargas y reintentos. Por token, igual que el facial:
+ * una empresa entera sale por una sola IP de oficina.
+ */
+const socializationLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 300,
+  keyGenerator: (req) => req.params.token,
+  message: { error: 'Demasiadas solicitudes. Espera unos minutos e intenta de nuevo.' },
+  validate: { trustProxy: false, ip: false },
+});
+
+/**
+ * POST /:token/socialization/progress → `{ position }` en segundos del video.
+ *
+ * El avance aceptado nunca supera lo que alcanzó a transcurrir en el reloj del
+ * servidor desde el reporte anterior (con un margen por la latencia y el
+ * buffering). Así "lo vio completo" significa que pasó el tiempo del video,
+ * no que alguien mandó `position: 410`.
+ */
+router.post('/:token/socialization/progress', socializationLimiter, async (req, res) => {
+  try {
+    const video = getSocializationVideo();
+    if (!video) return res.json({ required: false });
+
+    const position = Number((req.body || {}).position);
+    if (!Number.isFinite(position) || position < 0) {
+      return res.status(400).json({ error: 'position debe ser un número de segundos' });
+    }
+
+    const pe = await findPeForSocialization(req.params.token);
+    if (!pe) return res.status(404).json({ error: 'Token inválido o expirado' });
+
+    if (pe.socialization_completed_at) {
+      return res.json({ watchedSeconds: video.seconds, completed: true });
+    }
+
+    const ahora = new Date();
+    const visto = Number(pe.socialization_watched_seconds) || 0;
+    const transcurrido = pe.socialization_reported_at
+      ? (ahora - new Date(pe.socialization_reported_at)) / 1000
+      : 0;
+    const tope = visto + transcurrido * 1.1 + 3;
+    const nuevo = Math.min(video.seconds, Math.max(visto, Math.min(position, tope)));
+    // El último segundo puede no reportarse exacto (el `ended` del navegador
+    // llega con el `currentTime` un pelo antes del final).
+    const completo = nuevo >= video.seconds - 2;
+
+    await db('participant_evaluations').where('id', pe.id).update({
+      socialization_watched_seconds: Math.round(nuevo * 100) / 100,
+      socialization_reported_at: ahora,
+      ...(completo ? { socialization_completed_at: ahora } : {}),
+    });
+
+    res.json({ watchedSeconds: nuevo, completed: completo });
+  } catch (error) {
+    console.error('Post socialization progress error:', error);
+    res.status(500).json({ error: 'Error interno del servidor' });
+  }
+});
 
 // ---------------------------------------------------------------------------
 // Brief COPE opcional por evaluación (evaluations.include_coping)
@@ -1057,6 +1193,16 @@ router.post('/:token/responses', async (req, res) => {
       if (yaTerminado) {
         return res.status(409).json({ error: 'Este cuestionario ya fue completado; no se admiten más respuestas.' });
       }
+    }
+
+    // Guard de socialización (solo instancias con SOCIALIZATION_VIDEO). Es la
+    // primera pantalla del participante, así que es el primer guard.
+    const peSocializacion = await findPeForSocialization(token);
+    if (peSocializacion && await socializationPending(peSocializacion)) {
+      return res.status(403).json({
+        error: 'Debes ver completo el video de socialización antes de responder.',
+        code: 'SOCIALIZATION_REQUIRED'
+      });
     }
 
     // Guard de consentimiento informado. Va antes que el facial: sin

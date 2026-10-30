@@ -72,6 +72,7 @@ interface Participant {
   /** Consentimiento informado: solo una de las dos tiene valor a la vez. */
   consentAcceptedAt?: string | null;
   consentDeclinedAt?: string | null;
+  socializationCompletedAt?: string | null;
   email?: string;
   companyName?: string;
   // 'assigned' es el estado real en participant_evaluations (el mayoritario);
@@ -578,6 +579,10 @@ export default function EvaluatorParticipants() {
       'Asignado en', 'Completado en',
       'Link de Acceso',
     ];
+    // Solo las instancias con socialización en video llenan esta fecha; en las
+    // demás la columna saldría vacía en todas las filas.
+    const conSocializacion = exportable.some(p => p.socializationCompletedAt);
+    if (conSocializacion) headers.push('Socialización vista en');
 
     const rows = exportable.map(p => [
       p.companyName || '',
@@ -606,6 +611,7 @@ export default function EvaluatorParticipants() {
       fmtDate(p.startedAt),
       fmtDate(p.completedAt),
       p.evaluationUrl || '',
+      ...(conSocializacion ? [fmtDate(p.socializationCompletedAt || undefined)] : []),
     ]);
 
     // .xls real (BIFF8), no CSV: Excel abre el CSV con el separador del sistema y
@@ -1271,6 +1277,14 @@ export default function EvaluatorParticipants() {
                                   >
                                     Sin pagar
                                   </Link>
+                                )}
+                                {participant.socializationCompletedAt && (
+                                  <span
+                                    title={`Vio completo el video de socializacion el ${new Date(participant.socializationCompletedAt).toLocaleString('es-CO')}`}
+                                    className="inline-flex items-center gap-1 rounded-full bg-sky-100 px-2 py-0.5 text-xs font-medium text-sky-800"
+                                  >
+                                    Socializado
+                                  </span>
                                 )}
                                 {participant.consentDeclinedAt && (
                                   <span

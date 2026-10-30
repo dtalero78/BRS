@@ -7,6 +7,7 @@ import FaceCapture from '../../../components/FaceCapture';
 import { matchFichaOption } from '../../../components/fichaFields';
 import ConsentText from '../../../components/ConsentText';
 import IntroVideoModal from '../../../components/IntroVideoModal';
+import SocializationVideo, { SocializationConfig } from '../../../components/SocializationVideo';
 
 // Simple wrapper for participant pages (no auth required)
 //
@@ -126,6 +127,12 @@ const ParticipantEvaluationPage = () => {
   // Estado del autoguardado: se muestra como una línea discreta bajo el CTA para
   // que el participante sepa que su avance está a salvo sin generar layout shift.
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+
+  // Socialización en video (solo instancias con SOCIALIZATION_VIDEO en el
+  // backend). Es la primera pantalla, antes del consentimiento: el video explica
+  // el propósito y la confidencialidad, así el consentimiento se firma informado.
+  // `null` = no aplica (o ya la vio); el backend exige lo mismo en /responses.
+  const [socialization, setSocialization] = useState<SocializationConfig | null>(null);
 
   // Consentimiento informado. Va ANTES del menú de cuestionarios y bloquea:
   // sin aceptar no se trata ningún dato. El backend aplica el mismo guard en
@@ -274,6 +281,19 @@ const ParticipantEvaluationPage = () => {
       setParticipant(validationData.participant);
       setEvaluation(validationData.evaluation);
       setCoBrandLogo(validationData.company?.logoUrl || null);
+
+      // Socialización: el backend dice si esta persona debe verla y desde dónde
+      // retomarla. Si la consulta falla se sigue sin video; el guard del
+      // backend sigue protegiendo /responses.
+      try {
+        const socResponse = await fetch(`/api/participant-access/${accessToken}/socialization`);
+        if (socResponse.ok) {
+          const socData = await socResponse.json();
+          setSocialization(socData.required ? socData : null);
+        }
+      } catch (socErr) {
+        console.error('Socialization status error:', socErr);
+      }
 
       // Consentimiento informado: se carga siempre, en todas las instancias.
       try {
@@ -1250,8 +1270,25 @@ const ParticipantEvaluationPage = () => {
   }
 
   // ---------------------------------------------------------------------------
+  // Socialización en video (bloqueante, solo instancias que la tienen).
+  // Va antes del consentimiento. El backend rechaza /responses con
+  // SOCIALIZATION_REQUIRED mientras no la haya visto completa.
+  // ---------------------------------------------------------------------------
+  if (socialization?.required && token) {
+    return (
+      <SocializationVideo
+        token={token}
+        firstName={participant.firstName}
+        config={socialization}
+        onCompleted={() => setSocialization(null)}
+      />
+    );
+  }
+
+  // ---------------------------------------------------------------------------
   // Consentimiento informado (bloqueante).
-  // Es la PRIMERA pantalla: va antes del gate facial y antes del menú, porque
+  // Es la primera pantalla de los datos (la precede la socialización si la
+  // instancia la tiene): va antes del gate facial y antes del menú, porque
   // sin autorización no se debe tratar ningún dato — ni las respuestas ni el
   // rostro. El backend rechaza /responses y /face con CONSENT_REQUIRED.
   // ---------------------------------------------------------------------------
