@@ -331,6 +331,17 @@ Como los Excel no traen email, el importador minta `cc_<documento>@temp.com` por
 
 El preview muestra cuántos items detectó vs los esperados, columnas filtro, items faltantes y muestra de los primeros 5 participantes con conteo de respuestas válidas.
 
+### Un Excel "mínimo" (sin columnas de ítems) ya no marca a todos como completados
+
+Reportado el 2026-10-31 (empresa Cristal Vision Optica): la evaluadora subió un Excel con solo nombre/cargo/Forma A-B (sin columnas de preguntas — pensaba completar la batería después escaneando los cuadernillos por foto). El importador creaba los 3 `participant_evaluations` con **`status: 'completed'` incondicional**, seteado al insertar la fila, antes incluso de leer una sola celda de respuesta. Como el detector no encontró columnas de ítems, `intraResponses`/`extraResponses`/`stressResponses` quedaban en `{}`, pero el PE igual quedaba "100% completado" con `completed_at` real — sin una sola respuesta ni fila en `results`. Si el evaluador exporta o cuenta "completados" para esa evaluación, contaba personas que en realidad no tienen nada respondido.
+
+Ahora el status se decide **fila por fila, después de** intentar leer las respuestas: arrancan en `assigned`, y solo pasan a `completed` (con `completed_at`) si las 3 piezas de la batería oficial (intralaboral, extralaboral, estrés) trajeron algo; con alguna pero no todas quedan en `in_progress` — mismo criterio que `finalizePeStatus()` en el import por foto. Una fila de `responses` vacía tampoco se inserta: antes una fila `{}` se leía como "la contestó con cero respuestas válidas", cuando en realidad es que el Excel no traía esa sección.
+
+**No se tocó el caso contrario** (Excel completo con todas las columnas de ítems, el uso normal del importador): sigue quedando `completed` exactamente igual que antes, porque las 3 piezas sí traen datos.
+
+#### Archivos
+- `backend/routes/evaluations.js` — bloque `POST /:evaluationId/import-excel`, `peStatusUpdates` + el `UPDATE` agrupado por status al final de la transacción
+
 ## INTEGRACIÓN SERVER-TO-SERVER (BSL-PLATAFORMA2)
 
 Permite que un sistema externo (ej. BSL-PLATAFORMA2 / Platzi) provisione participantes en BRS y reciba notificación cuando completan la batería. Sin intervención manual del evaluador.

@@ -806,13 +806,21 @@ router.post('/:evaluationId/import-excel', auth, authorize('admin', 'evaluator')
           inserted.forEach(p => { participantsByEmail[p.email] = p; });
         }
 
-        // Batch: create all participant_evaluations at once
+        // Batch: create all participant_evaluations at once.
+        // Arrancan en 'assigned' (sin completar) — el status real se decide
+        // más abajo, FILA POR FILA, según si esa persona realmente trajo
+        // respuestas de cuestionario en el Excel. Antes quedaban 'completed'
+        // incondicionalmente aquí mismo, antes incluso de leer una sola
+        // celda de respuesta: un Excel "mínimo" (solo nombre/cargo/forma,
+        // sin columnas de ítems — como el de registrar gente para escanear
+        // después por foto) marcaba a todos como batería 100% completada sin
+        // una sola respuesta guardada.
         const peInserts = rowsToProcess.map(item => ({
           evaluation_id: parseInt(evaluationId),
           participant_id: participantsByEmail[item.email].id,
-          status: 'completed',
+          status: 'assigned',
           assigned_at: new Date(),
-          completed_at: new Date(),
+          completed_at: null,
           access_token: crypto.randomBytes(32).toString('hex'),
           token_expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
         }));
@@ -826,6 +834,10 @@ router.post('/:evaluationId/import-excel', auth, authorize('admin', 'evaluator')
         // Batch: build all responses and results, then insert in bulk
         const allResponseInserts = [];
         const allResultInserts = [];
+        // pe.id -> 'completed' | 'in_progress', llenado fila por fila abajo.
+        // Solo entran acá los que tienen AL MENOS una respuesta real; el resto
+        // se queda en el 'assigned' con el que se insertaron arriba.
+        const peStatusUpdates = {};
 
         for (const item of rowsToProcess) {
           const participant = participantsByEmail[item.email];
@@ -864,24 +876,49 @@ router.post('/:evaluationId/import-excel', auth, authorize('admin', 'evaluator')
             const extraResponses  = collectResponses(layout.extra,  'intra');
             const stressResponses = collectResponses(layout.stress, 'stress');
 
-            allResponseInserts.push({
-              participant_evaluation_id: pe.id,
-              questionnaire_type: intraType,
-              responses: JSON.stringify(intraResponses),
-              completed_at: new Date()
-            });
-            allResponseInserts.push({
-              participant_evaluation_id: pe.id,
-              questionnaire_type: 'extralaboral',
-              responses: JSON.stringify(extraResponses),
-              completed_at: new Date()
-            });
-            allResponseInserts.push({
-              participant_evaluation_id: pe.id,
-              questionnaire_type: 'estres',
-              responses: JSON.stringify(stressResponses),
-              completed_at: new Date()
-            });
+            const hasIntra = Object.keys(intraResponses).length > 0;
+            const hasExtra = Object.keys(extraResponses).length > 0;
+            const hasStress = Object.keys(stressResponses).length > 0;
+
+            // No insertar una fila de respuestas vacía: un Excel sin columnas
+            // de ítems para ese cuestionario (p. ej. uno "mínimo" de solo
+            // nombre/cargo/forma, para registrar gente que se va a escanear
+            // después por foto) no significa "lo contestó con 0 respuestas
+            // válidas" — significa que todavía no hay nada ahí.
+            if (hasIntra) {
+              allResponseInserts.push({
+                participant_evaluation_id: pe.id,
+                questionnaire_type: intraType,
+                responses: JSON.stringify(intraResponses),
+                completed_at: new Date()
+              });
+            }
+            if (hasExtra) {
+              allResponseInserts.push({
+                participant_evaluation_id: pe.id,
+                questionnaire_type: 'extralaboral',
+                responses: JSON.stringify(extraResponses),
+                completed_at: new Date()
+              });
+            }
+            if (hasStress) {
+              allResponseInserts.push({
+                participant_evaluation_id: pe.id,
+                questionnaire_type: 'estres',
+                responses: JSON.stringify(stressResponses),
+                completed_at: new Date()
+              });
+            }
+
+            // El PE solo queda 'completed' si las 3 piezas de la batería
+            // oficial trajeron algo; con alguna (no todas) queda 'in_progress'
+            // — igual que decide finalizePeStatus() en el import por foto.
+            // Sin ninguna, se queda en el 'assigned' con el que se insertó.
+            if (hasIntra && hasExtra && hasStress) {
+              peStatusUpdates[pe.id] = 'completed';
+            } else if (hasIntra || hasExtra || hasStress) {
+              peStatusUpdates[pe.id] = 'in_progress';
+            }
 
             // Calculate results (CPU-only, no DB)
             const allResults = [];
@@ -940,6 +977,23 @@ router.post('/:evaluationId/import-excel', auth, authorize('admin', 'evaluator')
         }
         for (let i = 0; i < allResultInserts.length; i += 100) {
           await trx('results').insert(allResultInserts.slice(i, i + 100));
+        }
+
+        // Aplicar el status real calculado fila por fila (ver peStatusUpdates
+        // arriba). Se agrupa por status para no mandar un UPDATE por persona.
+        const idsByStatus = { completed: [], in_progress: [] };
+        for (const [peId, status] of Object.entries(peStatusUpdates)) {
+          idsByStatus[status].push(parseInt(peId));
+        }
+        if (idsByStatus.completed.length > 0) {
+          await trx('participant_evaluations')
+            .whereIn('id', idsByStatus.completed)
+            .update({ status: 'completed', completed_at: new Date() });
+        }
+        if (idsByStatus.in_progress.length > 0) {
+          await trx('participant_evaluations')
+            .whereIn('id', idsByStatus.in_progress)
+            .update({ status: 'in_progress' });
         }
       });
     }
