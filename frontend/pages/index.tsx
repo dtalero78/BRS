@@ -589,7 +589,7 @@ function MarketingHome() {
           </p>
         </div>
 
-        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-5">
+        <div className="grid md:grid-cols-2 gap-5 max-w-3xl mx-auto">
           {/* Plan Gratis */}
           <div className="bg-white rounded-2xl p-6 border border-gray-100 shadow-sm flex flex-col">
             <div className="mb-6">
@@ -661,45 +661,6 @@ function MarketingHome() {
             >
               Comenzar ahora
             </Link>
-          </div>
-
-          {/* Plan Corporativo */}
-          <div className="rounded-2xl p-6 border border-gray-700 shadow-sm flex flex-col text-white" style={{ backgroundColor: '#0a2d4e' }}>
-            <div className="mb-6">
-              <h3 className="text-lg font-bold mb-1">Corporativo</h3>
-              <p className="text-sm text-gray-400">Para grandes operaciones</p>
-            </div>
-            <div className="mb-2">
-              <span className="text-4xl font-bold">$2.000</span>
-              <span className="text-sm text-gray-400 ml-1">/prueba</span>
-            </div>
-            <p className="text-xs text-gray-500 mb-6">Empresas ilimitadas</p>
-            <ul className="space-y-3 mb-8 flex-1">
-              {[
-                'Todo lo del plan Estándar',
-                'Empresas ilimitadas',
-                'API de integración',
-                'Marca blanca disponible',
-                'Gerente de cuenta dedicado',
-                'Facturación personalizada',
-              ].map((item) => (
-                <li key={item} className="flex items-start gap-2 text-sm text-gray-300">
-                  <svg className="w-4 h-4 text-green-400 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                  </svg>
-                  {item}
-                </li>
-              ))}
-            </ul>
-            <a
-              href="https://wa.me/573008021701?text=Hola%2C%20me%20interesa%20el%20plan%20Corporativo%20de%20BRS%20Digital"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center justify-center text-sm font-semibold text-white border border-gray-500 rounded-full px-6 py-3 hover:border-gray-300 transition-colors"
-              onClick={() => { if (typeof window !== 'undefined' && (window as any).gtag) { (window as any).gtag('event', 'whatsapp_click', { event_category: 'conversion', event_label: 'plan_corporativo' }); } }}
-            >
-              Contactar ventas
-            </a>
           </div>
         </div>
 
