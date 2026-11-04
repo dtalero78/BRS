@@ -80,7 +80,7 @@ function getClient() {
 }
 
 function ocrModel() {
-  return process.env.OCR_MODEL || 'claude-sonnet-4-6';
+  return process.env.OCR_MODEL || 'claude-sonnet-5-5';
 }
 
 // La API de Anthropic rechaza requests de más de 32 MB, y base64 infla ~33%.
@@ -112,7 +112,12 @@ function buildFileBlocks(imageBuffers) {
 }
 
 /**
- * Una sola llamada al modelo, forzada a devolver `tool`.
+ * Una sola llamada al modelo, con instrucción de devolver `tool`.
+ * `tool_choice: 'tool'` (forzado) no lo soportan los modelos de la familia
+ * Claude 5 ("tool_choice: type \"tool\" ... are not supported for this
+ * model") — se usa 'auto' y el system prompt ya le exige no escribir prosa
+ * fuera de la llamada a la herramienta; si no la llama, el chequeo de abajo
+ * lo reporta como error en vez de fallar en silencio.
  * Devuelve { input, usage }.
  */
 async function callModel({ client, imageBuffers, systemPrompt, tool, userText, maxTokens = 16000 }) {
@@ -123,7 +128,7 @@ async function callModel({ client, imageBuffers, systemPrompt, tool, userText, m
       { type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } },
     ],
     tools: [tool],
-    tool_choice: { type: 'tool', name: tool.name },
+    tool_choice: { type: 'auto' },
     messages: [
       {
         role: 'user',

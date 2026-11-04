@@ -521,10 +521,18 @@ Reportado el 2026-11-04 por dos evaluadoras distintas (Shaddai), con cuadernillo
 
 **No es un problema de nitidez de la tinta.** Reintentado el mismo día con el primer fix ya desplegado: el mismo cuadernillo, las mismas preguntas, el mismo resultado equivocado. Con zoom al máximo en las marcas de las preguntas 26-28, son una X oscura y limpia, enteramente dentro de la columna "Nunca", sin tocar la columna vecina — no hay ambigüedad visual real que justifique la confusión. Es decir, el modelo no está midiendo mal un trazo borroso: está **perdiendo la cuenta de cuál es la quinta y última columna** cuando la marca queda lejos del texto de la pregunta. De paso, estas marcas tienen un estilo cursivo con un lazo/bucle en un trazo (no una X recta simple), lo que puede sumar ruido a la interpretación.
 
-**Fix (segunda iteración, el primero no bastó):** la instrucción del prompt del OCR (`buildSystemPrompt()` en `answer-sheet-ocr.js`) ahora le pide al modelo **contar explícitamente las 5 líneas de columna de cada tabla** y confirmar cuál es la quinta antes de leer cualquier fila — en vez de estimar la posición "a ojo" contra una tenue intuición de qué tan a la derecha está el trazo. También aclara que una marca con lazo/bucle cursivo sigue siendo una marca válida: la columna se decide por la posición horizontal del trazo completo, no por su forma. Sigue siendo un ajuste de prompt sobre un modelo de visión, no un parser determinístico — no hay forma de garantizar que corrija el 100% de los casos, así que **la red de seguridad del preview (ámbar + desplegable) sigue intacta a propósito** y es la que de verdad protege la integridad del dato. Si se repite después de este segundo ajuste, el problema probablemente no se resuelve solo con texto en el prompt (valdría la pena probar con un escaneo de mejor resolución, o marcar explícitamente las columnas en la imagen antes de mandarla al modelo).
+**Dos iteraciones de prompt no bastaron.** Se reintentó el mismo día con cada ajuste ya desplegado — el mismo cuadernillo, las mismas 6 preguntas, el mismo resultado equivocado las dos veces. Confirma que no era un problema de redacción de instrucciones: era el **modelo**. `OCR_MODEL` apuntaba a `claude-sonnet-4-6`, una generación atrás de la familia Claude 5 disponible.
+
+**Fix real: subir el modelo a `claude-sonnet-5-5`.** Probado directo contra el cuadernillo real (sin pasar por el preview, llamando `extractAnswersFromSheet()` a mano): las 7 preguntas que antes fallaban (3, 26, 28, 34, 35, 37, 40) salieron **las 7 correctas, con confianza alta** — no solo acertó, dejó de dudar. El propio warning del modelo lo describe explícitamente: "Las marcas son en su mayoría cursivas o con lazo, pero quedan claramente dentro de la columna Siempre o de la columna Nunca" — la instrucción sobre el estilo cursivo de las marcas (de la segunda iteración de prompt) sí le sirvió a este modelo, aunque al 4.6 no le alcanzara.
+
+**De paso, un gotcha de API necesario para que el cambio de modelo funcionara:** los modelos de la familia Claude 5 no soportan `tool_choice: { type: 'tool', name }` (forzar una herramienta específica) — la API devuelve `400 "tool_choice: type \"tool\" ... are not supported for this model"`. Hubo que cambiar a `tool_choice: { type: 'auto' }`. El system prompt ya le exigía "no escribas prosa fuera de la llamada a la herramienta", así que el modelo la sigue llamando igual; si alguna vez no lo hiciera, el chequeo existente (`if (!toolBlock) throw ...`) lo reporta como error en vez de fallar en silencio.
+
+Las dos instrucciones de prompt agregadas en las iteraciones anteriores (contar las 5 columnas, tolerar marcas con lazo/bucle) se dejaron — no estorban y, como muestra el warning de arriba, sí aportan con el modelo correcto.
+
+Sin backfill: `OCR_MODEL` solo afecta llamadas nuevas al modelo (import por foto), no hay nada pre-calculado que corregir.
 
 #### Archivos
-- `backend/utils/answer-sheet-ocr.js` — `buildSystemPrompt()`
+- `backend/utils/answer-sheet-ocr.js` — `ocrModel()`, `callModel()` (`tool_choice`), `buildSystemPrompt()`
 
 ## VOCABULARIO DE LA FICHA: UNA SOLA LISTA POR CAMPO
 
