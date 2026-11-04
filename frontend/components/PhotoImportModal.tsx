@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useRef, useState, useMemo } from 'react';
 import toast from 'react-hot-toast';
 import { XMarkIcon, ArrowLeftIcon, PhotoIcon, CheckCircleIcon, ExclamationTriangleIcon, SparklesIcon } from '@heroicons/react/24/outline';
 import FichaDatosForm from './FichaDatosForm';
@@ -129,6 +129,13 @@ export default function PhotoImportModal({
   const [files, setFiles] = useState<File[]>([]);
   const [selectedMode, setSelectedMode] = useState<SelectMode>(defaultQuestionnaireType);
   const [previewing, setPreviewing] = useState(false);
+  // Al cerrar el modal se corta la espera del análisis: sin esto la consulta
+  // seguía sola y sus avisos salían encima del siguiente participante.
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
   const [preview, setPreview] = useState<PreviewData | null>(null);
   const [editsByType, setEditsByType] = useState<EditsByType>({});
   const [fichaEdits, setFichaEdits] = useState<FichaValues>(emptyFicha());
@@ -221,10 +228,58 @@ export default function PhotoImportModal({
         headers: { Authorization: `Bearer ${token}` },
         body: fd,
       });
-      const data: PreviewData = await response.json();
-      if (!response.ok) {
-        toast.error((data as any).error || 'Error al analizar el archivo.');
+      // Si algo intermedio (Cloudflare, el balanceador) responde HTML en vez
+      // de JSON, se muestra un error claro en vez de "Error de conexión".
+      const readJson = async (r: Response): Promise<any> => {
+        try { return await r.json(); } catch { return {}; }
+      };
+      const started = await readJson(response);
+      if (!response.ok || !started.jobId) {
+        toast.error(started.error || `No se pudo iniciar el análisis (código ${response.status}). Intenta de nuevo.`);
         return;
+      }
+
+      // El análisis corre en el servidor (una batería completa puede tardar
+      // varios minutos); se pregunta por el resultado cada 4 s el primer
+      // minuto y luego cada 8 s, para no gastar el límite de peticiones por IP
+      // (una oficina entera comparte una). Un fallo de red suelto o un 429 no
+      // tumban el análisis: se vuelve a preguntar.
+      const MAX_WAIT_MS = 15 * 60 * 1000;
+      const t0 = Date.now();
+      let networkFailures = 0;
+      let data: PreviewData | null = null;
+      while (!data) {
+        const waitMs = Date.now() - t0 < 60000 ? 4000 : 8000;
+        await new Promise(r => setTimeout(r, waitMs));
+        if (!mountedRef.current) return;
+        if (Date.now() - t0 > MAX_WAIT_MS) {
+          toast.error('El análisis está tardando demasiado. Intenta de nuevo o divide el PDF.');
+          return;
+        }
+        let poll: Response;
+        try {
+          poll = await fetch(`/api/photo-import/${evaluationId}/preview/${started.jobId}`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+        } catch {
+          if (!mountedRef.current) return;
+          if (++networkFailures > 5) throw new Error('network');
+          continue;
+        }
+        networkFailures = 0;
+        const body = await readJson(poll);
+        if (!mountedRef.current) return;
+        if (!poll.ok) {
+          // 5xx de un intermediario o 429 del límite: transitorio, se reintenta.
+          if (poll.status >= 500 || poll.status === 429) continue;
+          toast.error(body.error || 'Error al analizar el archivo.');
+          return;
+        }
+        if (body.status === 'error') {
+          toast.error(body.error || 'Error al analizar el archivo.');
+          return;
+        }
+        if (body.status === 'done') data = body.result as PreviewData;
       }
 
       if (data.mode === 'auto') {

@@ -190,6 +190,42 @@ async function finalizePeStatus(trx, peId, formType, integrationMetaRaw) {
   }
 }
 
+// Análisis en curso o recién terminados, en memoria. Basta porque cada
+// instancia corre un solo contenedor: si se reinicia, el navegador recibe 404
+// y le pide al evaluador volver a analizar. Se olvidan a los 30 min.
+const previewJobs = new Map();
+const PREVIEW_JOB_TTL_MS = 30 * 60 * 1000;
+setInterval(() => {
+  const cutoff = Date.now() - PREVIEW_JOB_TTL_MS;
+  for (const [id, job] of previewJobs) {
+    if (job.createdAt < cutoff) previewJobs.delete(id);
+  }
+}, 5 * 60 * 1000).unref();
+
+router.get(
+  '/:evaluationId/preview/:jobId',
+  auth,
+  authorize('admin', 'evaluator'),
+  (req, res) => {
+    const job = previewJobs.get(req.params.jobId);
+    // Un análisis ajeno se responde igual que uno inexistente.
+    if (!job || job.userId !== req.user.userId || job.evaluationId !== String(req.params.evaluationId)) {
+      return res.status(404).json({ error: 'El análisis ya no está disponible. Vuelve a analizar el archivo.' });
+    }
+    if (job.status === 'running') return res.json({ status: 'running' });
+    // El resultado trae respuestas de salud y datos personales: se borra de
+    // memoria un minuto después de entregarlo. El minuto de gracia es para que
+    // una respuesta perdida en el camino no obligue a repetir un OCR pagado.
+    if (!job.deliveredAt) {
+      job.deliveredAt = Date.now();
+      const { jobId } = req.params;
+      setTimeout(() => previewJobs.delete(jobId), 60 * 1000).unref();
+    }
+    if (job.status === 'error') return res.json({ status: 'error', error: job.error });
+    return res.json({ status: 'done', result: job.result });
+  }
+);
+
 router.post(
   '/:evaluationId/preview',
   auth,
@@ -239,31 +275,40 @@ router.post(
           }
         : null;
 
-      if (isAuto) {
-        const result = await extractAllQuestionnairesFromSheet(imageBuffers, {
-          expectParticipantInfo: !participant,
-        });
-        return res.json({
-          mode: 'auto',
-          questionnaireType: 'auto',
-          participantId: participant ? participant.id : null,
-          participant: participantEcho,
-          ...result,
-        });
-      }
+      // El análisis corre en segundo plano y el navegador pregunta por el
+      // resultado (GET /preview/:jobId). Esperarlo en esta misma petición no
+      // sirve: una batería completa en PDF tarda más de 100 s con el modelo
+      // actual, y Cloudflare (delante de App Platform) corta a los 100 s con un
+      // 524 en HTML que el modal leía como "Error de conexión".
+      const jobId = crypto.randomBytes(16).toString('hex');
+      const job = { userId: req.user.userId, evaluationId: String(evaluationId), status: 'running', createdAt: Date.now(), result: null, error: null };
+      previewJobs.set(jobId, job);
 
-      const result = await extractAnswersFromSheet(imageBuffers, {
-        questionnaireType,
-        expectParticipantInfo: !participant,
-      });
+      const expectParticipantInfo = !participant;
+      const run = isAuto
+        ? extractAllQuestionnairesFromSheet(imageBuffers, { expectParticipantInfo })
+            .then(result => ({ mode: 'auto', questionnaireType: 'auto', ...result }))
+        : extractAnswersFromSheet(imageBuffers, { questionnaireType, expectParticipantInfo })
+            .then(result => ({ mode: 'single', questionnaireType, ...result }));
 
-      return res.json({
-        mode: 'single',
-        questionnaireType,
-        participantId: participant ? participant.id : null,
-        participant: participantEcho,
-        ...result,
-      });
+      run
+        .then(result => {
+          job.status = 'done';
+          job.result = {
+            ...result,
+            participantId: participant ? participant.id : null,
+            participant: participantEcho,
+          };
+        })
+        .catch(error => {
+          console.error('Photo preview error:', error);
+          // Causas que el evaluador sí puede corregir (archivo demasiado
+          // pesado, PDF ilegible, API sin configurar): el mensaje real.
+          job.status = 'error';
+          job.error = error.message || 'Error al analizar el archivo.';
+        });
+
+      return res.status(202).json({ jobId });
     } catch (error) {
       console.error('Photo preview error:', error);
       // El OCR falla por causas que el evaluador sí puede corregir (archivo

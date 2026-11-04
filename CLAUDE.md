@@ -534,6 +534,18 @@ Sin backfill: `OCR_MODEL` solo afecta llamadas nuevas al modelo (import por foto
 #### Archivos
 - `backend/utils/answer-sheet-ocr.js` — `ocrModel()`, `callModel()` (`tool_choice`), `buildSystemPrompt()`
 
+### El análisis corre en segundo plano: Cloudflare corta a los 100 s
+
+Reportado el 2026-11-04, el mismo día del cambio a `claude-sonnet-5-5`: el cuadernillo completo de Alliance Risk (PDF de 14 páginas, 14,7 MB, modo "toda la batería") empezó a salir con **"Error de conexión al analizar archivo"**. El modelo nuevo lee mejor pero es más lento, y la batería completa (pase de índice + un pase por cuestionario + reintentos) pasó de 100 s. App Platform tiene **Cloudflare delante**, que corta toda petición a los 100 s con un `524` en HTML; el modal hacía `response.json()` sobre ese HTML, explotaba y caía en el `catch` de "Error de conexión". No era la red del evaluador.
+
+Ahora `POST /api/photo-import/:evaluationId/preview` valida, arranca el OCR y responde `202 {jobId}` de inmediato; `GET /:evaluationId/preview/:jobId` devuelve `running` / `done` (con el mismo resultado de antes) / `error`. `PhotoImportModal` pregunta cada 4 s el primer minuto y luego cada 8 s, hasta 15 min.
+- Los análisis viven **en memoria** (`previewJobs`): sirve porque cada instancia es un solo contenedor. Un reinicio o deploy a mitad deja el análisis en `404` → el modal pide volver a analizar. **Si alguna instancia se escala a más de un contenedor, esto se rompe** (la consulta caería en otro contenedor).
+- El resultado trae respuestas de salud y datos personales: se borra **un minuto después de entregarlo** (el minuto es para que una respuesta perdida no obligue a repetir un OCR pagado); lo que nadie recoge se borra a los 30 min.
+- La consulta de avance cuenta contra el límite global de `/api/` (500 cada 15 min por IP): por eso el intervalo crece y un `429` se reintenta en vez de cancelar.
+- Cerrar el modal corta la espera (`mountedRef`), pero **no** cancela el OCR en el servidor (tampoco lo hacía antes).
+
+Cualquier otra ruta que pueda pasar de 100 s necesita el mismo patrón: con Cloudflare delante, esperar la respuesta en la misma petición no es opción.
+
 ## VOCABULARIO DE LA FICHA: UNA SOLA LISTA POR CAMPO
 
 Las opciones de cada campo de la ficha salen de `bateria_riesgo_psicosocial_preguntas.json` (`ficha_datos_generales`). **Ese JSON es la fuente; `frontend/components/fichaFields.ts` lo copia carácter por carácter** — es la lista que ve el evaluador en la entrada manual y en la importación por foto.
