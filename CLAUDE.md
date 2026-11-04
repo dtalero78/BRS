@@ -513,6 +513,19 @@ Eso hacía silencioso el peor caso: si el segundo escaneo salió peor que el pri
 
 > El documento lo lee el OCR de un manuscrito. Un dígito mal leído crea **otra** persona, porque el correo sintético es la identidad. Por eso el campo del documento es editable en el preview y la consulta se repite al cambiarlo.
 
+### Sesgo de lectura: la columna "Nunca" (extremo derecho) se jala hacia el centro de la escala
+
+Reportado el 2026-11-04 por dos evaluadoras distintas (Shaddai), con cuadernillos distintos: varias preguntas marcadas "Nunca" en el papel salían con "confianza media" en el preview, leídas como "Casi nunca" o incluso "Algunas veces" — nunca al revés (nunca se vio un "Nunca" real leído como "Siempre").
+
+**Verificado contra el cuadernillo real, pregunta por pregunta.** En un caso (Alliance Risk) las 6 preguntas que el import marcó "confianza media" para el cuestionario intralaboral (ítems 3, 26, 28, 34, 35, 40) estaban **las 6** marcadas "Nunca" en el papel — 5 se leyeron como "Casi nunca" (una columna hacia el centro) y 1 como "Algunas veces" (tres columnas hacia el centro). Mismo patrón, misma dirección, en los 6 casos: nunca es ruido aleatorio, es un sesgo sistemático del modelo de visión al leer marcas tenues o pequeñas cerca del borde derecho de la tabla.
+
+**No se perdió ningún dato real**: en ambos casos reportados la importación nunca se confirmó (se quedó en el paso de previsualización, que es justo donde el preview marca en ámbar las filas de confianza baja/media con un desplegable al lado para corregirlas a mano). El problema no es de integridad de datos — es que corregir a mano pasa más seguido de lo que debería en cuadernillos con muchas respuestas "Nunca".
+
+**Fix**: se agregó una instrucción explícita al prompt del OCR (`buildSystemPrompt()` en `answer-sheet-ocr.js`) advirtiendo este sesgo conocido y pidiéndole al modelo medir la distancia al trazo contra cada línea de columna antes de desplazar una marca tenue hacia el centro de la escala, en vez de asumirlo por defecto. Es un ajuste de prompt sobre un modelo de visión, no un parser determinístico — no hay forma de garantizar que corrija el 100% de los casos, así que **la red de seguridad del preview (ámbar + desplegable) sigue intacta a propósito** y es la que de verdad protege la integridad del dato.
+
+#### Archivos
+- `backend/utils/answer-sheet-ocr.js` — `buildSystemPrompt()`
+
 ## VOCABULARIO DE LA FICHA: UNA SOLA LISTA POR CAMPO
 
 Las opciones de cada campo de la ficha salen de `bateria_riesgo_psicosocial_preguntas.json` (`ficha_datos_generales`). **Ese JSON es la fuente; `frontend/components/fichaFields.ts` lo copia carácter por carácter** — es la lista que ve el evaluador en la entrada manual y en la importación por foto.

@@ -197,6 +197,8 @@ function buildSystemPrompt(questionnaireType, expectedCount, scale, expectPartic
     'Escala Likert de este cuestionario (devuelve el valor numérico, NO el texto):',
     scaleDesc,
     '',
+    'ATENCIÓN — sesgo conocido de lectura: la columna más a la DERECHA de la tabla (el valor más bajo de la escala, "Nunca") es la que con más frecuencia se lee mal, en particular cuando la marca es tenue, pequeña o pierde nitidez por estar cerca del borde o del doblez de la hoja. En esos casos NO asumas por defecto que la marca está en una columna más hacia el centro (p. ej. "Casi nunca" o "Algunas veces"): mide con cuidado qué línea de columna está más cerca del centro del trazo antes de decidir, y si tras medirla la marca sigue estando más cerca de la última columna, repórtala como esa última columna aunque sea tenue (con confidence "medium" o "low" según corresponda), en vez de desplazarla hacia una opción intermedia.',
+    '',
   ];
 
   if (multiDocument) {
