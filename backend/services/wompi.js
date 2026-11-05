@@ -52,23 +52,86 @@ function envInt(name) {
   return Number.isFinite(n) && n > 0 ? n : 0;
 }
 
-// Desde cuantas pruebas aplica el precio por volumen. El descuento entra
-// cuando la orden SUPERA este numero (251 con el default de 250).
+// Desde cuantas pruebas aplicaba el precio por volumen en el esquema viejo de
+// dos env vars. El descuento entraba al SUPERAR este numero (251 con 250).
 const DEFAULT_BULK_MIN_QTY = 250;
 
 /**
- * Tarifa por prueba. Dos tramos: precio normal y precio por volumen para
- * ordenes grandes. `system_configs` manda sobre las env vars para poder
- * cambiar la tarifa sin redeploy; sin precio base el modulo queda desactivado
- * (no se puede cobrar $0).
+ * Ordena los tramos y descarta los que no tienen sentido cobrar.
  *
- * El tramo por volumen aplica a TODA la orden, no solo a las pruebas que
- * exceden el umbral: pasar de 250 baja el precio de todas. Eso hace que
- * pagar 251 cueste menos que pagar 250 — la UI avisa cuando faltan pocas
- * para el tramo, porque un descuento que solo encuentra quien tropieza con
- * el no es un descuento, es una loteria.
+ * Un tramo que cuesta igual o mas que el anterior le cobraria al evaluador
+ * por comprar mas, que es justo lo contrario de un descuento por volumen: es
+ * un error de configuracion y se ignora en vez de aplicarse.
+ *
+ * Si el tramo mas bajo no arranca en 1 no hay precio para una orden chica, y
+ * una tarifa con huecos no se puede cobrar: se descarta entera para que el
+ * calculo caiga al siguiente nivel (global, y luego env vars) en vez de
+ * quedarse sin precio.
  */
-async function getPricing() {
+function normalizeTiers(tiers) {
+  const ordenados = (tiers || [])
+    .map((t) => ({ minQty: parseInt(t.minQty, 10), unitPriceCop: parseInt(t.unitPriceCop, 10) }))
+    .filter((t) => Number.isFinite(t.minQty) && t.minQty >= 1 && Number.isFinite(t.unitPriceCop) && t.unitPriceCop > 0)
+    .sort((a, b) => a.minQty - b.minQty);
+
+  if (!ordenados.length || ordenados[0].minQty !== 1) return [];
+
+  const limpios = [ordenados[0]];
+  for (const t of ordenados.slice(1)) {
+    if (t.unitPriceCop < limpios[limpios.length - 1].unitPriceCop) limpios.push(t);
+  }
+  return limpios;
+}
+
+// Una tarifa mal cargada se avisa UNA vez, no en cada request: `getPricing`
+// corre en cada /config, /pending y /checkout.
+//
+// La clave incluye los conteos, no solo el alcance: "se descarto entera" y
+// "se ignoraron N tramos" son problemas distintos, y con la clave puesta en
+// el alcance a secas el segundo quedaba mudo. Y arreglar la tarifa limpia la
+// marca, para que un problema nuevo meses despues —el proceso vive semanas—
+// vuelva a avisar en vez de pasar en silencio.
+const avisados = new Set();
+function avisarDescarte(alcance, pedidos, limpios) {
+  if (pedidos.length === limpios.length) {
+    // Tarifa sana: se olvida CUALQUIER aviso previo de este alcance. Borrar la
+    // clave de este caso no serviria — solo se guardan claves de tarifas rotas,
+    // y esta no lo esta. Si el mismo problema reaparece, vuelve a avisar.
+    for (const k of avisados) if (k.startsWith(`${alcance}|`)) avisados.delete(k);
+    return;
+  }
+  const clave = `${alcance}|${pedidos.length}|${limpios.length}`;
+  if (avisados.has(clave)) return;
+  avisados.add(clave);
+  if (!limpios.length) {
+    console.error(`⚠️ Wompi: la tarifa de ${alcance} se descarto entera — no arranca en min_qty = 1, ` +
+      'asi que no cubre las ordenes chicas. Se usara la tarifa del nivel siguiente.');
+  } else {
+    console.error(`⚠️ Wompi: en la tarifa de ${alcance} se ignoraron ${pedidos.length - limpios.length} tramo(s): ` +
+      'su precio no baja respecto al anterior, cobrarian mas por comprar mas.');
+  }
+}
+
+/** Tramos guardados en `pricing_tiers`. `userId` null = tarifa de la instancia. */
+async function loadTiers(userId) {
+  const q = db('pricing_tiers').select('min_qty as minQty', 'unit_price_cop as unitPriceCop');
+  if (userId == null) q.whereNull('user_id');
+  else q.where('user_id', userId);
+
+  const filas = await q;
+  const limpios = normalizeTiers(filas);
+  // Sin esto, borrar por error la fila `desde 1` de un acuerdo deja al
+  // evaluador pagando la tarifa plena sin una linea en los logs que lo diga.
+  avisarDescarte(userId == null ? 'la instancia' : `el evaluador ${userId}`, filas, limpios);
+  return limpios;
+}
+
+/**
+ * Tarifa del esquema viejo (env vars / system_configs), expresada como tramos.
+ * Es el fallback cuando `pricing_tiers` esta vacia, asi que una instancia que
+ * nunca toque la tabla sigue cobrando exactamente igual que antes.
+ */
+async function envTiers() {
   const cfg = {};
   try {
     const rows = await db('system_configs').whereIn('config_key', [
@@ -83,21 +146,83 @@ async function getPricing() {
   }
 
   const unitPriceCop = cfg.wompi_unit_price_cop || envInt('BRS_TEST_PRICE_COP');
-  let bulkPriceCop = cfg.wompi_bulk_price_cop || envInt('BRS_TEST_PRICE_BULK_COP');
+  if (!unitPriceCop) return [];
+
+  const bulkPriceCop = cfg.wompi_bulk_price_cop || envInt('BRS_TEST_PRICE_BULK_COP');
   const bulkMinQty = cfg.wompi_bulk_min_qty || envInt('BRS_TEST_BULK_MIN_QTY') || DEFAULT_BULK_MIN_QTY;
 
-  // Un "descuento" que no baja el precio es un error de configuracion: se
-  // ignora en vez de cobrarle de mas al evaluador por comprar mas.
-  if (bulkPriceCop >= unitPriceCop) bulkPriceCop = 0;
-
-  return { unitPriceCop, bulkPriceCop, bulkMinQty };
+  const tiers = [{ minQty: 1, unitPriceCop }];
+  // El esquema viejo aplicaba el descuento al SUPERAR el umbral, no al
+  // alcanzarlo: con 250 el precio bajaba en la prueba 251. Se conserva tal
+  // cual para no cambiarle el cobro a quien ya esta usando las env vars.
+  if (bulkPriceCop > 0) tiers.push({ minQty: bulkMinQty + 1, unitPriceCop: bulkPriceCop });
+  return normalizeTiers(tiers);
 }
 
-/** Precio unitario que aplica a una orden de `qty` pruebas. */
+/**
+ * Tarifa que le aplica a un evaluador, en tramos por volumen.
+ *
+ * Tres niveles, de mas especifico a mas general: el acuerdo de ese evaluador
+ * (`pricing_tiers` con su `user_id`), la tarifa de la instancia (las mismas
+ * filas con `user_id NULL`) y, si no hay ninguna, las env vars de siempre.
+ *
+ * Un acuerdo propio REEMPLAZA a la tarifa global, no se mezcla con ella:
+ * combinar tramos de dos tarifas daria precios que nadie negocio.
+ *
+ * `source` dice cual de los tres gano, para poder explicarlo en la UI y en un
+ * "¿por que me cobraron esto?" dentro de seis meses.
+ */
+async function getPricing(userId = null) {
+  let tiers = [];
+  let source = 'env';
+
+  try {
+    if (userId != null) {
+      tiers = await loadTiers(userId);
+      if (tiers.length) source = 'user';
+    }
+    if (!tiers.length) {
+      tiers = await loadTiers(null);
+      if (tiers.length) source = 'global';
+    }
+  } catch (e) {
+    // Que la tabla no exista todavia (instancia sin migrar) es esperado y cae
+    // a las env vars. CUALQUIER otro fallo de base se propaga: tragarselo
+    // cobraria la tarifa de la instancia —mas cara— a un evaluador con
+    // acuerdo propio, y la orden quedaria indistinguible de una legitima.
+    // Mejor un 500 y que reintente que un cobro silencioso de mas.
+    if (!e || e.code !== '42P01') throw e;
+  }
+
+  if (!tiers.length) {
+    tiers = await envTiers();
+    source = 'env';
+  }
+
+  return {
+    tiers,
+    source,
+    // Precio de una prueba suelta. Es tambien lo que decide si el modulo
+    // esta configurado: sin el no se puede cobrar nada.
+    unitPriceCop: tiers.length ? tiers[0].unitPriceCop : 0,
+  };
+}
+
+/**
+ * Precio unitario que aplica a una orden de `qty` pruebas: el del tramo mas
+ * alto que la orden alcanza. Aplica a TODA la orden, no solo a las pruebas
+ * que exceden el umbral.
+ */
 function unitPriceForQuantity(qty, pricing) {
   const n = Number(qty) || 0;
-  if (pricing && pricing.bulkPriceCop > 0 && n > pricing.bulkMinQty) return pricing.bulkPriceCop;
-  return (pricing && pricing.unitPriceCop) || 0;
+  const tiers = (pricing && pricing.tiers) || [];
+  if (!tiers.length) return 0;
+  let precio = tiers[0].unitPriceCop;
+  for (const t of tiers) {
+    if (n >= t.minQty) precio = t.unitPriceCop;
+    else break;
+  }
+  return precio;
 }
 
 function isConfigured(unitPriceCop) {
@@ -255,6 +380,7 @@ module.exports = {
   apiBase,
   getPricing,
   unitPriceForQuantity,
+  normalizeTiers,
   isConfigured,
   integritySignature,
   buildCheckoutUrl,

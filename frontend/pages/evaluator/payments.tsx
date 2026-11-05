@@ -51,19 +51,44 @@ interface PaymentsConfig {
   requirePaidEvaluation: boolean;
   configured: boolean;
   sandbox: boolean;
+  /** Precio de una prueba suelta (tramo base). */
   unitPriceCop: number;
-  /** Precio por prueba en ordenes grandes. 0 = no hay tramo por volumen. */
-  bulkPriceCop: number;
-  /** El tramo aplica cuando la orden SUPERA esta cantidad. */
-  bulkMinQty: number;
+  /** Tramos por volumen, de menor a mayor cantidad. */
+  tiers: PriceTier[];
+  /** 'user' = tarifa negociada con este evaluador. null si no se pudo leer. */
+  pricingSource: 'user' | 'global' | 'env' | null;
+  /** Tope de pruebas por orden que acepta el backend. */
+  maxItemsPerCheckout: number;
+  /** La tarifa no se pudo leer: la lista sirve, pero no se puede cobrar. */
+  pricingUnavailable?: boolean;
   currency: string;
 }
 
-/** Precio unitario segun la cantidad. Espeja `unitPriceForQuantity` del backend. */
+interface PriceTier {
+  minQty: number;
+  unitPriceCop: number;
+}
+
+/**
+ * Precio unitario segun la cantidad: el del tramo mas alto que la orden
+ * alcanza. Espeja `unitPriceForQuantity` del backend — aqui solo es para
+ * mostrar; el monto que se cobra lo calcula siempre el servidor.
+ */
 const unitPriceFor = (qty: number, config: PaymentsConfig | null) => {
-  if (!config) return 0;
-  if (config.bulkPriceCop > 0 && qty > config.bulkMinQty) return config.bulkPriceCop;
-  return config.unitPriceCop;
+  const tiers = config?.tiers || [];
+  if (!tiers.length) return 0;
+  let precio = tiers[0].unitPriceCop;
+  for (const t of tiers) {
+    if (qty >= t.minQty) precio = t.unitPriceCop;
+    else break;
+  }
+  return precio;
+};
+
+/** Hasta donde llega un tramo, para listarlo como "50 a 99". */
+const tierRange = (tiers: PriceTier[], i: number) => {
+  const hasta = tiers[i + 1] ? tiers[i + 1].minQty - 1 : null;
+  return hasta ? `${tiers[i].minQty} a ${hasta}` : `${tiers[i].minQty} o más`;
 };
 
 const statusLabel = (s: PendingItem['status']) =>
@@ -132,22 +157,26 @@ export default function EvaluatorPayments() {
   const selectedCount = selected.size;
   const unitPrice = unitPriceFor(selectedCount, config);
   const total = selectedCount * unitPrice;
-  const bulkActive = !!config && config.bulkPriceCop > 0 && selectedCount > config.bulkMinQty;
+  const tiers = config?.tiers || [];
+  // Hay descuento por volumen activo si el precio de ahora no es el del tramo base.
+  const bulkActive = tiers.length > 1 && selectedCount > 0 && unitPrice < tiers[0].unitPriceCop;
 
-  // El tramo aplica a toda la orden, asi que justo debajo del umbral agregar
-  // pruebas ABARATA el total. Sin este aviso el descuento solo lo encuentra
-  // quien tropieza con el, y dos evaluadores con la misma cantidad terminan
-  // pagando distinto por no haberlo notado.
+  // El precio del tramo aplica a toda la orden, asi que justo debajo de un
+  // umbral agregar pruebas ABARATA el total. Sin este aviso el descuento solo
+  // lo encuentra quien tropieza con el, y dos evaluadores con la misma
+  // cantidad terminan pagando distinto por no haberlo notado.
   const bulkHint = useMemo(() => {
-    if (!config || config.bulkPriceCop <= 0 || bulkActive) return null;
-    const target = config.bulkMinQty + 1;
-    // Solo tiene sentido si de verdad le alcanzan las pruebas sin pagar.
-    if (selectedCount === 0 || items.length < target) return null;
-    const missing = target - selectedCount;
-    const savings = selectedCount * config.unitPriceCop - target * config.bulkPriceCop;
+    const siguiente = tiers.find((t) => t.minQty > selectedCount);
+    if (!siguiente || selectedCount === 0) return null;
+    // Solo tiene sentido si de verdad le alcanzan las pruebas sin pagar, y si
+    // esa orden cabe en un solo pago: sugerir llegar a un tramo que el
+    // backend rechazaria con 400 manda al evaluador contra una pared.
+    if (items.length < siguiente.minQty) return null;
+    if (config && siguiente.minQty > config.maxItemsPerCheckout) return null;
+    const savings = selectedCount * unitPrice - siguiente.minQty * siguiente.unitPriceCop;
     if (savings <= 0) return null;
-    return { missing, savings, target };
-  }, [config, bulkActive, selectedCount, items.length]);
+    return { missing: siguiente.minQty - selectedCount, savings, target: siguiente.minQty, precio: siguiente.unitPriceCop };
+  }, [tiers, selectedCount, unitPrice, items.length]);
 
   const toggle = (id: number) => {
     setSelected((prev) => {
@@ -224,11 +253,16 @@ export default function EvaluatorPayments() {
             <div className="mt-4 sm:mt-0 text-right">
               <div className="text-xs uppercase tracking-wide text-gray-500">Valor por prueba</div>
               <div className="text-2xl font-bold text-gray-900">{formatCop(unitPrice)}</div>
-              {config.bulkPriceCop > 0 && (
+              {config.pricingSource === 'user' && (
+                <div className="mt-1 text-xs font-medium text-emerald-700">Tarifa acordada contigo</div>
+              )}
+              {tiers.length > 1 && (
                 <div className="text-xs text-gray-500">
-                  {bulkActive
-                    ? `Precio por volumen (más de ${config.bulkMinQty} pruebas)`
-                    : `${formatCop(config.bulkPriceCop)} c/u pasando de ${config.bulkMinQty} pruebas`}
+                  {tiers.map((t, i) => (
+                    <div key={t.minQty} className={unitPrice === t.unitPriceCop && bulkActive ? 'font-semibold text-gray-900' : ''}>
+                      {tierRange(tiers, i)} pruebas: {formatCop(t.unitPriceCop)} c/u
+                    </div>
+                  ))}
                 </div>
               )}
               {config.sandbox && (
@@ -244,9 +278,11 @@ export default function EvaluatorPayments() {
           <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 flex gap-3">
             <ExclamationTriangleIcon className="h-6 w-6 text-amber-600 flex-shrink-0" />
             <div className="text-sm text-amber-900">
-              {config.requirePaidEvaluation
-                ? 'La pasarela de pagos todavía no está configurada en esta instancia. Escribe al administrador para habilitar tus pruebas.'
-                : 'Esta instancia no cobra por prueba: todas tus evaluaciones están habilitadas.'}
+              {config.pricingUnavailable
+                ? 'No pudimos consultar tu tarifa en este momento, así que el pago está deshabilitado temporalmente. La lista de abajo sigue actualizada; vuelve a intentar en unos minutos.'
+                : config.requirePaidEvaluation
+                  ? 'La pasarela de pagos todavía no está configurada en esta instancia. Escribe al administrador para habilitar tus pruebas.'
+                  : 'Esta instancia no cobra por prueba: todas tus evaluaciones están habilitadas.'}
             </div>
           </div>
         )}
@@ -373,7 +409,8 @@ export default function EvaluatorPayments() {
             <div className="px-4 py-4 border-t border-gray-200 bg-gray-50 rounded-b-lg sm:flex sm:items-center sm:justify-between gap-4">
               <div className="text-sm text-gray-700">
                 <div>
-                  <span className="font-semibold">{selectedCount}</span> prueba(s) seleccionada(s) × {formatCop(unitPrice)}
+                  <span className="font-semibold">{selectedCount}</span> prueba(s) seleccionada(s)
+                  {config?.pricingUnavailable ? ' · tarifa no disponible' : ` × ${formatCop(unitPrice)}`}
                   {bulkActive && (
                     <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800">
                       Precio por volumen aplicado
@@ -383,14 +420,16 @@ export default function EvaluatorPayments() {
                 {bulkHint && (
                   <div className="mt-1 text-sm text-emerald-700">
                     Agrega {bulkHint.missing} prueba(s) más (total {bulkHint.target}) y pagas {formatCop(bulkHint.savings)} menos:
-                    pasando de {config?.bulkMinQty} el precio baja a {formatCop(config?.bulkPriceCop || 0)} por prueba.
+                    desde {bulkHint.target} el precio baja a {formatCop(bulkHint.precio)} por prueba.
                   </div>
                 )}
               </div>
               <div className="mt-3 sm:mt-0 flex items-center gap-4">
                 <div className="text-right">
                   <div className="text-xs uppercase tracking-wide text-gray-500">Total a pagar</div>
-                  <div className="text-2xl font-bold text-gray-900">{formatCop(total)}</div>
+                  <div className="text-2xl font-bold text-gray-900">
+                    {config?.pricingUnavailable ? '—' : formatCop(total)}
+                  </div>
                 </div>
                 <button
                   onClick={handleCheckout}

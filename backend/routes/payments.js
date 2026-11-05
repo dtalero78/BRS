@@ -9,10 +9,11 @@
  *   GET  /api/payments/:reference          detalle de una orden
  *   POST /api/payments/wompi/events        webhook de Wompi (publico, firmado)
  *
- * Tarifa: precio por prueba, con un tramo por volumen que aplica a TODA la
- * orden cuando supera `bulkMinQty` (ver `services/wompi.js`). El monto lo
- * calcula siempre el backend a partir de las pruebas seleccionadas; el
- * frontend nunca manda un precio ni un total.
+ * Tarifa: tramos por volumen (ver `services/wompi.js`), que pueden ser los de
+ * la instancia o un acuerdo propio del evaluador. El precio del tramo aplica a
+ * TODA la orden. El monto lo calcula siempre el backend a partir de las
+ * pruebas seleccionadas y del usuario autenticado; el frontend nunca manda un
+ * precio ni un total.
  *
  * "Pendiente de pago" = la prueba no tiene `paid_at` Y su evaluacion no fue
  * liberada a mano por el admin (`evaluations.paid`). Se listan pruebas en
@@ -66,8 +67,12 @@ function serializePayment(p, items) {
   };
 }
 
-async function buildConfig() {
-  const pricing = await wompi.getPricing();
+async function buildConfig(userId = null) {
+  // La tarifa puede ser un acuerdo propio de este evaluador, asi que el
+  // precio NO se puede resolver sin saber quien es: un `buildConfig()` sin
+  // userId devolveria la tarifa de la instancia y cobraria de mas a quien
+  // tiene descuento negociado.
+  const pricing = await wompi.getPricing(userId);
   const configured = wompi.isConfigured(pricing.unitPriceCop);
   return {
     // Sin cobro por evaluacion (licenciatarios) no hay nada que pagar aunque
@@ -76,14 +81,56 @@ async function buildConfig() {
     requirePaidEvaluation: REQUIRE_PAID_EVALUATION,
     configured,
     sandbox: configured ? wompi.isSandbox() : false,
+    // Precio de una prueba suelta (tramo base).
     unitPriceCop: pricing.unitPriceCop,
-    // Tramo por volumen (0 = sin tramo). Aplica a toda la orden cuando la
-    // cantidad SUPERA bulkMinQty. La UI lo necesita para mostrar el precio
-    // que de verdad se va a cobrar segun lo que el evaluador seleccione.
-    bulkPriceCop: pricing.bulkPriceCop,
-    bulkMinQty: pricing.bulkMinQty,
+    // Tramos por volumen, de menor a mayor cantidad. La UI los necesita para
+    // mostrar el precio que de verdad se va a cobrar segun lo seleccionado,
+    // y para avisar cuando falta poco para el siguiente tramo.
+    tiers: pricing.tiers,
+    // 'user' = acuerdo propio de este evaluador | 'global' | 'env'.
+    pricingSource: pricing.source,
+    // La UI lo necesita para no sugerir llegar a un tramo que esta por
+    // encima del tope y que este mismo endpoint rechazaria con 400.
+    maxItemsPerCheckout: MAX_ITEMS_PER_CHECKOUT,
     currency: wompi.CURRENCY,
   };
+}
+
+/**
+ * Igual que `buildConfig`, pero sin tumbar la pantalla si la tarifa no se
+ * puede resolver.
+ *
+ * `getPricing` propaga los fallos de base a proposito: cobrar con la tarifa
+ * equivocada es peor que no cobrar. Pero en las pantallas de LECTURA ese
+ * principio no aplica igual — el evaluador usa `/pending` para seguimiento
+ * operativo (quien falta por responder), que no tiene nada que ver con el
+ * precio. Dejarlo sin esa lista por un problema de la tabla de tarifas le
+ * rompe el trabajo del dia.
+ *
+ * Asi que aqui se degrada: la lista se entrega, el cobro queda deshabilitado
+ * (`enabled: false`) y la UI explica por que. `/checkout` NO usa esto: ahi
+ * sigue reventando, porque es donde se mueve el dinero.
+ */
+async function buildConfigOrUnavailable(userId) {
+  try {
+    return await buildConfig(userId);
+  } catch (err) {
+    console.error('⚠️ Payments: no se pudo resolver la tarifa, el cobro queda deshabilitado:', err);
+    return {
+      enabled: false,
+      requirePaidEvaluation: REQUIRE_PAID_EVALUATION,
+      configured: false,
+      sandbox: false,
+      unitPriceCop: 0,
+      tiers: [],
+      pricingSource: null,
+      // La UI lo distingue de "esta instancia no cobra": aqui si cobra, pero
+      // ahora mismo no se sabe cuanto, y eso se arregla solo o con soporte.
+      pricingUnavailable: true,
+      maxItemsPerCheckout: MAX_ITEMS_PER_CHECKOUT,
+      currency: wompi.CURRENCY,
+    };
+  }
 }
 
 // Pruebas sin pagar de las empresas del usuario (o de todas, para super-admin).
@@ -144,7 +191,7 @@ router.use(auth, authorize('evaluator', 'admin'));
 
 router.get('/config', async (req, res) => {
   try {
-    res.json(await buildConfig());
+    res.json(await buildConfigOrUnavailable(req.user.userId));
   } catch (err) {
     console.error('Payments config error:', err);
     res.status(500).json({ error: 'Error interno del servidor' });
@@ -153,7 +200,9 @@ router.get('/config', async (req, res) => {
 
 router.get('/pending', async (req, res) => {
   try {
-    const config = await buildConfig();
+    // Tolerante: la lista de pendientes sirve para seguimiento aunque la
+    // tarifa no se pueda resolver. El checkout de mas abajo si es estricto.
+    const config = await buildConfigOrUnavailable(req.user.userId);
     const superAdmin = isSuperAdmin(req.user);
     const companyIds = superAdmin ? [] : await getOwnedCompanyIds(req.user.userId);
 
@@ -207,10 +256,12 @@ router.get('/pending', async (req, res) => {
       totals: {
         count: items.length,
         completed,
-        // Precio que aplicaria pagandolas todas de una: con el tramo por
+        // Precio que aplicaria pagandolas todas de una: con los tramos por
         // volumen el total no es una simple multiplicacion por el precio base.
-        unitPriceCop: wompi.unitPriceForQuantity(items.length, config),
-        amountCop: items.length * wompi.unitPriceForQuantity(items.length, config),
+        // Con la tarifa caida van en null y no en 0: un "$0" se leeria como
+        // "no debe nada", que es lo contrario de lo que pasa.
+        unitPriceCop: config.pricingUnavailable ? null : wompi.unitPriceForQuantity(items.length, config),
+        amountCop: config.pricingUnavailable ? null : items.length * wompi.unitPriceForQuantity(items.length, config),
       },
     });
   } catch (err) {
@@ -221,7 +272,7 @@ router.get('/pending', async (req, res) => {
 
 router.post('/checkout', async (req, res) => {
   try {
-    const config = await buildConfig();
+    const config = await buildConfig(req.user.userId);
     if (!config.enabled) {
       return res.status(503).json({
         error: 'PAYMENTS_UNAVAILABLE',

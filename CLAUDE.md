@@ -382,11 +382,25 @@ El evaluador paga por su cuenta las pruebas que aplicó y con eso se liberan los
 ### La unidad de cobro es la prueba, no la evaluación
 Una "prueba" es un `participant_evaluation` (una persona en una evaluación). El total del checkout lo fija **siempre el backend** a partir de las pruebas seleccionadas: el frontend nunca manda un monto ni un precio.
 
-**Tarifa (dos tramos).** $5.000 por prueba, y $3.500 cuando la orden **supera** 250 pruebas. El tramo aplica a **toda la orden**, no solo a las que exceden el umbral. Se configura con `BRS_TEST_PRICE_COP` / `BRS_TEST_PRICE_BULK_COP` / `BRS_TEST_BULK_MIN_QTY`, y `system_configs` (`wompi_unit_price_cop`, `wompi_bulk_price_cop`, `wompi_bulk_min_qty`) manda sobre las env vars para cambiar la tarifa sin redeploy. Sin precio base el módulo queda desactivado; sin precio de volumen se cobra el base siempre (comportamiento previo).
+**Tarifa: tramos por volumen, y acuerdos por evaluador.** La tabla `pricing_tiers` define tramos del tipo "desde N pruebas, cada prueba cuesta X". El precio del tramo aplica a **toda la orden**, no solo a las pruebas que exceden el umbral.
 
-Un `bulkPriceCop >= unitPriceCop` se **ignora** (queda en 0): un "descuento" que no baja el precio es un error de configuración, y aplicarlo le cobraría de más al evaluador justo por comprar más.
+- `user_id NULL` → tarifa de la instancia.
+- `user_id` con valor → acuerdo negociado con ese evaluador, que **reemplaza por completo** a la global. No se mezclan: combinar tramos de dos tarifas daría precios que nadie negoció.
+- Sin filas en la tabla, el cálculo cae a las env vars de siempre (`BRS_TEST_PRICE_COP` / `BRS_TEST_PRICE_BULK_COP` / `BRS_TEST_BULK_MIN_QTY`), así que una instancia que no use la tabla cobra exactamente igual que antes. Ese camino conserva el comportamiento viejo de bajar el precio al **superar** el umbral (en 251 con 250), no al alcanzarlo; los tramos de la tabla aplican desde `min_qty` inclusive.
 
-> ⚠️ **El umbral tiene un salto, y es deliberado.** Como el precio bajo aplica a toda la orden, pagar 251 pruebas ($878.500) cuesta **menos** que pagar 250 ($1.250.000). Por eso la UI avisa cuando faltan pocas para cruzarlo ("agrega N y pagas $X menos"): un descuento que solo encuentra quien tropieza con él deja a dos evaluadores con la misma cantidad pagando distinto. El umbral se cuenta **por orden de checkout**, no acumulado: el evaluador decide cuándo juntar volumen.
+`GET /api/payments/config` devuelve `tiers` y `pricingSource` (`'user' | 'global' | 'env'`), y la pantalla de Pagos lista los tramos; con un acuerdo propio muestra "Tarifa acordada contigo".
+
+Se cargan con `node backend/scripts/set-pricing-tiers.js --user <email> 1:5000 50:4500 ...` (simula por defecto; escribe con `--apply`).
+
+**Salvaguardas**, porque una tarifa mal cargada cobra mal dinero real:
+- Un tramo cuyo precio **no baja** respecto al anterior se ignora: cobraría más por comprar más.
+- Una tarifa que **no arranca en `min_qty = 1`** se descarta entera y el cálculo cae al nivel siguiente: sin tramo base no hay precio para una orden chica. Cargar solo `250 → 3500` para un evaluador no le da descuento, lo deja en la tarifa global.
+- Un fallo de base al leer los tramos **no** cae en silencio a la tarifa global, que es más cara: solo se tolera que la tabla no exista todavía (`42P01`). En `/checkout` eso revienta con 500 antes que cobrar mal; en `/config` y `/pending` se **degrada** (`enabled: false` + `pricingUnavailable: true`), porque la lista de pendientes sirve para seguimiento operativo aunque no se sepa el precio, y dejar al evaluador sin ella le rompe el día por algo ajeno al cobro.
+- Una tarifa descartada deja rastro en los logs, una vez por alcance y problema (no en cada request); si se arregla y reincide, vuelve a avisar.
+
+> ⚠️ **Cada umbral es un salto, y es deliberado.** Como el precio aplica a toda la orden, pagar 50 pruebas ($225.000) cuesta **menos** que pagar 49 ($245.000); lo mismo en 100 y en 250. La UI avisa cuando faltan pocas para el siguiente tramo ("agrega N y pagas $X menos"): un descuento que solo encuentra quien tropieza con él deja a dos evaluadores con la misma cantidad pagando distinto. El umbral se cuenta **por orden de checkout**, no acumulado.
+
+> ⚠️ **Todavía no hay UI para cargar tramos.** Se hace con el script o por SQL. Si se agrega una pantalla, las escrituras tienen que ser solo de super-admin: un evaluador que pueda editar su propio tramo se auto-descuenta.
 
 La orden guarda en `payments.unit_price_in_cents` el precio que efectivamente se aplicó, así que el histórico queda auditable aunque la tarifa cambie después.
 

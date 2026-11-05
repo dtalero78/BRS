@@ -127,7 +127,20 @@ router.get('/evaluations', async (req, res) => {
     // pasaron por la pasarela, asi que no tienen un monto propio que sumar.
     // Se toma de la configuracion y no de un numero fijo, para que el panel no
     // siga valorizando a la tarifa vieja cuando el precio cambie.
-    const { unitPriceCop } = await wompi.getPricing();
+    // Aislado a proposito: `getPricing` propaga los fallos de base para no
+    // cobrar con la tarifa equivocada, pero aqui no se cobra nada — dejar que
+    // reviente tumbaria toda la lista de clientes por un numero de display.
+    //
+    // Es la tarifa de la INSTANCIA. Desde que existen acuerdos por evaluador
+    // (`pricing_tiers` con user_id), es aproximada para las evaluaciones de
+    // quien tenga tarifa propia. Lo que se cobro de verdad sale de
+    // `payments.unit_price_in_cents`, que es lo que suma `wompi_amount_cents`.
+    let unitPriceCop = 0;
+    try {
+      ({ unitPriceCop } = await wompi.getPricing(null));
+    } catch (e) {
+      console.error('Admin: no se pudo leer la tarifa para valorizar el panel:', e.message);
+    }
 
     res.json({
       unitPriceCop,
