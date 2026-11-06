@@ -139,6 +139,77 @@ app.post('/api/visitor-notify', visitNotifyLimiter, async (req, res) => {
   }
 });
 
+// --- Shaddai Consultants: alerta cuando alguien termina el video de la batería ---
+// shaddaiconsultants.com es estático (GitHub Pages) y no puede guardar el token de
+// Whapi; la página llama aquí al terminar el video. Usa su propio token/cuenta de
+// Whapi (SHADDAI_WHAPI_TOKEN), no el de BRS.
+const SHADDAI_ORIGINS = ['https://shaddaiconsultants.com', 'https://www.shaddaiconsultants.com'];
+const shaddaiVideoIPs = new Map(); // IP -> timestamp
+const SHADDAI_VIDEO_COOLDOWN_MS = 10 * 60 * 1000; // quien repite el video no dispara otra alerta en 10 min
+// Tope global: el Origin se puede falsificar fuera del navegador; esto acota los WhatsApps al número
+const SHADDAI_VIDEO_MAX_POR_HORA = 20;
+let shaddaiVideoEnvios = [];
+
+const shaddaiVideoLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 5,
+  keyGenerator: (req) => req.headers['cf-connecting-ip'] || req.ip,
+  message: 'Too many requests',
+  validate: { trustProxy: false }
+});
+
+app.post('/api/shaddai/video-visto', shaddaiVideoLimiter, async (req, res) => {
+  try {
+    // Solo la página de Shaddai: el endpoint es público y manda WhatsApps a un número fijo
+    if (!SHADDAI_ORIGINS.includes(req.headers.origin)) return res.status(403).json({ ok: false });
+
+    const WHAPI_TOKEN = process.env.SHADDAI_WHAPI_TOKEN;
+    const NOTIFY_NUMBER = process.env.SHADDAI_VIDEO_NOTIFY_NUMBER || '573203056700';
+    if (!WHAPI_TOKEN) return res.status(200).json({ ok: true });
+
+    const userAgent = req.headers['user-agent'] || '';
+    if (/bot|crawl|spider|slurp|google|bing|yandex/i.test(userAgent)) return res.status(200).json({ ok: true });
+
+    const ip = req.headers['cf-connecting-ip'] || req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.ip || 'unknown';
+    const now = Date.now();
+    const ultima = shaddaiVideoIPs.get(ip);
+    if (ultima && (now - ultima) < SHADDAI_VIDEO_COOLDOWN_MS) return res.status(200).json({ ok: true });
+    shaddaiVideoIPs.set(ip, now);
+    if (shaddaiVideoIPs.size > 500) {
+      for (const [key, ts] of shaddaiVideoIPs) {
+        if (now - ts > SHADDAI_VIDEO_COOLDOWN_MS) shaddaiVideoIPs.delete(key);
+      }
+    }
+
+    shaddaiVideoEnvios = shaddaiVideoEnvios.filter(ts => now - ts < 60 * 60 * 1000);
+    if (shaddaiVideoEnvios.length >= SHADDAI_VIDEO_MAX_POR_HORA) return res.status(200).json({ ok: true });
+    shaddaiVideoEnvios.push(now);
+
+    const fecha = new Date().toLocaleString('es-CO', { timeZone: 'America/Bogota' });
+    const msg = `🎬 *Alerta — shaddaiconsultants.com*\n\nAlguien terminó de ver el video de la *Batería de riesgo psicosocial*.\n🕐 ${fecha}`;
+
+    // fetch nativo (Node 18+): node-fetch solo está como dependencia transitiva
+    const formattedNumber = NOTIFY_NUMBER.replace(/[+\-\s]/g, '') + '@s.whatsapp.net';
+
+    fetch('https://gate.whapi.cloud/messages/text', {
+      method: 'POST',
+      headers: {
+        'accept': 'application/json',
+        'authorization': `Bearer ${WHAPI_TOKEN}`,
+        'content-type': 'application/json'
+      },
+      body: JSON.stringify({ typing_time: 0, to: formattedNumber, body: msg })
+    })
+      .then(r => { if (!r.ok) console.error('Shaddai video notify: Whapi respondió', r.status); })
+      .catch(err => console.error('Shaddai video notify error:', err.message));
+
+    res.status(200).json({ ok: true });
+  } catch (err) {
+    console.error('Shaddai video notify error:', err.message);
+    res.status(200).json({ ok: true });
+  }
+});
+
 // Health check endpoint
 app.get('/health', (req, res) => {
   res.status(200).json({
