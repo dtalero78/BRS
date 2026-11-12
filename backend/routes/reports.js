@@ -258,19 +258,28 @@ router.post('/organizational', auth, async (req, res) => {
       .count('id as count')
       .first();
 
+    // La ficha y el estrés solo cuentan para quienes tienen resultados: es la
+    // misma población que el resto del informe (aggResults.population.total).
+    // Sin este filtro, quien llenó la ficha pero no terminó la batería inflaba
+    // las gráficas sociodemográficas (Manuela Beltrán: 331 evaluados, género
+    // sumaba 340).
+    const evaluatedPeIds = new Set(allResults.map(r => r.participant_evaluation_id));
+
     // Get ficha_datos responses for demographic analysis
-    const fichaResponses = await db('responses')
+    const fichaResponses = (await db('responses')
       .join('participant_evaluations as pe', 'responses.participant_evaluation_id', 'pe.id')
       .where('pe.evaluation_id', evaluationId)
       .where('responses.questionnaire_type', 'ficha_datos')
-      .select('responses.responses', 'pe.participant_id', 'pe.id as participant_evaluation_id');
+      .select('responses.responses', 'pe.participant_id', 'pe.id as participant_evaluation_id'))
+      .filter(r => evaluatedPeIds.has(r.participant_evaluation_id));
 
     // Get stress responses for typology analysis
-    const stressResponses = await db('responses')
+    const stressResponses = (await db('responses')
       .join('participant_evaluations as pe', 'responses.participant_evaluation_id', 'pe.id')
       .where('pe.evaluation_id', evaluationId)
       .where('responses.questionnaire_type', 'estres')
-      .select('responses.responses', 'pe.participant_id');
+      .select('responses.responses', 'pe.participant_id', 'pe.id as participant_evaluation_id'))
+      .filter(r => evaluatedPeIds.has(r.participant_evaluation_id));
 
     // Get evaluator info
     const evaluator = await db('users')

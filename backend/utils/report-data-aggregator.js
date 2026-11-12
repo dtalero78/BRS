@@ -698,17 +698,49 @@ function buildRiskPrioritizationMatrix(aggregatedResults) {
 // ============================================================
 // AGGREGATE BY AREA/SEDE
 // ============================================================
+/**
+ * Etiqueta canónica de la ciudad/sede de trabajo (texto libre de la ficha).
+ *
+ * Bogotá se escribe de decenas de formas ("Bogota ", "BOGOTÁ, D. C.",
+ * "Distrito Capital", "D.C"...) y cada una abría su propia sección
+ * "RESULTADOS: <sede>" en el informe — Manuela Beltrán tenía ~40 variantes
+ * de Bogotá. Bogotá se reconoce por sus alias; el resto solo se fusiona por
+ * formato (mayúsculas, tildes, espacios), no por significado: "Cundinamarca"
+ * NO se junta con Bogotá, porque en otra empresa puede ser Soacha o Chía.
+ */
+function canonicalSede(raw) {
+  if (!raw || typeof raw !== 'string') return null;
+  const cleaned = raw.replace(/^\s*por favor seleccione\.*\s*/i, '').replace(/\s+/g, ' ').trim();
+  const key = normalizarTexto(cleaned);
+  if (!key) return null;
+  if (key.includes('bogota') || /^(distrito capital|distrito c|d c|dc)( de bogota)?$/.test(key)) {
+    return { key: 'bogota d c', label: 'Bogotá D.C.' };
+  }
+  const label = cleaned.toLowerCase().replace(/(^|\s)(\S)/g, (_, sp, ch) => sp + ch.toUpperCase());
+  return { key, label };
+}
+
+// Entre variantes de la misma sede, la etiqueta que se muestra es la que
+// trae tildes ("Medellín" antes que "Medellin").
+function pickSedeLabel(current, candidate) {
+  if (!current) return candidate;
+  const accents = s => (s.normalize('NFD').match(/[̀-ͯ]/g) || []).length;
+  return accents(candidate) > accents(current) ? candidate : current;
+}
+
 function aggregateResultsByArea(allResults, fichaResponses) {
-  const peToArea = {};
+  const peToKey = {};
+  const labels = {};
 
   fichaResponses.forEach(row => {
     const ficha = resolveFicha(row.responses);
-    const area = ficha.ciudadTrabajo || ficha.departamento;
-    if (area && typeof area === 'string' && area.trim()) {
-      const normalized = area.trim().charAt(0).toUpperCase() + area.trim().slice(1).toLowerCase();
-      peToArea[row.participant_evaluation_id] = normalized;
-    }
+    const sede = canonicalSede(ficha.ciudadTrabajo) || canonicalSede(ficha.departamento);
+    if (!sede) return;
+    peToKey[row.participant_evaluation_id] = sede.key;
+    labels[sede.key] = pickSedeLabel(labels[sede.key], sede.label);
   });
+  const peToArea = {};
+  for (const [peId, key] of Object.entries(peToKey)) peToArea[peId] = labels[key];
 
   const areaGroups = {};
   allResults.forEach(row => {
@@ -840,6 +872,8 @@ function aggregateExtendedDemographics(fichaResponses) {
   base.tipoContrato = {};
   base.departamento = {};
   base.ciudadTrabajo = {};
+  const sedeCounts = {};
+  const sedeLabels = {};
   base.cargo = {};
   base.antiguedadEmpresa = { 'Menos de 1 año': 0, '1 a 5 años': 0, '6 a 10 años': 0, 'Más de 10 años': 0 };
   base.horasTrabajo = { '8 horas o menos': 0, '9 a 10 horas': 0, '11 a 12 horas': 0, 'Más de 12 horas': 0 };
@@ -880,9 +914,10 @@ function aggregateExtendedDemographics(fichaResponses) {
       if (dep) accumulateFreeText(base.departamento, depDedupeKeys, dep);
     }
 
-    if (ficha.ciudadTrabajo && typeof ficha.ciudadTrabajo === 'string') {
-      const c = ficha.ciudadTrabajo.trim();
-      if (c) base.ciudadTrabajo[c] = (base.ciudadTrabajo[c] || 0) + 1;
+    const sede = canonicalSede(ficha.ciudadTrabajo);
+    if (sede) {
+      sedeLabels[sede.key] = pickSedeLabel(sedeLabels[sede.key], sede.label);
+      sedeCounts[sede.key] = (sedeCounts[sede.key] || 0) + 1;
     }
 
     if (ficha.cargo && typeof ficha.cargo === 'string') {
@@ -907,6 +942,8 @@ function aggregateExtendedDemographics(fichaResponses) {
     }
   });
 
+  for (const [key, n] of Object.entries(sedeCounts)) base.ciudadTrabajo[sedeLabels[key]] = n;
+
   return base;
 }
 
@@ -925,6 +962,10 @@ function normalizeTipoCargo(s) {
 function parseYearsValue(val) {
   if (val == null || val === '') return null;
   const s = String(val).toLowerCase();
+  // La ficha oficial ofrece la casilla "Si lleva menos de un año marque esta
+  // opción" y el formulario guarda ese texto literal: no trae número y se caía
+  // de la gráfica (114 personas en Manuela Beltrán).
+  if (/menos\s+de\s+(un|1)\s+a[nñ]o/.test(s)) return 0.5;
   const monthMatch = s.match(/(\d+)\s*mes/);
   if (monthMatch) return parseInt(monthMatch[1], 10) / 12;
   const yearMatch = s.match(/(\d+)\s*(año|anio|an[oó])/);
@@ -956,6 +997,8 @@ module.exports = {
   groupMaritalStatus,
   groupTipoVivienda,
   accumulateFreeText,
+  canonicalSede,
+  parseYearsValue,
   FICHA_FIELD_MAP,
   normalizeTipoCargo,
   newRiskCounts,

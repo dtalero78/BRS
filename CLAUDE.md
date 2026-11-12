@@ -610,7 +610,22 @@ Reportado el 2026-10-27: "Distribución por Departamento / Área (Top 8)" mostra
 2. **La gráfica cortaba a las 8 áreas más grandes y el resto desaparecía sin dejar rastro** — con 15+ áreas distintas (normal en una empresa con muchas sedes/cuadrillas), la suma de las barras nunca llegaba al total real y no había forma de notar que faltaban personas. Ahora son horizontal bars (`drawHorizontalBarChart`, igual que Tipo de Contrato) con un bucket **"Otros (N áreas)"** que suma todo lo que no entra en el Top 7, así la suma de las barras siempre es el total real.
 3. **Los nombres se veían truncados a 11 caracteres** porque la gráfica vertical (`drawBarChart`) reserva poco espacio para la etiqueta cuando hay ≤8 barras. El bar horizontal da mucho más ancho (`labelWidth: 210`, `maxLabelChars: 45`), y de paso se le quitó el `topN: 6` al párrafo de análisis (`generateDemographicAnalysis`) — ese párrafo ahora lista **todas** las áreas con su nombre completo y conteo, sin cortar, que es donde el evaluador puede ver el nombre íntegro aunque la gráfica solo pinte las 7 más grandes.
 
-El mismo patrón sin blindar sigue en `ciudadTrabajo` y `cargo` (`aggregateExtendedDemographics`, mismo `.trim()` sin fusionar mayúsculas) — no reportado todavía, pero es el mismo tipo de campo libre y el mismo riesgo de barras duplicadas por formato.
+El mismo patrón sin blindar sigue en `cargo` (`aggregateExtendedDemographics`, mismo `.trim()` sin fusionar mayúsculas) — no reportado todavía.
+
+### Sedes, antigüedad y población de la ficha (Universidad Manuela Beltrán, 2026-11-12)
+
+Tres errores en el mismo informe organizacional (eval 419, 331 completados de 493):
+
+1. **La ficha contaba gente que no terminó.** Género sumaba 340 y estado civil 334 con 331 evaluados: `fichaResponses` traía la ficha de todo PE de la evaluación, también de quien la llenó y abandonó la batería. Ahora `reports.js` filtra la ficha y el estrés a los `participant_evaluation_id` que tienen filas en `results` — la misma población que `aggResults.population.total`. Que estado civil sume menos (325) es correcto: son personas que no lo respondieron, no un faltante.
+2. **"Menos de un año" no contaba en Antigüedad.** La casilla oficial guarda el texto literal `"Si lleva menos de un año marque esta opción"`, sin número; `parseYearsValue()` devolvía `null` y 114 personas desaparecían de la gráfica. Ahora ese texto vale 0,5 años.
+3. **Una sección "RESULTADOS: <sede>" por cada forma de escribir Bogotá** (~40 variantes: "Bogota ", "BOGOTÁ, D. C.", "Distrito Capital", "D.C", "Por favor seleccione...bogotá"). `aggregateResultsByArea()` solo capitalizaba la primera letra. `canonicalSede()` reconoce los alias de Bogotá → `Bogotá D.C.`, y el resto lo fusiona solo por formato (mayúsculas, tildes, espacios), conservando la variante con tildes para la etiqueta. Se aplica también a `demographics.ciudadTrabajo` (de ahí sale la ciudad de la portada).
+
+**Cundinamarca NO se fusiona con Bogotá en código**, a propósito: en otra empresa puede ser Soacha o Chía. En Manuela Beltrán sí era la sede de Bogotá (la gente escribió el departamento en el campo de ciudad), igual que "Colombia" — eso se corrige en el dato de esa evaluación, no en la regla general.
+
+#### Archivos
+- `backend/routes/reports.js` — filtro de `fichaResponses`/`stressResponses` por población evaluada
+- `backend/utils/report-data-aggregator.js` — `canonicalSede()`, `pickSedeLabel()`, `parseYearsValue()`
+- `backend/tests/sede-y-antiguedad.test.js` — los valores reales de la eval 419
 
 ### Lo pre-llenado no es una respuesta
 La ficha del participante llega pre-llenada con lo que cargó el evaluador. Ese dato viene de otro vocabulario (`Bachiller` del default del formulario, `Indefinido` del importador de Excel), así que **una pregunta de opciones solo se pre-llena si el dato importado es una de ellas**; si no, queda en blanco para que la persona la conteste. Antes se pre-llenaba igual: la pantalla no lo mostraba marcado, pero el valor viajaba al guardar y quedaba como si lo hubiera elegido — 39 personas de Manuela Beltrán quedaron con `Bachiller` sin haberlo tocado.
