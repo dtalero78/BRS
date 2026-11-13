@@ -873,7 +873,11 @@ router.put('/:id', auth, authorize('admin', 'evaluator'), async (req, res) => {
     const allowedFields = [
       'firstName', 'lastName', 'department', 'position', 'contractType',
       'employmentType', 'tenureMonths', 'salaryRange', 'workHoursPerDay',
-      'workDaysPerWeek', 'formType', 'gender', 'maritalStatus', 'educationLevel'
+      'workDaysPerWeek', 'formType', 'gender', 'maritalStatus', 'educationLevel',
+      // El modal de edición siempre manda el celular, pero sin esta entrada el
+      // backend lo descartaba en silencio y respondía 200: la pantalla decía
+      // "actualizado" y el número seguía igual (reportado por Shaddai, 2026-11-13).
+      'phone'
     ];
 
     let hasChanges = false;
@@ -888,8 +892,19 @@ router.put('/:id', auth, authorize('admin', 'evaluator'), async (req, res) => {
       return res.status(400).json({ error: 'No hay datos para actualizar' });
     }
 
+    // Solo se valida lo que viene en ESTE request: lo ya guardado no debe
+    // bloquear la edición de otros campos.
+    if (req.body.phone !== undefined) {
+      const rawPhone = req.body.phone;
+      if (rawPhone !== null && typeof rawPhone !== 'string' && typeof rawPhone !== 'number') {
+        return res.status(400).json({ error: 'Celular inválido' });
+      }
+      demographicData.phone = rawPhone === null ? '' : String(rawPhone).trim();
+    }
+
     const [participant] = await db('participants')
       .where('id', id)
+      .whereIn('company_id', ownedIds)
       .update({
         demographic_data: JSON.stringify(demographicData),
         updated_at: new Date()
