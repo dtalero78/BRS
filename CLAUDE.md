@@ -632,6 +632,8 @@ La ficha del participante llega pre-llenada con lo que cargó el evaluador. Ese 
 
 > ⚠️ **Nunca poner un default inventado en `demographic_data`.** `participants.tsx` ponía `educationLevel: 'Bachiller'` sin tener campo de escolaridad en el formulario: 523 participantes quedaron marcados así sin que nadie lo escribiera. Siguen ahí `maritalStatus: 'Soltero(a)'` y `contractType: 'Indefinido'`, también invisibles en el formulario (el primero es `required` en el Joi del backend).
 
+**Tampoco se pre-llenan horas diarias (17) ni tipo de cargo (13)** (2026-11-19). Las horas: el registro guarda `workHoursPerDay: 8` por defecto (formulario e importador de Excel), indistinguible de un dato real; las 18 fichas por enlace de Banninter quedaron con "8 horas". El tipo de cargo se deducía de la forma (A → "Jefatura", B → "Operario"), pero Forma A también es profesional/técnico y Forma B también auxiliar: era una respuesta inventada. Los años en la empresa (11) ya no se pre-llenaban: la pregunta tiene opciones y el `0` no coincide con ninguna.
+
 **Los campos 17 y 18 estaban cruzados** en el pre-llenado: en la ficha oficial la 17 son las horas diarias y la 18 el tipo de salario. Quedó rastro en producción — 7 fichas de Manuela Beltrán tienen `8` guardado como tipo de salario.
 
 ## PUERTA GENERAL DE ACCESO (`/acceso`)

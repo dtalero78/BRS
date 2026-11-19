@@ -467,16 +467,21 @@ const ParticipantEvaluationPage = () => {
       10: () => '', // Lugar de trabajo - not captured, leave empty for user input
       11: () => existingData.tenureMonths ? Math.floor(existingData.tenureMonths / 12) : 0, // Años en empresa
       12: () => existingData.position || '', // Cargo
-      13: () => existingData.formType === 'A' ? 'Jefatura - tiene personal a cargo' : 
-                existingData.formType === 'B' ? 'Operario, operador, ayudante, servicios generales' : 
-                'Profesional, analista, técnico, tecnólogo', // Tipo de cargo
+      // Tipo de cargo: NO se deduce de la forma. Forma A agrupa jefaturas y
+      // profesionales/técnicos, y Forma B auxiliares y operarios: marcar
+      // "Jefatura" o "Operario" por la forma inventaba la respuesta, y quien
+      // pasaba rápido la dejaba así.
+      13: () => '',
       14: () => '', // Años en cargo actual - not captured separately
       15: () => existingData.department || '', // Área/sección
       16: () => existingData.contractType || '', // Tipo de contrato
       // 17 y 18 estaban cruzados: en la ficha oficial la 17 son las HORAS y la
       // 18 el TIPO DE SALARIO. El cruce dejó rastro — en Manuela Beltrán hay 7
       // fichas con "8" guardado como tipo de salario.
-      17: () => existingData.workHoursPerDay || '', // Horas diarias de trabajo
+      // Horas diarias: el registro guarda 8 por defecto (formulario e
+      // importador de Excel) y no hay forma de distinguirlo de un dato real.
+      // Pre-llenarlo dejó a 18 de 18 fichas de Banninter con "8 horas".
+      17: () => '',
       18: () => existingData.salaryRange || '' // Tipo de salario
     };
 
