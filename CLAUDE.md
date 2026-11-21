@@ -527,6 +527,25 @@ Eso hacía silencioso el peor caso: si el segundo escaneo salió peor que el pri
 
 > El documento lo lee el OCR de un manuscrito. Un dígito mal leído crea **otra** persona, porque el correo sintético es la identidad. Por eso el campo del documento es editable en el preview y la consulta se repite al cambiarlo.
 
+### Subir la otra forma intralaboral retira la anterior
+
+Reportado el 2026-11-21 (Freightwise, eval 545): "en el intralaboral me sale una persona de más, tienen que salir 80". Había 80 personas y **81 resultados intralaborales** (19 A + 62 B). Juan Pablo Ayala Rojas se escaneó primero como Forma B (74 ítems) y 26 minutos después como Forma A (123): la segunda subida cambiaba `demo.formType` a A, pero **no tocaba** el `intralaboral_b` ya guardado. Como `aggregateResultsByForm()` deduce la forma de lo que hay en `results`, la persona contaba en las dos formas.
+
+El filtro `completed_at IS NOT NULL` del cálculo (caso "forma fantasma" de sept-2026, que era un borrador del flujo por token) **no lo ataja**: la importación por foto marca cada cuestionario como terminado al guardarlo, aunque traiga 74 de 97.
+
+Ahora `retirarOtraFormaIntralaboral()` (`photo-import.js`) borra respuestas y resultados de la otra forma al guardar un intralaboral, en `/commit` (también lo usa la entrada manual) y en `/commit-multi`. **La subida más reciente manda**, igual que ya mandaba sobre `formType`. Como eso borra datos, el aviso de `PhotoImportModal` pasa a naranja y lo dice: "Ya tiene cargado el Intra B… si confirmas, se borra". Antes decía "no chocan, se suman".
+
+Al cambiar de forma, además, `recalcularPorGrupoOcupacional()` recalcula el extralaboral y el estrés ya guardados: se califican con baremos distintos para jefes (A) y auxiliares (B), y sin esto quedaban con el de la forma anterior.
+
+**Sin cubrir todavía:** `POST /api/responses` (carga manual heredada) y el flujo por token no retiran la otra forma; si alguien llega a B por uno y a A por otro, se sigue contando doble.
+
+Mismo caso encontrado de paso: Jairo Rojas (distribuiora de pollos, eval 534), A y luego B.
+
+#### Archivos
+- `backend/routes/photo-import.js` — `retirarOtraFormaIntralaboral()`, `recalcularPorGrupoOcupacional()`
+- `frontend/components/PhotoImportModal.tsx` — `otraFormaARetirar` / `hayReemplazo`
+- `backend/tests/photo-import-otra-forma.test.js`
+
 ### Sesgo de lectura: la columna "Nunca" (extremo derecho) se jala hacia el centro de la escala
 
 Reportado el 2026-11-04 por dos evaluadoras distintas (Shaddai), con cuadernillos distintos: varias preguntas marcadas "Nunca" en el papel salían con "confianza media" en el preview, leídas como "Casi nunca" o incluso "Algunas veces" — nunca al revés (nunca se vio un "Nunca" real leído como "Siempre").

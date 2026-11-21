@@ -133,6 +133,72 @@ function parseIntegrationMeta(raw) {
 }
 
 /**
+ * Una persona responde UNA sola forma intralaboral. Al guardar la de una forma,
+ * se retiran respuestas y resultados de la otra para ese participant_evaluation.
+ *
+ * Sin esto, quien se escaneaba primero como Forma B y luego como Forma A (la
+ * evaluadora corrige la forma después de la primera lectura) quedaba con
+ * resultados de LAS DOS: aggregateResultsByForm() deduce la forma de lo que hay
+ * en `results`, así que esa persona se contaba en A y en B, y el informe
+ * mostraba una persona de más en el intralaboral (Freightwise, nov-2026:
+ * 80 personas, 81 resultados intralaborales). El filtro `completed_at IS NOT
+ * NULL` del cálculo no lo atajaba porque la importación por foto marca cada
+ * cuestionario como terminado al guardarlo.
+ *
+ * La subida más reciente manda, igual que ya mandaba sobre demo.formType.
+ */
+const OTRA_FORMA = { intralaboral_a: 'intralaboral_b', intralaboral_b: 'intralaboral_a' };
+async function retirarOtraFormaIntralaboral(trx, peId, questionnaireType) {
+  const otra = OTRA_FORMA[questionnaireType];
+  if (!otra) return 0;
+  await trx('results').where('participant_evaluation_id', peId).where('questionnaire_type', otra).del();
+  return trx('responses').where('participant_evaluation_id', peId).where('questionnaire_type', otra).del();
+}
+
+/**
+ * Extralaboral y estrés se califican con baremos distintos según el grupo
+ * ocupacional (Tablas 17/18 y Tabla 6): Forma A = jefes, Forma B = auxiliares.
+ * Si la persona cambia de forma al subir el intralaboral, lo que ya tenía
+ * calculado de esos dos quedaría con el baremo de la forma anterior. Se
+ * recalcula con lo guardado. `excluir`: tipos que esta misma petición ya
+ * recalcula (commit-multi).
+ */
+const DEPENDEN_DEL_GRUPO = ['extralaboral', 'estres'];
+async function recalcularPorGrupoOcupacional(trx, peId, formType, excluir = []) {
+  const tipos = DEPENDEN_DEL_GRUPO.filter(t => !excluir.includes(t));
+  if (tipos.length === 0) return 0;
+  const filas = await trx('responses')
+    .where('participant_evaluation_id', peId)
+    .whereIn('questionnaire_type', tipos)
+    .whereNotNull('completed_at')
+    .select('questionnaire_type', 'responses');
+  const occupationalGroup = formType === 'B' ? 'auxiliares' : 'jefes';
+  let recalculadas = 0;
+  for (const fila of filas) {
+    const mapa = toResponseMap(fila.responses);
+    const formatted = Object.entries(mapa).map(([k, v]) => ({ question_number: Number(k), response_value: v }));
+    // Hay filas marcadas terminadas pero vacías (Excel "mínimo" viejo, eval 544).
+    // calculateResults lanza con una lista vacía y tumbaría toda la subida del
+    // intralaboral con un 500; no hay nada que recalcular.
+    if (formatted.length === 0) continue;
+    const computed = await calculateResults(fila.questionnaire_type, formatted, { occupationalGroup });
+    const typeResults = computed.map(r => ({
+      dimension: r.dimension, rawScore: r.rawScore, transformedScore: r.transformedScore,
+      percentile: r.percentile, riskLevel: r.riskLevel,
+    }));
+    await trx('results').where('participant_evaluation_id', peId).where('questionnaire_type', fila.questionnaire_type).del();
+    await trx('results').insert({
+      participant_evaluation_id: peId,
+      questionnaire_type: fila.questionnaire_type,
+      results: JSON.stringify(typeResults),
+      calculated_at: new Date(),
+    });
+    recalculadas++;
+  }
+  return recalculadas;
+}
+
+/**
  * Recalcula el estado del participant_evaluation a partir de sus respuestas.
  * Espeja la lógica de participant-access.js (flujo de token): un cuestionario
  * cuenta como terminado solo si tiene completed_at. Sin esto, las importaciones
@@ -648,6 +714,8 @@ router.post(
           .where('questionnaire_type', questionnaireType)
           .del();
 
+        await retirarOtraFormaIntralaboral(trx, pe.id, questionnaireType);
+
         await trx('responses').insert({
           participant_evaluation_id: pe.id,
           questionnaire_type: questionnaireType,
@@ -703,6 +771,10 @@ router.post(
           results: JSON.stringify(typeResults),
           calculated_at: new Date(),
         });
+
+        if (OTRA_FORMA[questionnaireType]) {
+          await recalcularPorGrupoOcupacional(trx, pe.id, questionnaireType === 'intralaboral_b' ? 'B' : 'A');
+        }
 
         await finalizePeStatus(trx, pe.id, demo.formType || (questionnaireType === 'intralaboral_b' ? 'B' : 'A'), pe.integration_metadata);
 
@@ -899,6 +971,8 @@ router.post(
             .where('questionnaire_type', questionnaireType)
             .del();
 
+          await retirarOtraFormaIntralaboral(trx, pe.id, questionnaireType);
+
           await trx('responses').insert({
             participant_evaluation_id: pe.id,
             questionnaire_type: questionnaireType,
@@ -939,6 +1013,11 @@ router.post(
           });
         }
 
+        if (hasA || hasB) {
+          await recalcularPorGrupoOcupacional(trx, pe.id, effectiveFormType,
+            questionnaires.map(q => q.questionnaireType));
+        }
+
         await finalizePeStatus(trx, pe.id, effectiveFormType, pe.integration_metadata);
 
         return {
@@ -958,3 +1037,6 @@ router.post(
 );
 
 module.exports = router;
+// Expuesto solo para tests.
+module.exports._retirarOtraFormaIntralaboral = retirarOtraFormaIntralaboral;
+module.exports._recalcularPorGrupoOcupacional = recalcularPorGrupoOcupacional;

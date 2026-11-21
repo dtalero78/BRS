@@ -356,6 +356,21 @@ export default function PhotoImportModal({
     return tiposDetectados.filter(t => yaTiene.has(t));
   }, [yaCargado, tiposDetectados]);
 
+  // El intralaboral de la OTRA forma que ya tiene guardado: al confirmar se
+  // retira (el backend lo borra), porque una persona responde una sola forma.
+  // Sin esto el aviso decía "no chocan, se suman" y la persona quedaba contada
+  // en Forma A y en Forma B a la vez en el informe.
+  const otraFormaARetirar = useMemo<TabKey | null>(() => {
+    if (!yaCargado?.enEstaEvaluacion) return null;
+    const yaTiene = new Set(
+      (yaCargado.cuestionarios || []).filter(c => c.respuestas > 0).map(c => c.tipo)
+    );
+    if (tiposDetectados.includes('intralaboral_a') && yaTiene.has('intralaboral_b')) return 'intralaboral_b';
+    if (tiposDetectados.includes('intralaboral_b') && yaTiene.has('intralaboral_a')) return 'intralaboral_a';
+    return null;
+  }, [yaCargado, tiposDetectados]);
+  const hayReemplazo = tiposAReemplazar.length > 0 || otraFormaARetirar !== null;
+
   const fechaCorta = (f: string | null) =>
     f ? new Date(f).toLocaleDateString('es-CO', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
 
@@ -645,7 +660,7 @@ export default function PhotoImportModal({
             )}
 
             {yaCargado?.found && (
-              <div className={`px-5 py-3 border-b text-sm ${tiposAReemplazar.length > 0 ? 'bg-orange-50 text-orange-900' : 'bg-sky-50 text-sky-900'}`}>
+              <div className={`px-5 py-3 border-b text-sm ${hayReemplazo ? 'bg-orange-50 text-orange-900' : 'bg-sky-50 text-sky-900'}`}>
                 <div className="flex items-start gap-2">
                   <ExclamationTriangleIcon className="h-5 w-5 flex-shrink-0 mt-0.5" />
                   <div className="space-y-1">
@@ -678,9 +693,16 @@ export default function PhotoImportModal({
                         . Si este es el mismo cuadernillo que ya subiste, cancela.
                       </p>
                     ) : (
-                      yaCargado.enEstaEvaluacion && (
+                      yaCargado.enEstaEvaluacion && !otraFormaARetirar && (
                         <p>Los cuestionarios de este archivo no chocan con los que ya tiene: se suman.</p>
                       )
+                    )}
+                    {otraFormaARetirar && (
+                      <p className="font-medium">
+                        Ya tiene cargado el {SHORT_LABELS[otraFormaARetirar]}. Una persona responde una sola forma: si confirmas,
+                        se <u>borra</u> el {SHORT_LABELS[otraFormaARetirar]} y queda solo el{' '}
+                        {SHORT_LABELS[otraFormaARetirar === 'intralaboral_a' ? 'intralaboral_b' : 'intralaboral_a']} de este archivo.
+                      </p>
                     )}
                   </div>
                 </div>
@@ -806,14 +828,14 @@ export default function PhotoImportModal({
                   onClick={handleCommit}
                   disabled={committing || totalSaved === 0}
                   className={`px-4 py-2 text-sm rounded-md text-white disabled:opacity-50 ${
-                    tiposAReemplazar.length > 0
+                    hayReemplazo
                       ? 'bg-orange-600 hover:bg-orange-700'
                       : 'bg-blue-600 hover:bg-blue-700'
                   }`}
                 >
                   {committing
                     ? 'Guardando…'
-                    : tiposAReemplazar.length > 0
+                    : hayReemplazo
                     // El botón dice lo que va a pasar. "Confirmar e importar"
                     // sobre datos que ya existen describe mal la acción.
                     ? `Reemplazar lo ya cargado (${totalSaved} respuestas)`
