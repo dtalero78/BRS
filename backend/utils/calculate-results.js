@@ -783,3 +783,10 @@ async function calculateResults(questionnaireType, responses, options = {}) {
 }
 
 module.exports = calculateResults;
+// Metadatos de los ítems (invertidos y dimensión de cada uno), para análisis
+// que necesitan la misma regla del motor sin duplicar las tablas oficiales.
+module.exports.ITEM_META = {
+  intralaboral_a: { inverted: FORMA_A_INVERTED_ITEMS, dimensions: FORMA_A_DIMENSIONS },
+  intralaboral_b: { inverted: FORMA_B_INVERTED_ITEMS, dimensions: FORMA_B_DIMENSIONS },
+  extralaboral: { inverted: EXTRALABORAL_INVERTED_ITEMS, dimensions: EXTRALABORAL_DIMENSIONS },
+};

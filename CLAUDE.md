@@ -919,6 +919,21 @@ Basado en formato de referencia `informe.pdf` del Ministerio. Estructura:
 16. **Recomendación Prioritaria** — Lista numerada de acciones prioritarias
 17. **Conclusiones** — Resumen dinámico + dimensiones de mayor atención + firma del evaluador
 
+### Preguntas con mayor proporción de respuestas de riesgo (informe organizacional)
+
+Pedido de una empresa (2026-11-23): "¿se pueden tener las preguntas que más riesgo tuvieron?". Sección nueva, justo **antes del Plan de Acción**: las 10 preguntas con mayor % de respuestas de riesgo por cuestionario (Forma A, Forma B, extralaboral, estrés), con texto, dimensión (grupo de síntomas en estrés), qué respuesta cuenta como riesgo, "N de M" y %.
+
+- **Respuesta de riesgo = la misma dirección del motor oficial** (`ITEM_META` exportado por `calculate-results.js`, sin duplicar las tablas): ítem negativo → Siempre/Casi siempre; ítem protector (invertido) → Nunca/Casi nunca; estrés → Siempre/Casi siempre. La columna "Resp. riesgo" existe porque un ítem protector con 93% ("Puedo expresar tristeza o enojo…") se lee al revés sin ella.
+- **No es un nivel de riesgo.** La Batería califica por dimensión y no trae baremos por ítem; el informe lo dice en la nota de la sección.
+- % sobre quienes respondieron **ese** ítem (clientes y jefatura son condicionales). Un ítem con < 5 respuestas, o un cuestionario con < 5 personas, no se publica.
+- Población: por cuestionario, solo los PE con resultados de ese cuestionario y respuestas con `completed_at`.
+- De paso, `drawTable()` (`pdf-charts.js`) mide el alto de fila con `heightOfString`: el cálculo anterior (ancho total ÷ ancho de columna) subestimaba celdas de 3 líneas y el texto se montaba en la fila siguiente. Afecta a todas las tablas, solo para agrandar las filas que lo necesitan.
+
+#### Archivos
+- `backend/utils/item-risk-analysis.js`, `backend/tests/item-risk-analysis.test.js`
+- `backend/routes/reports.js` — carga (`itemRisk`) y sección del PDF
+- `backend/utils/calculate-results.js` — `module.exports.ITEM_META`
+
 ### Notas técnicas de PDFKit
 - **switchToPage + addPage bug**: Al usar `switchToPage()` y luego `doc.text()`, PDFKit crea páginas extras. Solución: monkey-patch `doc.addPage = () => doc` durante loops de footer/TOC backfill, restaurar después.
 - **Gráficas SVG path**: Pie charts usan `doc.path()` con arcos SVG (`M`, `L`, `A`, `Z`). Bar charts usan `doc.rect()` con efecto 3D (caras lateral/superior con `darkenColor`/`lightenColor`).

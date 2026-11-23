@@ -4,6 +4,7 @@ const PDFDocument = require('pdfkit');
 const db = require('../config/database');
 const { auth, getOwnedCompanyIds, isSuperAdmin } = require('../middleware/auth');
 const { REQUIRE_PAID_EVALUATION } = require('../config/brand');
+const { analyzeItemRisk } = require('../utils/item-risk-analysis');
 const { drawPieChart, drawBarChart, drawHorizontalBarChart, drawGroupedBarChart, drawTable, createRiskSeries, drawDonutChart, drawSemicircleGauge, drawSimpleRiskBars, drawStackedRiskBars, measureStackedRiskBars, drawColorCodedRiskTable, drawRiskPrioritizationMatrix, drawSectionBanner, RISK_COLORS, RISK_ORDER, RISK_LABELS, SOFI_ORDER, SOFI_COLORS, SOFI_LABELS } = require('../utils/pdf-charts');
 const { aggregateDemographics, aggregateExtendedDemographics, aggregateResultsByForm, summarizeSofi, getAtRiskDimensions, aggregateStressTypology, buildRiskPrioritizationMatrix, aggregateResultsByArea, aggregateResultsByCargo, buildDemandasPorCargo, resolveFicha, sumCounts } = require('../utils/report-data-aggregator');
 const templates = require('../utils/report-templates');
@@ -281,6 +282,28 @@ router.post('/organizational', auth, async (req, res) => {
       .select('responses.responses', 'pe.participant_id', 'pe.id as participant_evaluation_id'))
       .filter(r => evaluatedPeIds.has(r.participant_evaluation_id));
 
+    // Preguntas con mayor proporción de respuestas de riesgo. Misma población
+    // que el resto del informe: para cada cuestionario, solo los PE que tienen
+    // resultados de ESE cuestionario (así una forma no mezcla a la otra).
+    const ITEM_RISK_TYPES = ['intralaboral_a', 'intralaboral_b', 'extralaboral', 'estres'];
+    const peConResultado = {};
+    allResults.forEach(r => {
+      (peConResultado[r.questionnaire_type] || (peConResultado[r.questionnaire_type] = new Set()))
+        .add(r.participant_evaluation_id);
+    });
+    const itemRiskRows = await db('responses')
+      .join('participant_evaluations as pe', 'responses.participant_evaluation_id', 'pe.id')
+      .where('pe.evaluation_id', evaluationId)
+      .whereIn('responses.questionnaire_type', ITEM_RISK_TYPES)
+      .whereNotNull('responses.completed_at')
+      .select('responses.responses', 'responses.questionnaire_type', 'pe.id as participant_evaluation_id');
+    const itemRisk = {};
+    ITEM_RISK_TYPES.forEach(type => {
+      const ids = peConResultado[type] || new Set();
+      itemRisk[type] = analyzeItemRisk(type, itemRiskRows.filter(r =>
+        r.questionnaire_type === type && ids.has(r.participant_evaluation_id)));
+    });
+
     // Get evaluator info
     const evaluator = await db('users')
       .where('id', req.user.userId)
@@ -340,7 +363,8 @@ router.post('/organizational', auth, async (req, res) => {
       totalParticipants: parseInt(totalParticipants.count),
       completedParticipants: parseInt(completedParticipants.count),
       evaluator: evaluatorObj,
-      texts: reportTexts
+      texts: reportTexts,
+      itemRisk
     });
 
     // Append individual summaries if requested
@@ -1039,7 +1063,7 @@ function drawEvaluatorSignature(doc, evaluator, pageW, m) {
   }
 }
 
-function generateOrganizationalPDF(doc, { evaluation, demographics, aggResults, atRiskDimensions, stressTypology, riskMatrix, areaResults, demandasPorCargo, totalParticipants, completedParticipants, evaluator, texts }) {
+function generateOrganizationalPDF(doc, { evaluation, demographics, aggResults, atRiskDimensions, stressTypology, riskMatrix, areaResults, demandasPorCargo, totalParticipants, completedParticipants, evaluator, texts, itemRisk }) {
   const m = doc.page.margins.left;
   const pageW = doc.page.width - m * 2;
   const t = texts || templates.buildDefaultOrgTexts({ companyName: evaluation.company_name, totalEvaluated: aggResults.population.total });
@@ -2205,6 +2229,53 @@ function generateOrganizationalPDF(doc, { evaluation, demographics, aggResults, 
 
     drawSofiLevelTable(doc, m, pageW);
     drawSofiMethodNote(doc, m, pageW);
+  }
+
+  // ==========================================================
+  // PREGUNTAS CON MAYOR PROPORCIÓN DE RESPUESTAS DE RIESGO
+  // Descriptivo por ítem (no es un nivel de riesgo: la Batería califica por
+  // dimensión). Ver utils/item-risk-analysis.js.
+  // ==========================================================
+  const itemRiskSections = [
+    ['intralaboral_a', 'Intralaboral – Forma A (jefes, profesionales y técnicos)'],
+    ['intralaboral_b', 'Intralaboral – Forma B (auxiliares y operarios)'],
+    ['extralaboral', 'Extralaboral'],
+    ['estres', 'Síntomas de estrés'],
+  ].filter(([k]) => itemRisk && itemRisk[k] && itemRisk[k].items.length > 0);
+
+  if (itemRiskSections.length > 0) {
+    doc.addPage();
+    drawSectionBanner(doc, m, doc.y, pageW, 'PREGUNTAS CON MAYOR PROPORCIÓN DE RESPUESTAS DE RIESGO');
+    doc.y += 40;
+    doc.x = m;
+    doc.moveDown(0.5);
+    writeNarrative('Como complemento a los resultados por dimensión, se presentan las preguntas en las que una mayor proporción de trabajadores respondió en la dirección de riesgo. Permiten identificar situaciones concretas sobre las cuales enfocar la intervención dentro de cada dimensión.');
+    writeNarrative('Se considera respuesta de riesgo "Siempre" o "Casi siempre" en las preguntas que describen una condición desfavorable, y "Nunca" o "Casi nunca" en las que describen una condición favorable (por ejemplo, "Mi jefe me trata con respeto"). En el cuestionario de estrés, haber presentado el síntoma "Siempre" o "Casi siempre". El porcentaje se calcula sobre quienes respondieron cada pregunta.', { size: 9 });
+    writeNarrative('Nota: la Batería oficial clasifica el nivel de riesgo por dimensión y dominio, no por pregunta. Esta tabla es un insumo descriptivo para orientar las acciones y no constituye un nivel de riesgo. Se omiten las preguntas respondidas por menos de 5 personas.', { size: 8.5, color: '#6B7280' });
+
+    itemRiskSections.forEach(([key, title]) => {
+      const data = itemRisk[key];
+      ensureSpace(doc, 140);
+      writeSubheading(`${title}  (${data.respondents} personas)`);
+      const rows = data.items.map(it => [
+        String(it.numero),
+        it.texto,
+        key === 'estres' ? (it.dimension || '') : formatDimensionName(it.dimension || ''),
+        it.respuestaRiesgo,
+        `${it.enRiesgo} de ${it.respondieron}`,
+        `${String(it.pct).replace('.', ',')}%`,
+      ]);
+      const endY = drawTable(doc, m, doc.y, pageW, [
+        { label: 'N.º', width: 0.06, align: 'center' },
+        { label: 'Pregunta', width: 0.38 },
+        { label: key === 'estres' ? 'Grupo de síntomas' : 'Dimensión', width: 0.2 },
+        { label: 'Resp. riesgo', width: 0.14, align: 'center' },
+        { label: 'Personas', width: 0.11, align: 'center' },
+        { label: '%', width: 0.11, align: 'center' },
+      ], rows, { fontSize: 8 });
+      doc.y = endY + 14;
+      doc.x = m;
+    });
   }
 
   // ==========================================================

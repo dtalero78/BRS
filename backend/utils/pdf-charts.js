@@ -452,8 +452,10 @@ function drawTable(doc, x, startY, tableWidth, headers, rows, options = {}) {
     headers.forEach((h, ci) => {
       const colW = h.width * tableWidth - cellPad * 2;
       const text = row[ci] || '';
-      const lines = Math.ceil(doc.fontSize(fontSize).font('Helvetica').widthOfString(text) / colW);
-      const textH = lines * (fontSize + 2) + cellPad * 2;
+      // heightOfString respeta el corte por palabras; dividir el ancho total
+      // entre el de la columna subestimaba las celdas de 3 líneas y el texto
+      // se montaba sobre la fila siguiente.
+      const textH = doc.fontSize(fontSize).font('Helvetica').heightOfString(String(text), { width: colW }) + cellPad * 2;
       if (textH > maxH) maxH = textH;
     });
     return maxH;
