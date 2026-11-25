@@ -830,6 +830,10 @@ Texto plano con un contrato mínimo para que un evaluador lo edite sin saber HTM
 ### Visibilidad para el evaluador
 `/evaluator/participants` marca con una insignia ámbar a quien **no autorizó**. Solo se marca el rechazo: aceptar es lo esperado y marcarlo en cientos de filas sería ruido. Distinguir "rechazó" de "nunca abrió el enlace" importa para no perseguir a quien ya dijo que no, y para reportar cobertura con honestidad.
 
+**"No autorizó" es un estado aparte, no un "Pendiente" con insignia** (2026-11-25, VATCO: el filtro "Pendientes" daba 98 y 4 eran rechazos). Definición única: `consent_declined_at` con valor y batería **no** completada (aceptar y rechazar se borran entre sí). Vive en dos lugares que deben coincidir: `aplicarFiltroEstado()` en `routes/participants.js` (filtro `status=declined`; `assigned`/`in_progress` excluyen a los rechazos) y `estadoVisible()` en `participants.tsx` (insignia de estado, tarjeta "No autorizó", contadores y Excel). Así, filtrar "Pendientes" y marcar a todos para el WhatsApp masivo ya no les escribe a quienes dijeron que no.
+
+**En el informe organizacional**: debajo del resumen de "Factores de riesgo psicosocial" va un párrafo de cobertura (`buildCoverageText()` en `report-templates.js`): convocados, evaluados, cuántos no autorizaron y cuántos no completaron. No sale si todos los convocados están evaluados. El texto por defecto del Procedimiento ya no afirma que "los colaboradores autorizaron su participación": dice que cada uno decidió y que solo se evaluó a quienes autorizaron. Un procedimiento ya editado y guardado por el evaluador conserva su texto.
+
 ### Archivos
 - `backend/migrations/20260801000001_add_informed_consent.js`
 - `backend/utils/consent-template.js` — texto por defecto

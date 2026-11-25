@@ -22,6 +22,7 @@ import {
   ExclamationCircleIcon,
   PaperAirplaneIcon,
   FingerPrintIcon,
+  NoSymbolIcon,
 } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import PhotoImportModal from '../../components/PhotoImportModal';
@@ -470,19 +471,28 @@ export default function EvaluatorParticipants() {
   // esa clave el badge salia sin color ni texto para la mayoria de la tabla.
   // 'pending' se conserva porque el backend lo usa como fallback cuando el
   // participante todavia no tiene evaluacion asignada.
+  // "No autorizó" es un estado aparte de "Pendiente": rechazó el
+  // consentimiento y no completó. Sin separarlo, el evaluador contaba como
+  // "por responder" a gente que ya dijo que no (y le podía mandar recordatorios).
+  // Debe coincidir con aplicarFiltroEstado() de backend/routes/participants.js.
+  const estadoVisible = (p: Participant): string =>
+    p.consentDeclinedAt && p.status !== 'completed' ? 'declined' : p.status;
+
   const getStatusBadge = (status: string) => {
     const badges = {
       assigned: 'bg-yellow-100 text-yellow-800',
       pending: 'bg-yellow-100 text-yellow-800',
       in_progress: 'bg-blue-100 text-blue-800',
-      completed: 'bg-green-100 text-green-800'
+      completed: 'bg-green-100 text-green-800',
+      declined: 'bg-amber-100 text-amber-800'
     };
 
     const labels = {
       assigned: 'Pendiente',
       pending: 'Pendiente',
       in_progress: 'En Progreso',
-      completed: 'Completado'
+      completed: 'Completado',
+      declined: 'No autorizó'
     };
 
     return (
@@ -556,6 +566,7 @@ export default function EvaluatorParticipants() {
       : s === 'in_progress' ? 'En progreso'
       : s === 'assigned' ? 'Pendiente'
       : s === 'pending' ? 'Pendiente'
+      : s === 'declined' ? 'No autorizó'
       : (s || '');
 
     const fmtDate = (d?: string) => {
@@ -606,7 +617,7 @@ export default function EvaluatorParticipants() {
       p.salaryRange || '',
       p.workHoursPerDay != null ? String(p.workHoursPerDay) : '',
       p.workDaysPerWeek != null ? String(p.workDaysPerWeek) : '',
-      statusLabel(p.status),
+      statusLabel(estadoVisible(p)),
       p.completionPercentage != null ? String(p.completionPercentage) : '0',
       fmtDate(p.startedAt),
       fmtDate(p.completedAt),
@@ -1014,7 +1025,7 @@ export default function EvaluatorParticipants() {
         )}
 
 
-        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-5">
           <div className="bg-white overflow-hidden shadow rounded-lg">
             <div className="p-5">
               <div className="flex items-center">
@@ -1051,7 +1062,7 @@ export default function EvaluatorParticipants() {
                           'in_progress', asi que duplicaba la tarjeta de al lado,
                           y buscaba 'pending' —que no existe en la BD— dejando
                           fuera del tablero a los realmente asignados. */}
-                      {participants?.filter(p => p.status === 'assigned' || p.status === 'pending')?.length || 0}
+                      {participants?.filter(p => ['assigned', 'pending'].includes(estadoVisible(p)))?.length || 0}
                     </dd>
                   </dl>
                 </div>
@@ -1071,7 +1082,7 @@ export default function EvaluatorParticipants() {
                       En Progreso
                     </dt>
                     <dd className="text-lg font-medium text-gray-900">
-                      {participants?.filter(p => p.status === 'in_progress')?.length || 0}
+                      {participants?.filter(p => estadoVisible(p) === 'in_progress')?.length || 0}
                     </dd>
                   </dl>
                 </div>
@@ -1092,6 +1103,26 @@ export default function EvaluatorParticipants() {
                     </dt>
                     <dd className="text-lg font-medium text-gray-900">
                       {participants?.filter(p => p.status === 'completed')?.length || 0}
+                    </dd>
+                  </dl>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white overflow-hidden shadow rounded-lg">
+            <div className="p-5">
+              <div className="flex items-center">
+                <div className="flex-shrink-0">
+                  <NoSymbolIcon className="h-6 w-6 text-amber-500" />
+                </div>
+                <div className="ml-5 w-0 flex-1">
+                  <dl>
+                    <dt className="text-sm font-medium text-gray-500 truncate">
+                      No autorizó
+                    </dt>
+                    <dd className="text-lg font-medium text-gray-900">
+                      {participants?.filter(p => estadoVisible(p) === 'declined')?.length || 0}
                     </dd>
                   </dl>
                 </div>
@@ -1126,6 +1157,7 @@ export default function EvaluatorParticipants() {
                 <option value="assigned">Pendiente</option>
                 <option value="in_progress">En Progreso</option>
                 <option value="completed">Completado</option>
+                <option value="declined">No autorizó</option>
               </select>
             </div>
             {BRAND.bulkWhatsApp && waBulkEnabled && (
@@ -1286,12 +1318,14 @@ export default function EvaluatorParticipants() {
                                     Socializado
                                   </span>
                                 )}
-                                {participant.consentDeclinedAt && (
+                                {/* Junto al nombre solo cuando completó: si no, el estado ya dice
+                                    "No autorizó" y la insignia se repetía en la misma fila. */}
+                                {participant.consentDeclinedAt && participant.status === 'completed' && (
                                   <span
-                                    title={`No autorizo participar el ${new Date(participant.consentDeclinedAt).toLocaleString('es-CO')}`}
+                                    title={`No autorizó participar el ${new Date(participant.consentDeclinedAt).toLocaleString('es-CO')}`}
                                     className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800"
                                   >
-                                    No autorizo
+                                    No autorizó
                                   </span>
                                 )}
                                 {participant.whatsappSentAt && (
@@ -1326,7 +1360,7 @@ export default function EvaluatorParticipants() {
                           <div className="text-sm text-gray-500">{participant.position}</div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
-                          {getStatusBadge(participant.status)}
+                          {getStatusBadge(estadoVisible(participant))}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           {getFormTypeBadge(participant.formType)}

@@ -304,6 +304,17 @@ router.post('/organizational', auth, async (req, res) => {
         r.questionnaire_type === type && ids.has(r.participant_evaluation_id)));
     });
 
+    // Quienes no autorizaron y NO están en la población del informe. El
+    // rechazo se puede registrar después de haber respondido (o el evaluador
+    // pudo cargar respuestas por foto/Excel): esa persona ya cuenta como
+    // evaluada, y contarla también aquí la sumaba dos veces.
+    const declinedNoEvaluados = (await db('participant_evaluations')
+      .where('evaluation_id', evaluationId)
+      .whereNotNull('consent_declined_at')
+      .whereNot('status', 'completed')
+      .select('id'))
+      .filter(r => !evaluatedPeIds.has(r.id)).length;
+
     // Get evaluator info
     const evaluator = await db('users')
       .where('id', req.user.userId)
@@ -364,7 +375,8 @@ router.post('/organizational', auth, async (req, res) => {
       completedParticipants: parseInt(completedParticipants.count),
       evaluator: evaluatorObj,
       texts: reportTexts,
-      itemRisk
+      itemRisk,
+      declinedParticipants: declinedNoEvaluados
     });
 
     // Append individual summaries if requested
@@ -1063,7 +1075,7 @@ function drawEvaluatorSignature(doc, evaluator, pageW, m) {
   }
 }
 
-function generateOrganizationalPDF(doc, { evaluation, demographics, aggResults, atRiskDimensions, stressTypology, riskMatrix, areaResults, demandasPorCargo, totalParticipants, completedParticipants, evaluator, texts, itemRisk }) {
+function generateOrganizationalPDF(doc, { evaluation, demographics, aggResults, atRiskDimensions, stressTypology, riskMatrix, areaResults, demandasPorCargo, totalParticipants, completedParticipants, evaluator, texts, itemRisk, declinedParticipants = 0 }) {
   const m = doc.page.margins.left;
   const pageW = doc.page.width - m * 2;
   const t = texts || templates.buildDefaultOrgTexts({ companyName: evaluation.company_name, totalEvaluated: aggResults.population.total });
@@ -1621,7 +1633,11 @@ function generateOrganizationalPDF(doc, { evaluation, demographics, aggResults, 
   // Semicircle gauge with total participants
   const gaugeX = m + pageW / 2;
   const gaugeY = doc.y + 55;
-  drawSemicircleGauge(doc, gaugeX, gaugeY, 50, completedParticipants, {
+  // Un solo número de "evaluados" en toda la página: el de la población con
+  // resultados, que es con la que se arman las gráficas. status='completed'
+  // difiere cuando hay baterías parciales importadas y se veían dos cifras.
+  const evaluadosInforme = aggResults.population.total;
+  drawSemicircleGauge(doc, gaugeX, gaugeY, 50, evaluadosInforme, {
     label: 'Participantes Evaluados'
   });
   doc.y = gaugeY + 45;
@@ -1670,7 +1686,18 @@ function generateOrganizationalPDF(doc, { evaluation, demographics, aggResults, 
   const intraHighPct = intraTotal > 0 ? (((generalIntra.riesgo_alto || 0) + (generalIntra.riesgo_muy_alto || 0)) / intraTotal * 100).toFixed(1) : 0;
   const extraHighPct = extraTotal > 0 ? (((generalExtra.riesgo_alto || 0) + (generalExtra.riesgo_muy_alto || 0)) / extraTotal * 100).toFixed(1) : 0;
   const stressHighPct = stressTotal > 0 ? (((stressGeneral.riesgo_alto || 0) + (stressGeneral.riesgo_muy_alto || 0)) / stressTotal * 100).toFixed(1) : 0;
-  doc.text(`De los ${completedParticipants} participantes evaluados: el ${intraHighPct}% presenta riesgo alto o muy alto en condiciones intralaborales, el ${extraHighPct}% en condiciones extralaborales, y el ${stressHighPct}% en sintomatología asociada al estrés.`, m, doc.y, { width: pageW, align: 'justify' });
+  doc.text(`De los ${evaluadosInforme} participantes evaluados: el ${intraHighPct}% presenta riesgo alto o muy alto en condiciones intralaborales, el ${extraHighPct}% en condiciones extralaborales, y el ${stressHighPct}% en sintomatología asociada al estrés.`, m, doc.y, { width: pageW, align: 'justify' });
+
+  const coverageText = templates.buildCoverageText({
+    convocados: totalParticipants,
+    evaluados: evaluadosInforme,
+    noAutorizaron: declinedParticipants,
+  });
+  if (coverageText) {
+    doc.moveDown(0.6);
+    doc.fontSize(9).fillColor('#374151').font('Helvetica');
+    doc.text(coverageText, m, doc.y, { width: pageW, align: 'justify' });
+  }
 
   // ==========================================================
   // CONDICIONES INTRALABORALES - Per-form tables + narrative

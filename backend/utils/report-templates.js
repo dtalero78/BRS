@@ -798,6 +798,28 @@ const ORG_TEXT_FIELD_MAP = ORG_TEXT_FIELDS.reduce((acc, f) => { acc[f.key] = f; 
 
 // Builds the default texts with company name and population count already
 // resolved, so the evaluator edits WYSIWYG strings (not tokens).
+/**
+ * Cobertura de la medición: cuántos se convocaron, cuántos conforman la
+ * población del informe, cuántos no autorizaron y cuántos no completaron.
+ * Pedido de VATCO (nov-2026): quienes no autorizaron no aparecían en ninguna
+ * parte del informe, y el procedimiento afirmaba que "los colaboradores
+ * autorizaron su participación". Devuelve null si no hay nada que aclarar
+ * (todos los convocados están en el informe).
+ */
+function buildCoverageText({ convocados = 0, evaluados = 0, noAutorizaron = 0 } = {}) {
+  const sinCompletar = Math.max(0, convocados - evaluados - noAutorizaron);
+  if (convocados <= 0 || (noAutorizaron === 0 && sinCompletar === 0)) return null;
+  const persona = (n) => (n === 1 ? '1 persona' : `${n} personas`);
+  const partes = [];
+  if (noAutorizaron > 0) {
+    partes.push(`${persona(noAutorizaron)} no ${noAutorizaron === 1 ? 'autorizó su' : 'autorizaron su'} participación en el consentimiento informado y, por lo tanto, no ${noAutorizaron === 1 ? 'fue evaluada' : 'fueron evaluadas'}`);
+  }
+  if (sinCompletar > 0) {
+    partes.push(`${persona(sinCompletar)} no ${sinCompletar === 1 ? 'completó' : 'completaron'} la batería`);
+  }
+  return `Cobertura de la medición: de las ${convocados} personas convocadas, ${evaluados} conforman la población evaluada y analizada en este informe; ${partes.join(', y ')}. Los resultados corresponden únicamente a la población evaluada.`;
+}
+
 function buildDefaultOrgTexts({ companyName = 'la organización', totalEvaluated = 0, city = '' } = {}) {
   const empresa = companyName || 'la organización';
   return {
@@ -827,7 +849,7 @@ function buildDefaultOrgTexts({ companyName = 'la organización', totalEvaluated
     ],
     metodologiaInstrumento: 'Para la medición de la percepción de riesgos psicosociales y de acuerdo con la Resolución 2764/2022, se utilizó la fase I de la batería de instrumentos diseñados por el Ministerio de la Protección Social, denominados Batería de Instrumentos para la Evaluación de Factores de Riesgo Psicosocial, (2010).',
     procedimiento: [
-      'Para llevar a cabo la presente medición, se realizó una sensibilización a todos los colaboradores donde se especificó ampliamente el proceso a seguir, los instrumentos a emplear, la importancia de los resultados obtenidos y la confidencialidad de la información. Seguido a ello, se aplicó el consentimiento informado, donde los colaboradores autorizaron su participación voluntaria en el estudio y se clarificó desde el marco legal las condiciones éticas de la medición.',
+      'Para llevar a cabo la presente medición, se realizó una sensibilización a todos los colaboradores donde se especificó ampliamente el proceso a seguir, los instrumentos a emplear, la importancia de los resultados obtenidos y la confidencialidad de la información. Seguido a ello, se aplicó el consentimiento informado, mediante el cual cada colaborador decidió libremente si autorizaba su participación voluntaria en el estudio; solo se evaluó a quienes la autorizaron, y se clarificó desde el marco legal las condiciones éticas de la medición.',
       `Luego de haberse realizado el proceso descrito, se aplicó la Batería para la Evaluación de Riesgo Psicosocial de la Universidad Javeriana - Ministerio de la Protección Social (2010), a través de la plataforma ${BRAND_NAME}. Una vez consolidada la información se procede a la realización del informe general de la percepción de riesgo psicosocial.`
     ],
     criteriosInclusionExclusion: 'Para la medición de riesgo psicosocial se tuvieron en cuenta criterios de inclusión tales como: Que el trabajador se encontrara en la nómina de la empresa, que estuviera ejerciendo sus labores y que su vinculación laboral no fuera menor a 3 meses. Como criterios de exclusión, no se tuvieron en cuenta los trabajadores que se encontraran en licencia de maternidad, licencia por luto e incapacitados el día de la medición.',
@@ -1296,6 +1318,7 @@ module.exports = {
   writeMarcoTeorico,
   writeMetodologia,
   writeProcedimiento,
+  buildCoverageText,
   writeObjetivosMetodologia,
   writeProcedimientos,
   writeDefinicionesIntralaborales,

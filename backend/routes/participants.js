@@ -222,6 +222,24 @@ router.post('/', auth, authorize('admin', 'evaluator'), async (req, res) => {
   }
 });
 
+/**
+ * Filtro de estado del listado. "No autorizó" (`declined`) es un estado aparte:
+ * rechazó el consentimiento y no completó la batería. Antes caía dentro de
+ * "Pendiente" (su PE sigue en 'assigned') y el evaluador no distinguía a quién
+ * le falta responder de quién ya dijo que no (VATCO, nov-2026: 98 pendientes,
+ * 4 de ellos no autorizaron). Aceptar y rechazar se excluyen entre sí
+ * (participant-access.js), así que `consent_declined_at` basta.
+ * Debe coincidir con `estadoVisible()` de evaluator/participants.tsx.
+ */
+function aplicarFiltroEstado(q, status) {
+  if (!status) return q;
+  if (status === 'declined') {
+    return q.whereNotNull('pe.consent_declined_at').whereNot('pe.status', 'completed');
+  }
+  if (status === 'completed') return q.where('pe.status', 'completed');
+  return q.where('pe.status', status).whereNull('pe.consent_declined_at');
+}
+
 // Get all participants for company
 router.get('/', auth, async (req, res) => {
   try {
@@ -248,9 +266,7 @@ router.get('/', auth, async (req, res) => {
       .orderBy('participants.created_at', 'desc')
       .orderBy('participants.id', 'desc');
 
-    if (status) {
-      query = query.where('pe.status', status);
-    }
+    query = aplicarFiltroEstado(query, status);
 
     if (evaluationId) {
       query = query.where('pe.evaluation_id', evaluationId);
@@ -287,9 +303,7 @@ router.get('/', auth, async (req, res) => {
       .whereIn('participants.company_id', companyIds)
       .count('* as count');
     
-    if (status) {
-      countQuery = countQuery.where('pe.status', status);
-    }
+    countQuery = aplicarFiltroEstado(countQuery, status);
 
     if (evaluationId) {
       countQuery = countQuery.where('pe.evaluation_id', evaluationId);
