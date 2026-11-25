@@ -1,4 +1,7 @@
 const express = require('express');
+// Vigencia de un enlace renovado: la misma de la puerta /acceso
+// (LOOKUP_TOKEN_TTL_DAYS en participant-access.js).
+const TOKEN_TTL_DAYS = 90;
 const router = express.Router();
 const Joi = require('joi');
 const { auth, authorize, getOwnedCompanyIds, isSuperAdmin } = require('../middleware/auth');
@@ -1060,11 +1063,19 @@ router.post('/:id/generate-token', auth, authorize('admin', 'evaluator'), async 
     // Al reusar un token existente, devolver su expiración real (no una recalculada)
     let tokenExpiresAt = participant.token_expires_at;
 
+    // Vencido: se corre la fecha en vez de generar otro token (el enlace que
+    // ya se había compartido sigue sirviendo). Antes se devolvía el token
+    // vencido y el evaluador copiaba un enlace muerto.
+    if (accessToken && (!tokenExpiresAt || new Date(tokenExpiresAt) < new Date())) {
+      tokenExpiresAt = new Date(Date.now() + TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000);
+      await db('participant_evaluations').where('id', participant.pe_id).update({ token_expires_at: tokenExpiresAt });
+    }
+
     // Generate new token if none exists
     if (!accessToken) {
       const crypto = require('crypto');
       accessToken = crypto.randomBytes(32).toString('hex');
-      tokenExpiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days
+      tokenExpiresAt = new Date(Date.now() + TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000);
 
       // Update participant_evaluations with token
       await db('participant_evaluations')
@@ -1221,28 +1232,48 @@ router.post('/send-whatsapp', auth, authorize('admin', 'evaluator'), async (req,
       .leftJoin('companies as c', 'c.id', 'p.company_id')
       .whereIn('pe.participant_id', items.map(i => Number(i.participantId)).filter(Boolean))
       .select(
-        'pe.participant_id', 'pe.evaluation_id', 'pe.access_token', 'pe.token_expires_at',
+        'pe.id as pe_id', 'pe.participant_id', 'pe.evaluation_id', 'pe.access_token', 'pe.token_expires_at',
         'p.demographic_data', 'c.name as company_name'
       );
 
-    if (!superAdmin) query = query.whereIn('p.company_id', companyIds);
+    // También por la empresa de la EVALUACIÓN, como generate-token y
+    // findOwnedPe: así no depende de que participante y evaluación sean
+    // siempre de la misma empresa.
+    if (!superAdmin) query = query.whereIn('p.company_id', companyIds).whereIn('e.company_id', companyIds);
 
     const filas = await query;
+    // La clave es (participante, evaluación): una persona puede estar en dos
+    // evaluaciones y antes se tomaba cualquiera de sus filas, o sea que podía
+    // salir el enlace de la otra evaluación. El frontend manda evaluationId.
+    const clave = (pid, eid) => `${pid}:${eid}`;
+    const porParticipanteEval = new Map(filas.map(f => [clave(Number(f.participant_id), Number(f.evaluation_id)), f]));
     const porParticipante = new Map(filas.map(f => [Number(f.participant_id), f]));
 
     const resultados = [];
     let fatal = null;
     for (const item of items) {
       const pid = Number(item.participantId);
-      const fila = porParticipante.get(pid);
+      const eid = Number(item.evaluationId);
+      const fila = eid ? porParticipanteEval.get(clave(pid, eid)) : porParticipante.get(pid);
 
       if (!fila) {
         resultados.push({ participantId: pid, ok: false, error: 'No encontrado o sin permiso' });
         continue;
       }
-      if (fila.token_expires_at && new Date(fila.token_expires_at) < new Date()) {
-        resultados.push({ participantId: pid, ok: false, error: 'El link ya vencio, regeneralo antes de enviar' });
+      // Enlace vencido: se le corre la fecha (mismo token), igual que la puerta
+      // /acceso. Antes se rechazaba con "regeneralo antes de enviar", pero en
+      // la UI no existe forma de regenerarlo: Alliance Risk (shaddai, nov-2026)
+      // tenía 1.034 de 1.160 enlaces vencidos y el envío masivo se detenía
+      // solo. Mandar la invitación es la decisión explícita del evaluador de
+      // que esa persona debe poder entrar.
+      if (!fila.access_token) {
+        resultados.push({ participantId: pid, ok: false, error: 'Este participante no tiene enlace de acceso' });
         continue;
+      }
+      if (!fila.token_expires_at || new Date(fila.token_expires_at) < new Date()) {
+        const nuevaExpiracion = new Date(Date.now() + TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000);
+        await db('participant_evaluations').where('id', fila.pe_id).update({ token_expires_at: nuevaExpiracion });
+        fila.token_expires_at = nuevaExpiracion;
       }
 
       const demo = typeof fila.demographic_data === 'string'

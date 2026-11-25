@@ -468,6 +468,14 @@ Lo decide el **prefijo de la llave pública**: `pub_test_` → `https://sandbox.
 
 Reportado el 2026-10-16 (VATCO GROUP, instancia Shaddai): de 500 invitaciones intentadas, 44 salieron "con error" — la mayoría eran estos falsos positivos. Ahora `normalizarCelular()` prueba primero el string completo (formatos de un solo número, con espacios o prefijo de país), y si eso falla, separa por **cualquier carácter que no sea dígito** y prueba cada pedazo hasta encontrar uno válido.
 
+### Un enlace vencido ya no bloquea el envío: se renueva
+
+Reportado el 2026-11-25 (Alliance Risk, eval "BRS 2026", shaddai): "no me deja enviar links a pesar de que actualizo la fecha". 1.034 de 1.160 enlaces estaban vencidos (el enlace vence a los 90 días de asignado; la fecha de cierre de la evaluación es otra cosa y no lo alarga). `POST /send-whatsapp` rechazaba cada uno con "El link ya vencio, regeneralo antes de enviar", pero **en la UI no existe forma de regenerarlo**, y con 100% de fallos el envío masivo se detenía solo.
+
+Ahora el envío le corre la fecha 90 días (mismo token, igual que la puerta `/acceso`) y manda la invitación: enviarla es la decisión explícita del evaluador. `POST /:id/generate-token` hace lo mismo (antes devolvía el token vencido y se copiaba un enlace muerto).
+
+De paso: el envío resolvía la fila solo por `participantId` e ignoraba el `evaluationId` que manda el frontend. Con una persona en dos evaluaciones podía salir el enlace de la otra. Ahora la clave es (participante, evaluación).
+
 ### Un fallo de red en un lote detenía TODO el envío restante
 `enviarWhatsAppMasivo()` en `frontend/pages/evaluator/participants.tsx` manda las invitaciones en lotes y se detiene si un lote sale mal — a propósito: si WhatsApp empieza a rechazar al remitente, insistir solo empeora su reputación. Pero esa misma regla se aplicaba también a un `fetch()` que ni siquiera llegó a tener respuesta (`catch`, p. ej. "Failed to fetch" por un hipo de wifi) — una caída de red de 2 segundos en CUALQUIER lote frenaba en seco a todos los que quedaban detrás, sin relación alguna con el lote fallido. Caso real: lote 20 de 20 de VATCO, "Failed to fetch", 44 personas se quedaron sin invitación por un problema de conexión del evaluador, no de WhatsApp.
 
@@ -477,6 +485,8 @@ Ahora el `catch` (fallo de red, no respuesta del servidor) reintenta el **mismo 
 
 ### Archivos
 - `backend/services/whatsapp-sender.js` — `normalizarCelular()`
+- `backend/routes/participants.js` — `POST /send-whatsapp` (renovación de enlace vencido, clave participante+evaluación)
+- `backend/tests/send-whatsapp-enlace-vencido.test.js`
 - `backend/tests/whatsapp-sender.test.js` — los números reales de VATCO que fallaban
 - `frontend/pages/evaluator/participants.tsx` — `enviarWhatsAppMasivo()`, reintentos de red por lote
 
