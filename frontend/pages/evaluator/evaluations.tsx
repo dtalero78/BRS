@@ -45,6 +45,8 @@ interface Evaluation {
   unpaidCompletedParticipants?: number;
   includeCoping: boolean;
   includeSofi: boolean;
+  /** Idioma que ve el participante. */
+  language?: 'es' | 'en';
   totalParticipants: number;
   completedParticipants: number;
   progress: number;
@@ -68,7 +70,9 @@ const emptyForm = () => ({
   endDate: '',
   companyId: '',
   includeCoping: OFFERS_COPING,
-  includeSofi: false
+  includeSofi: false,
+  // Idioma que ve el participante. En inglés solo existe la batería oficial.
+  language: 'es' as 'es' | 'en'
 });
 
 export default function EvaluatorEvaluations() {
@@ -172,7 +176,8 @@ export default function EvaluatorEvaluations() {
             startDate: formData.startDate,
             endDate: formData.endDate || null,
             includeCoping: formData.includeCoping,
-            includeSofi: formData.includeSofi
+            includeSofi: formData.includeSofi,
+            language: formData.language
           }
         : { ...formData, endDate: formData.endDate || null };
 
@@ -262,7 +267,8 @@ export default function EvaluatorEvaluations() {
       endDate: evaluation.endDate ? evaluation.endDate.split('T')[0] : '',
       companyId: String(evaluation.companyId),
       includeCoping: evaluation.includeCoping !== false,
-      includeSofi: evaluation.includeSofi === true
+      includeSofi: evaluation.includeSofi === true,
+      language: evaluation.language === 'en' ? 'en' : 'es'
     });
     setShowModal(true);
   };
@@ -609,6 +615,13 @@ export default function EvaluatorEvaluations() {
                           </div>
                           {/* Solo se marca cuando el COPE esta activo: es el caso
                               que agrega 28 preguntas al participante. */}
+                          {evaluation.language === 'en' && (
+                            <div className="ml-2">
+                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-sky-100 text-sky-800">
+                                En inglés
+                              </span>
+                            </div>
+                          )}
                           {evaluation.includeCoping && (
                             <div className="ml-2">
                               <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800">
@@ -793,10 +806,70 @@ export default function EvaluatorEvaluations() {
                   />
                 </div>
 
+                {/* Idioma que ve el participante */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">
+                    Idioma para los participantes
+                  </label>
+                  <select
+                    value={formData.language}
+                    onChange={(e) => {
+                      const language = e.target.value === 'en' ? 'en' : 'es';
+                      // En inglés solo existe la batería oficial: las pruebas
+                      // adicionales se desmarcan (el backend también las apaga).
+                      // Al volver a español se recupera lo que la evaluación
+                      // tenía (o el default de la instancia si es nueva): si no,
+                      // ir y volver en el selector apagaba el COPE en silencio.
+                      const base = editingEvaluation
+                        ? { includeCoping: editingEvaluation.includeCoping !== false, includeSofi: editingEvaluation.includeSofi === true }
+                        : { includeCoping: emptyForm().includeCoping, includeSofi: emptyForm().includeSofi };
+                      setFormData({
+                        ...formData,
+                        language,
+                        ...(language === 'en' ? { includeCoping: false, includeSofi: false } : base)
+                      });
+                    }}
+                    className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                  >
+                    <option value="es">Español</option>
+                    <option value="en">Inglés (English)</option>
+                  </select>
+                  {formData.language === 'en' && (
+                    <p className="mt-1.5 text-xs text-gray-500">
+                      Los participantes ven en inglés las preguntas, el consentimiento y sus pantallas.
+                      Tú y los informes siguen en español. Solo se aplica la batería oficial: el Brief
+                      COPE y el SOFI-SM no tienen versión en inglés. La batería está validada en
+                      español para población colombiana; la versión en inglés es una traducción sin
+                      validación psicométrica propia.
+                    </p>
+                  )}
+                  {/* Avisos al pasar a inglés una evaluación que ya existía */}
+                  {formData.language === 'en' && editingEvaluation && editingEvaluation.language !== 'en' && (
+                    <div className="mt-2 space-y-1.5 text-xs text-amber-700">
+                      <p>
+                        Si personalizaste el consentimiento informado de esta evaluación, revísalo: el
+                        texto propio se muestra tal cual, en el idioma en que lo escribiste. Solo el
+                        texto por defecto cambia a inglés solo.
+                      </p>
+                      {(editingEvaluation.includeCoping || editingEvaluation.includeSofi) && (
+                        <p>
+                          Esta evaluación aplicaba{' '}
+                          {[editingEvaluation.includeCoping && 'el Brief COPE', editingEvaluation.includeSofi && 'el SOFI-SM']
+                            .filter(Boolean).join(' y ')}
+                          . En inglés deja de ofrecerse y su sección no saldrá en los informes. Las
+                          respuestas ya guardadas no se borran: si vuelves a español y lo marcas de
+                          nuevo, reaparecen.
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
+
                 {/* Pruebas adicionales a la bateria oficial. Solo las que esta
                     instancia ofrece; una que no ofrece se muestra igual si la
-                    evaluacion ya la tiene activa, para poder apagarla. */}
-                {(OFFERS_COPING || OFFERS_SOFI || editingEvaluation?.includeCoping || editingEvaluation?.includeSofi) && (
+                    evaluacion ya la tiene activa, para poder apagarla. En inglés
+                    no hay ninguna. */}
+                {formData.language !== 'en' && (OFFERS_COPING || OFFERS_SOFI || editingEvaluation?.includeCoping || editingEvaluation?.includeSofi) && (
                 <div className="rounded-md border border-gray-200 bg-gray-50 px-3 divide-y divide-gray-200">
                   {(OFFERS_COPING || editingEvaluation?.includeCoping) && (
                   <div className="py-3">

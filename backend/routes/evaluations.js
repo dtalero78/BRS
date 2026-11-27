@@ -35,7 +35,9 @@ const createEvaluationSchema = Joi.object({
   // evaluación lo incluye. Ausente = true (comportamiento histórico).
   includeCoping: Joi.boolean(),
   // SOFI-SM (fatiga laboral): igual de opcional, pero ausente = false.
-  includeSofi: Joi.boolean()
+  includeSofi: Joi.boolean(),
+  // Idioma que ve el participante. Ausente = 'es'.
+  language: Joi.string().valid('es', 'en')
 });
 
 const updateEvaluationSchema = Joi.object({
@@ -45,7 +47,9 @@ const updateEvaluationSchema = Joi.object({
   endDate: Joi.date().min(Joi.ref('startDate')).allow(null),
   status: Joi.string().valid('active', 'completed', 'cancelled'),
   includeCoping: Joi.boolean(),
-  includeSofi: Joi.boolean()
+  includeSofi: Joi.boolean(),
+  // Idioma que ve el participante. Ausente = 'es'.
+  language: Joi.string().valid('es', 'en')
 });
 
 // Get all evaluations for the evaluator's companies
@@ -112,6 +116,7 @@ router.get('/', auth, async (req, res) => {
           unpaidCompletedParticipants: parseInt(evaluation.unpaid_completed_participants) || 0,
           includeCoping: evaluation.include_coping !== false,
           includeSofi: evaluation.include_sofi === true,
+          language: evaluation.language || 'es',
           totalParticipants: total,
           completedParticipants: completed,
           progress: total > 0 ? Math.round((completed / total) * 100) : 0,
@@ -183,6 +188,7 @@ router.get('/:id', auth, async (req, res) => {
       status: evaluation.status,
       includeCoping: evaluation.include_coping !== false,
       includeSofi: evaluation.include_sofi === true,
+      language: evaluation.language || 'es',
       totalParticipants: total,
       completedParticipants: completed,
       progress: total > 0
@@ -214,6 +220,7 @@ router.post('/', auth, authorize('admin', 'evaluator'), async (req, res) => {
     if (error) return res.status(400).json({ error: error.details[0].message });
 
     const { name, description, startDate, endDate, companyId, includeCoping, includeSofi } = req.body;
+    const language = req.body.language === 'en' ? 'en' : 'es';
 
     // Validate company ownership
     if (!companyId) {
@@ -233,8 +240,12 @@ router.post('/', auth, authorize('admin', 'evaluator'), async (req, res) => {
         start_date: startDate,
         end_date: endDate,
         status: 'active',
-        include_coping: includeCoping === undefined ? true : !!includeCoping,
-        include_sofi: !!includeSofi
+        // En inglés solo existe la batería oficial: el COPE y el SOFI-SM no
+        // tienen versión traducida, así que se apagan aquí y todo lo demás
+        // (menú, guards, completitud, informes) ya respeta las banderas.
+        include_coping: language === 'en' ? false : (includeCoping === undefined ? true : !!includeCoping),
+        include_sofi: language === 'en' ? false : !!includeSofi,
+        language
       })
       .returning('*');
 
@@ -256,6 +267,7 @@ router.post('/', auth, authorize('admin', 'evaluator'), async (req, res) => {
       status: evaluation.status,
       includeCoping: evaluation.include_coping !== false,
       includeSofi: evaluation.include_sofi === true,
+      language: evaluation.language || 'es',
       totalParticipants: 0,
       completedParticipants: 0,
       progress: 0,
@@ -297,6 +309,13 @@ router.put('/:id', auth, authorize('admin', 'evaluator'), async (req, res) => {
     // siguen en la base, solo dejan de ofrecerse y de imprimirse.
     if (req.body.includeCoping !== undefined) updateData.include_coping = !!req.body.includeCoping;
     if (req.body.includeSofi !== undefined) updateData.include_sofi = !!req.body.includeSofi;
+    if (req.body.language !== undefined) updateData.language = req.body.language === 'en' ? 'en' : 'es';
+    // Una evaluación en inglés no aplica pruebas adicionales (no tienen versión
+    // en inglés). Apagarlas no borra lo ya respondido, igual que siempre.
+    if ((updateData.language || existingEvaluation.language) === 'en') {
+      updateData.include_coping = false;
+      updateData.include_sofi = false;
+    }
 
     const [evaluation] = await db('evaluations')
       .where('id', id)
@@ -333,6 +352,7 @@ router.put('/:id', auth, authorize('admin', 'evaluator'), async (req, res) => {
       status: evaluation.status,
       includeCoping: evaluation.include_coping !== false,
       includeSofi: evaluation.include_sofi === true,
+      language: evaluation.language || 'es',
       totalParticipants: totalUpdate,
       completedParticipants: completedUpdate,
       progress: totalUpdate > 0
@@ -1044,14 +1064,15 @@ router.get('/:id/consent-text', auth, authorize('admin', 'evaluator'), async (re
       .join('companies', 'evaluations.company_id', 'companies.id')
       .where('evaluations.id', req.params.id)
       .whereIn('evaluations.company_id', companyIds)
-      .select('evaluations.consent_text_override', 'evaluations.include_sofi', 'companies.name as company_name')
+      .select('evaluations.consent_text_override', 'evaluations.include_sofi', 'evaluations.language', 'companies.name as company_name')
       .first();
 
     if (!evaluation) return res.status(404).json({ error: 'Evaluación no encontrada' });
 
     const defaultText = buildDefaultConsentText({
       companyName: evaluation.company_name,
-      withFatigue: evaluation.include_sofi === true
+      withFatigue: evaluation.include_sofi === true,
+      language: evaluation.language
     });
     res.json({
       text: evaluation.consent_text_override || defaultText,

@@ -25,9 +25,16 @@ const { isFaceVerificationEnabled } = require('./rekognition');
  *   biométricos. Por defecto se decide por la env var de verificación facial:
  *   pedir autorización para tratar la cara en una instancia que no captura
  *   caras confundiría al participante.
+ * @param {'es'|'en'} [opts.language] Idioma de la evaluación (default 'es').
+ *   En inglés no hay SOFI-SM (se apaga al elegir 'en'), así que esa rama
+ *   ignora `withFatigue`.
  * @returns {string}
  */
-function buildDefaultConsentText({ companyName, withBiometrics, withFatigue } = {}) {
+function buildDefaultConsentText({ companyName, withBiometrics, withFatigue, language } = {}) {
+  if (language === 'en') {
+    const bio = withBiometrics === undefined ? isFaceVerificationEnabled() : !!withBiometrics;
+    return buildEnglishConsentText({ companyName, biometricos: bio });
+  }
   const empresa = (companyName || '').trim() || 'la empresa';
   // El SOFI-SM pregunta por síntomas (agotamiento, dolor, somnolencia): son
   // datos de salud, así que quien autoriza tiene que saber que se los piden.
@@ -118,6 +125,102 @@ Para ejercer estos derechos, comunícate con el responsable de la medición en $
 `## Declaración
 
 Al aceptar, declaras que leíste este documento, que entendiste en qué consiste la evaluación, que resolviste tus dudas con el responsable si las tenías, y que autorizas de forma libre, previa, expresa e informada el tratamiento de tus datos personales${biometricos ? ', incluidos los datos sensibles de salud y los datos biométricos de tu rostro' : ', incluidos los datos sensibles relacionados con tu salud'}, en los términos aquí descritos.`
+  );
+
+  return secciones.join('\n\n');
+}
+
+/**
+ * Versión en inglés del mismo texto, para evaluaciones con `language = 'en'`.
+ * Es traducción fiel del texto en español: cita las mismas leyes colombianas
+ * porque la medición y el tratamiento de datos siguen ocurriendo bajo ellas,
+ * aunque la persona responda en inglés. Mismo aviso: borrador, no asesoría legal.
+ */
+function buildEnglishConsentText({ companyName, biometricos }) {
+  const empresa = (companyName || '').trim() || 'the company';
+
+  const secciones = [];
+
+  secciones.push(
+`## Informed consent
+
+Please read this carefully before you begin. At the end you will decide whether you wish to take part.`
+  );
+
+  secciones.push(
+`## What this is about
+
+${empresa} is carrying out an assessment of psychosocial risk factors using the Battery of Instruments of Colombia's Ministry of Social Protection, administered through the ${BRAND_NAME} platform. Its purpose is to identify working and living conditions that may affect people's health, and to define prevention actions.
+
+You will answer several questionnaires about your working conditions, your life outside work and your stress symptoms. It takes between 20 and 40 minutes. You can do it in several sessions: your answers are saved as you go.`
+  );
+
+  secciones.push(
+`## Your participation is voluntary
+
+You may accept or decline, and you may stop the assessment at any time without giving any explanation. Declining has no employment consequences: it does not affect your job, your performance review or any benefit.
+
+There are no right or wrong answers. Answer honestly, based on your real experience.`
+  );
+
+  secciones.push(
+`## What happens to your answers
+
+Your individual answers are confidential and are known only to the licensed psychologist who leads the assessment, who is bound by professional secrecy under Colombian Law 1090 of 2006.
+
+${empresa} receives a report with **grouped** results, describing the workforce as a whole or entire areas. Your boss and the human resources department do not receive your individual answers and cannot identify them in the report.
+
+The results are used to design the epidemiological surveillance program and intervention measures, not to make decisions about individuals.`
+  );
+
+  const datosSensibles = biometricos
+    ? `The information you provide about your health and psychological well-being is **sensitive data** under article 5 of Colombian Law 1581 of 2012. The same applies to the photograph of your face described in the next section.`
+    : `The information you provide about your health and psychological well-being is **sensitive data** under article 5 of Colombian Law 1581 of 2012.`;
+
+  secciones.push(
+`## Processing of your personal data
+
+${datosSensibles} The law requires you to authorize its processing in a prior, express and informed manner; that is what you are doing with this document.
+
+Your data is processed for the sole purpose of carrying out this assessment, calculating its results and preparing the individual and organizational reports. It is not sold, not shared with third parties outside the process and not used for commercial or advertising purposes.
+
+It is kept for as long as occupational health and safety regulations require, and is then deleted or anonymized.`
+  );
+
+  if (biometricos) {
+    secciones.push(
+`## Identity verification with facial recognition
+
+This assessment uses facial verification to confirm that it is you who is answering, and not someone else on your behalf.
+
+When you start the first questionnaire you will take a photograph of your face, which is stored as a reference. When you open each of the following questionnaires you will take another one, which is automatically compared with that reference. The comparison is performed by the Amazon Rekognition service of Amazon Web Services.
+
+The photographs are used exclusively for that comparison. They are not published, not shared with your employer, not fed into any surveillance system and not linked to your answers. For attempts that do not match, the photograph is kept as a record of the process.
+
+If you prefer not to provide your photograph, you may decline: in that case you will not be able to answer through this channel and must arrange an alternative way to take part with the person responsible for the assessment.`
+    );
+  }
+
+  secciones.push(
+`## Your rights
+
+Under Colombian Law 1581 of 2012 you may, at any time and free of charge:
+
+- Access, update and correct your personal data.
+- Request proof of this authorization.
+- Be informed about how your data has been used.
+- File complaints with Colombia's Superintendence of Industry and Commerce.
+- Revoke this authorization and request the deletion of your data, except where there is a legal duty to keep it.
+
+Since providing sensitive data is not mandatory, you are not required to authorize its processing.
+
+To exercise these rights, contact the person responsible for the assessment at ${empresa}.`
+  );
+
+  secciones.push(
+`## Declaration
+
+By accepting, you declare that you have read this document, that you understand what the assessment involves, that you have cleared up any questions with the person responsible, and that you freely authorize, in a prior, express and informed manner, the processing of your personal data${biometricos ? ', including sensitive health data and the biometric data of your face' : ', including sensitive data related to your health'}, under the terms described here.`
   );
 
   return secciones.join('\n\n');

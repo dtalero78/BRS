@@ -18,6 +18,7 @@ const {
 } = require('../utils/rekognition');
 const { buildDefaultConsentText } = require('../utils/consent-template');
 const { getSocializationVideo } = require('../config/socialization');
+const { getQuestionnaireData, hubDescription } = require('../utils/questionnaire-data');
 
 // ---------------------------------------------------------------------------
 // Puerta general: entrar con el número de documento
@@ -203,6 +204,7 @@ async function findPeForConsent(token) {
       'participant_evaluations.consent_declined_at',
       'evaluations.consent_text_override',
       'evaluations.include_sofi',
+      'evaluations.language',
       'companies.name as company_name'
     )
     .first();
@@ -215,7 +217,11 @@ async function findPeForConsent(token) {
 function consentTextFor(pe) {
   const override = (pe.consent_text_override || '').trim();
   if (override) return override;
-  return buildDefaultConsentText({ companyName: pe.company_name, withFatigue: pe.include_sofi === true });
+  return buildDefaultConsentText({
+    companyName: pe.company_name,
+    withFatigue: pe.include_sofi === true,
+    language: pe.language,
+  });
 }
 
 /**
@@ -439,6 +445,9 @@ router.post('/:token/socialization/progress', socializationLimiter, async (req, 
  * ofreciendo el cuestionario, no hacerlo desaparecer en silencio.
  */
 function copingIncluded(row) {
+  // En inglés no existe el COPE. Las rutas de evaluaciones ya apagan la
+  // bandera al elegir 'en'; esto cubre una fila tocada por SQL directo.
+  if (row && row.language === 'en') return false;
   return !row || row.include_coping !== false;
 }
 
@@ -450,7 +459,7 @@ function copingIncluded(row) {
  * no contrató.
  */
 function sofiIncluded(row) {
-  return !!row && row.include_sofi === true;
+  return !!row && row.include_sofi === true && row.language !== 'en';
 }
 
 // ---------------------------------------------------------------------------
@@ -779,6 +788,7 @@ router.get('/validate/:token', async (req, res) => {
         'evaluations.id as evaluation_id',
         'evaluations.name as evaluation_name',
         'evaluations.description as evaluation_description',
+        'evaluations.language as evaluation_language',
         'participant_evaluations.status',
         'participant_evaluations.assigned_at',
         'participant_evaluations.completed_at'
@@ -815,7 +825,9 @@ router.get('/validate/:token', async (req, res) => {
       evaluation: {
         id: participantEvaluation.evaluation_id,
         name: participantEvaluation.evaluation_name,
-        description: participantEvaluation.evaluation_description
+        description: participantEvaluation.evaluation_description,
+        // Idioma de las pantallas y de los cuestionarios del participante.
+        language: participantEvaluation.evaluation_language === 'en' ? 'en' : 'es'
       },
       // Co-marca: el logo de la empresa se muestra junto al de la plataforma en
       // la pantalla del participante. `logoUrl` en null = solo la plataforma.
@@ -845,7 +857,7 @@ router.get('/:token/questionnaire/:type', async (req, res) => {
       .join('evaluations', 'evaluations.id', 'participant_evaluations.evaluation_id')
       .where('participant_evaluations.access_token', token)
       .where('participant_evaluations.token_expires_at', '>', new Date())
-      .select('participants.*', 'evaluations.include_coping', 'evaluations.include_sofi')
+      .select('participants.*', 'evaluations.include_coping', 'evaluations.include_sofi', 'evaluations.language')
       .first();
 
     if (!participantEvaluation) {
@@ -860,15 +872,10 @@ router.get('/:token/questionnaire/:type', async (req, res) => {
       return res.status(404).json({ error: 'Cuestionario no disponible en esta evaluación' });
     }
 
-    // Load questionnaire data
-    const fs = require('fs');
-    const path = require('path');
-    
+    // Load questionnaire data (en el idioma de la evaluación)
     let questionnairesData;
     try {
-      const dataPath = path.join(__dirname, '../../bateria_riesgo_psicosocial_preguntas.json');
-      const rawData = fs.readFileSync(dataPath, 'utf8');
-      questionnairesData = JSON.parse(rawData);
+      questionnairesData = getQuestionnaireData(participantEvaluation.language);
     } catch (error) {
       return res.status(500).json({ error: 'No se pudieron cargar los datos de cuestionarios' });
     }
@@ -959,9 +966,11 @@ router.get('/:token/questionnaires', async (req, res) => {
         'participant_evaluations.id as participant_evaluation_id',
         'participant_evaluations.integration_metadata',
         'evaluations.include_coping',
-        'evaluations.include_sofi'
+        'evaluations.include_sofi',
+        'evaluations.language'
       )
       .first();
+    const lang = participantEvaluation && participantEvaluation.language;
 
     if (!participantEvaluation) {
       return res.status(404).json({ error: 'Token inválido o expirado' });
@@ -1002,15 +1011,10 @@ router.get('/:token/questionnaires', async (req, res) => {
 
     const formType = demographicData.formType || 'A';
 
-    // Load questionnaire data
-    const fs = require('fs');
-    const path = require('path');
-    
+    // Load questionnaire data (en el idioma de la evaluación)
     let questionnairesData;
     try {
-      const dataPath = path.join(__dirname, '../../bateria_riesgo_psicosocial_preguntas.json');
-      const rawData = fs.readFileSync(dataPath, 'utf8');
-      questionnairesData = JSON.parse(rawData);
+      questionnairesData = getQuestionnaireData(participantEvaluation.language);
     } catch (error) {
       return res.status(500).json({ error: 'No se pudieron cargar los datos de cuestionarios' });
     }
@@ -1032,7 +1036,7 @@ router.get('/:token/questionnaires', async (req, res) => {
     available.push({
       id: 'ficha-datos',
       name: questionnairesData.cuestionarios.ficha_datos_generales?.nombre || 'Ficha de Datos Generales',
-      description: 'Información demográfica y laboral',
+      description: hubDescription(lang, 'ficha-datos'),
       totalQuestions: questionnairesData.cuestionarios.ficha_datos_generales?.campos?.length || 18,
       completed: completedTypes.includes(idToType['ficha-datos']),
     });
@@ -1042,7 +1046,7 @@ router.get('/:token/questionnaires', async (req, res) => {
       available.push({
         id: 'forma-a',
         name: questionnairesData.cuestionarios.forma_a_intralaboral.nombre,
-        description: 'Para jefes, profesionales y técnicos',
+        description: hubDescription(lang, 'forma-a'),
         totalQuestions: questionnairesData.cuestionarios.forma_a_intralaboral.total_preguntas,
         completed: completedTypes.includes(idToType['forma-a']),
       });
@@ -1050,7 +1054,7 @@ router.get('/:token/questionnaires', async (req, res) => {
       available.push({
         id: 'forma-b',
         name: questionnairesData.cuestionarios.forma_b_intralaboral?.nombre || 'Cuestionario Forma B',
-        description: 'Para auxiliares y operarios',
+        description: hubDescription(lang, 'forma-b'),
         totalQuestions: questionnairesData.cuestionarios.forma_b_intralaboral?.total_preguntas || 97,
         completed: completedTypes.includes(idToType['forma-b']),
       });
@@ -1060,7 +1064,7 @@ router.get('/:token/questionnaires', async (req, res) => {
     available.push({
       id: 'extralaboral',
       name: questionnairesData.cuestionarios.extralaboral?.nombre || 'Cuestionario Extralaboral',
-      description: 'Factores externos al trabajo',
+      description: hubDescription(lang, 'extralaboral'),
       totalQuestions: questionnairesData.cuestionarios.extralaboral?.total_preguntas || 31,
       completed: completedTypes.includes(idToType['extralaboral']),
     });
@@ -1068,7 +1072,7 @@ router.get('/:token/questionnaires', async (req, res) => {
     available.push({
       id: 'estres',
       name: questionnairesData.cuestionarios.estres?.nombre || 'Cuestionario de Estrés',
-      description: 'Síntomas de estrés ocupacional',
+      description: hubDescription(lang, 'estres'),
       totalQuestions: questionnairesData.cuestionarios.estres?.total_preguntas || 31,
       completed: completedTypes.includes(idToType['estres']),
     });
@@ -1080,7 +1084,7 @@ router.get('/:token/questionnaires', async (req, res) => {
       available.push({
         id: 'coping',
         name: questionnairesData.cuestionarios.coping?.nombre || 'Brief COPE - Estrategias de Afrontamiento',
-        description: 'Estrategias de afrontamiento al estrés',
+        description: hubDescription(lang, 'coping'),
         totalQuestions: questionnairesData.cuestionarios.coping?.total_preguntas || 28,
         completed: completedTypes.includes(idToType['coping']),
       });
@@ -1092,7 +1096,7 @@ router.get('/:token/questionnaires', async (req, res) => {
       available.push({
         id: 'sofi',
         name: questionnairesData.cuestionarios.sofi?.nombre || 'SOFI-SM - Fatiga Laboral',
-        description: 'Fatiga al terminar la jornada de trabajo',
+        description: hubDescription(lang, 'sofi'),
         totalQuestions: questionnairesData.cuestionarios.sofi?.total_preguntas || 18,
         completed: completedTypes.includes(idToType['sofi']),
       });
@@ -1148,7 +1152,8 @@ router.post('/:token/responses', async (req, res) => {
         'participant_evaluations.status as pe_status',
         'participant_evaluations.integration_metadata as pe_integration_metadata',
         'evaluations.include_coping',
-        'evaluations.include_sofi'
+        'evaluations.include_sofi',
+        'evaluations.language'
       )
       .first();
 

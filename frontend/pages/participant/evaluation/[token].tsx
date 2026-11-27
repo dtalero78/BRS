@@ -8,6 +8,7 @@ import { matchFichaOption } from '../../../components/fichaFields';
 import ConsentText from '../../../components/ConsentText';
 import IntroVideoModal from '../../../components/IntroVideoModal';
 import SocializationVideo, { SocializationConfig } from '../../../components/SocializationVideo';
+import { participantStrings } from '../../../config/participantStrings';
 
 // Simple wrapper for participant pages (no auth required)
 //
@@ -50,6 +51,9 @@ interface Question {
   dominio?: string;
   tipo?: string;
   opciones?: string[];
+  // Etiquetas en inglés de `opciones` (misma longitud y orden). Solo se
+  // MUESTRAN: lo que se guarda sigue siendo el literal oficial de `opciones`.
+  opciones_en?: string[];
   subcampos?: any[];
 }
 
@@ -102,6 +106,7 @@ interface EvaluationData {
   id: string;
   name: string;
   description: string;
+  language?: 'es' | 'en';
 }
 
 const ParticipantEvaluationPage = () => {
@@ -110,6 +115,9 @@ const ParticipantEvaluationPage = () => {
   const [participant, setParticipant] = useState<ParticipantData | null>(null);
   const [evaluation, setEvaluation] = useState<EvaluationData | null>(null);
   const [coBrandLogo, setCoBrandLogo] = useState<string | null>(null);
+  // Idioma de la evaluación (lo fija el evaluador). Hasta que responde
+  // /validate no se sabe, y se usa español.
+  const t = participantStrings(evaluation?.language);
   const [availableQuestionnaires, setAvailableQuestionnaires] = useState<any[]>([]);
   // returnUrl viene solo cuando el participant fue creado por integración externa
   // (BSL-PLATAFORMA2 / Platzi). Para evaluadores que se auto-registran este state
@@ -212,6 +220,16 @@ const ParticipantEvaluationPage = () => {
   // al completar la batería el participante se queda en la pantalla de éxito de BRS.
   // El webhook de finalización sigue notificando a la app externa desde el backend.
 
+  // El atributo lang del documento sigue al idioma de la evaluación: sin esto
+  // Chrome ofrece "traducir esta página" sobre una página ya en inglés y los
+  // lectores de pantalla la pronuncian con fonética española.
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const previous = document.documentElement.lang;
+    document.documentElement.lang = evaluation?.language === 'en' ? 'en' : 'es';
+    return () => { document.documentElement.lang = previous; };
+  }, [evaluation?.language]);
+
   // Cleanup timeout on unmount
   useEffect(() => {
     return () => {
@@ -274,7 +292,7 @@ const ParticipantEvaluationPage = () => {
       
       if (!validateResponse.ok) {
         const errorData = await validateResponse.json();
-        throw new Error(errorData.error || 'Token inválido');
+        throw new Error(errorData.error || t.invalidToken);
       }
 
       const validationData = await validateResponse.json();
@@ -327,7 +345,7 @@ const ParticipantEvaluationPage = () => {
       const questionnairesResponse = await fetch(`/api/participant-access/${accessToken}/questionnaires`);
       
       if (!questionnairesResponse.ok) {
-        throw new Error('Error al cargar cuestionarios');
+        throw new Error(t.loadQuestionnairesError);
       }
 
       const questionnairesData = await questionnairesResponse.json();
@@ -338,7 +356,7 @@ const ParticipantEvaluationPage = () => {
       }
 
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error al cargar datos');
+      setError(err instanceof Error ? err.message : t.loadDataError);
     } finally {
       setLoading(false);
     }
@@ -359,7 +377,7 @@ const ParticipantEvaluationPage = () => {
       });
       if (!response.ok) {
         const data = await response.json().catch(() => ({}));
-        throw new Error(data.error || 'No se pudo registrar tu respuesta');
+        throw new Error(data.error || t.consentRegisterError);
       }
       setConsentAccepted(accepted);
       setConsentDeclined(!accepted);
@@ -369,7 +387,7 @@ const ParticipantEvaluationPage = () => {
         saveResponsesWithRetry();
       }
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'No se pudo registrar tu respuesta');
+      toast.error(err instanceof Error ? err.message : t.consentRegisterError);
     } finally {
       setConsentBusy(false);
     }
@@ -415,7 +433,7 @@ const ParticipantEvaluationPage = () => {
         return;
       }
       if (!response.ok) {
-        throw new Error(data.error || 'No se pudo verificar tu identidad');
+        throw new Error(data.error || t.faceVerifyError);
       }
 
       if (data.verified) {
@@ -424,8 +442,8 @@ const ParticipantEvaluationPage = () => {
         setPendingQuestionnaireId(null);
         toast.success(
           data.mode === 'enroll'
-            ? 'Identidad registrada. Ya puedes continuar.'
-            : 'Identidad verificada.'
+            ? t.faceEnrolled
+            : t.faceVerified
         );
         // Si un guardado se cayó porque faltaba la verificación, se reintenta
         // ahora; si no, se abre el cuestionario que el participante pidió.
@@ -443,7 +461,7 @@ const ParticipantEvaluationPage = () => {
       setFaceIssues(data.issues || []);
       setFaceFailed(true);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'No se pudo verificar tu identidad');
+      toast.error(err instanceof Error ? err.message : t.faceVerifyError);
     } finally {
       setFaceBusy(false);
     }
@@ -520,7 +538,7 @@ const ParticipantEvaluationPage = () => {
       const response = await fetch(`/api/participant-access/${token}/questionnaire/${questionnaireId}`);
 
       if (!response.ok) {
-        throw new Error('Error al cargar el cuestionario');
+        throw new Error(t.loadQuestionnaireError);
       }
 
       const data = await response.json();
@@ -553,7 +571,7 @@ const ParticipantEvaluationPage = () => {
       }
 
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error al cargar cuestionario');
+      setError(err instanceof Error ? err.message : t.loadQuestionnaireError);
     } finally {
       setLoading(false);
     }
@@ -650,6 +668,7 @@ const ParticipantEvaluationPage = () => {
         texto: campo.campo,
         tipo: campo.tipo,
         opciones: campo.opciones,
+        opciones_en: campo.opciones_en,
         subcampos: campo.subcampos
       }));
     }
@@ -781,7 +800,7 @@ const ParticipantEvaluationPage = () => {
         setVerifiedQuestionnaires(prev => prev.filter(t => t !== tipo));
         if (currentQuestionnaire) setPendingQuestionnaireId(currentQuestionnaire.type);
         setSaveState('idle');
-        toast('Por seguridad debemos verificar tu identidad otra vez.', { icon: '🔒' });
+        toast(t.faceReverify, { icon: '🔒' });
         return;
       }
 
@@ -817,11 +836,7 @@ const ParticipantEvaluationPage = () => {
       } catch (storageErr) {
         console.error('No se pudo respaldar en localStorage:', storageErr);
       }
-      toast.error(
-        'No pudimos guardar tus últimas respuestas (revisa tu conexión). Quedaron respaldadas ' +
-        'en este dispositivo; no cierres esta pestaña e intenta continuar.',
-        { duration: 8000 }
-      );
+      toast.error(t.saveFailed, { duration: 8000 });
     }
   };
 
@@ -895,12 +910,12 @@ const ParticipantEvaluationPage = () => {
           const body = await response.json().catch(() => ({}));
           // Consentimiento revocado o nunca aceptado: se devuelve a esa pantalla.
           if (body.code === 'CONSENT_REQUIRED') {
-            const consentError: any = new Error(body.error || 'Consentimiento requerido');
+            const consentError: any = new Error(body.error || t.consentRequired);
             consentError.consentRequired = true;
             throw consentError;
           }
           if (body.code === 'FACE_VERIFICATION_REQUIRED' || body.code === 'FACE_UNAVAILABLE') {
-            const faceError: any = new Error(body.error || 'Verificación de identidad requerida');
+            const faceError: any = new Error(body.error || t.faceRequired);
             faceError.faceVerificationRequired = true;
             if (body.code === 'FACE_UNAVAILABLE') setFaceAvailable(false);
             throw faceError;
@@ -908,11 +923,11 @@ const ParticipantEvaluationPage = () => {
           // Un 403 sin ese código sigue siendo un rechazo del servidor, no un
           // problema de red: reintentarlo 3 veces para terminar diciendo
           // "revisa tu conexión" desorienta a quien tiene señal perfecta.
-          const rechazo: any = new Error(body.error || 'El servidor rechazó el guardado');
+          const rechazo: any = new Error(body.error || t.saveRejected);
           rechazo.noReintentar = true;
           throw rechazo;
         }
-        throw new Error(`Error al guardar respuestas: ${response.status}`);
+        throw new Error(t.saveError(response.status));
       }
 
       // Success message removed to prevent layout shift
@@ -971,7 +986,7 @@ const ParticipantEvaluationPage = () => {
       }, 500);
 
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error al enviar cuestionario');
+      setError(err instanceof Error ? err.message : t.submitError);
     } finally {
       setIsSubmitting(false);
     }
@@ -990,6 +1005,7 @@ const ParticipantEvaluationPage = () => {
         texto: campo.campo,
         tipo: campo.tipo,
         opciones: campo.opciones,
+        opciones_en: campo.opciones_en,
         subcampos: campo.subcampos
       }));
     }
@@ -1075,7 +1091,7 @@ const ParticipantEvaluationPage = () => {
     const pendingIndex = findFirstIncompleteIndex();
     if (pendingIndex !== -1) {
       setCurrentQuestionIndex(pendingIndex);
-      toast('Falta responder esta pregunta para poder finalizar', { icon: '☝️' });
+      toast(t.answerToFinish, { icon: '☝️' });
       return;
     }
 
@@ -1239,7 +1255,7 @@ const ParticipantEvaluationPage = () => {
       <ParticipantLayout coBrandLogo={coBrandLogo}>
         <div className="max-w-2xl mx-auto mt-8">
           <div className="bg-red-50 border border-red-200 rounded-lg p-6">
-            <h2 className="text-lg font-medium text-red-800 mb-2">Error</h2>
+            <h2 className="text-lg font-medium text-red-800 mb-2">{t.errorTitle}</h2>
             <p className="text-red-600">{error}</p>
             {/* Va a la puerta general, no a "/": el participante no tiene
                 usuario, asi que el inicio es un login que no le sirve (y en
@@ -1252,7 +1268,7 @@ const ParticipantEvaluationPage = () => {
                 onClick={() => router.push('/acceso')}
                 className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700"
               >
-                Ingresar con mi número de documento
+                {t.goToDocumentAccess}
               </button>
             </div>
           </div>
@@ -1266,8 +1282,8 @@ const ParticipantEvaluationPage = () => {
       <ParticipantLayout coBrandLogo={coBrandLogo}>
         <div className="max-w-2xl mx-auto mt-8">
           <div className="bg-red-50 border border-red-200 rounded-lg p-6">
-            <h2 className="text-lg font-medium text-red-800 mb-2">Error</h2>
-            <p className="text-red-600">No se encontraron datos del participante.</p>
+            <h2 className="text-lg font-medium text-red-800 mb-2">{t.errorTitle}</h2>
+            <p className="text-red-600">{t.noParticipantData}</p>
           </div>
         </div>
       </ParticipantLayout>
@@ -1304,19 +1320,18 @@ const ParticipantEvaluationPage = () => {
         <ParticipantLayout coBrandLogo={coBrandLogo}>
           <div className="max-w-md mx-auto px-4 py-12">
             <div className="rounded-2xl border border-gray-200 bg-white p-6 text-center shadow-sm">
-              <h2 className="text-lg font-semibold text-gray-900">Registramos tu decisión</h2>
+              <h2 className="text-lg font-semibold text-gray-900">{t.consentDeclinedTitle}</h2>
               <p className="mt-3 text-sm text-gray-600">
-                No autorizaste participar en la evaluación. Ya puedes cerrar esta página.
+                {t.consentDeclinedBody}
               </p>
               <p className="mt-3 text-sm text-gray-500">
-                Tu decisión no tiene ninguna consecuencia laboral. Si cambias de opinión,
-                puedes volver a este enlace y aceptar.
+                {t.consentDeclinedNote}
               </p>
               <button
                 onClick={() => { setConsentDeclined(false); setConsentLeido(false); }}
                 className="mt-5 w-full rounded-xl border border-gray-300 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
               >
-                Volver a leer el consentimiento
+                {t.consentReread}
               </button>
             </div>
           </div>
@@ -1330,17 +1345,17 @@ const ParticipantEvaluationPage = () => {
           <div className="max-w-2xl mx-auto px-4">
             <div className="mb-5">
               <h1 className="text-2xl font-bold text-gray-900 mb-1">
-                Hola, {participant.firstName}
+                {t.hello(participant.firstName)}
               </h1>
               <p className="text-gray-500">
-                Antes de empezar, necesitamos tu autorización
+                {t.consentSubtitle}
               </p>
             </div>
 
             <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
               {consentText
                 ? <ConsentText text={consentText} />
-                : <p className="text-sm text-gray-500">Cargando el consentimiento…</p>}
+                : <p className="text-sm text-gray-500">{t.consentLoading}</p>}
 
               {/* La casilla obliga a un acto deliberado. Un consentimiento que se
                   acepta de un clic reflejo no es informado. */}
@@ -1352,8 +1367,7 @@ const ParticipantEvaluationPage = () => {
                   className="mt-0.5 h-5 w-5 flex-shrink-0 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                 />
                 <span className="text-sm text-gray-700">
-                  Leí y entendí este documento, y autorizo de forma libre el tratamiento
-                  de mis datos en los términos descritos.
+                  {t.consentCheckbox}
                 </span>
               </label>
 
@@ -1363,19 +1377,19 @@ const ParticipantEvaluationPage = () => {
                   disabled={!consentLeido || consentBusy || !consentText}
                   className="w-full rounded-xl bg-blue-600 py-3.5 text-base font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
                 >
-                  {consentBusy ? 'Registrando…' : 'Acepto y deseo participar'}
+                  {consentBusy ? t.consentRegistering : t.consentAccept}
                 </button>
                 <button
                   onClick={() => responderConsentimiento(false)}
                   disabled={consentBusy}
                   className="w-full rounded-xl border border-gray-300 py-3 text-sm font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-40"
                 >
-                  No autorizo participar
+                  {t.consentDecline}
                 </button>
               </div>
 
               <p className="mt-4 text-center text-xs text-gray-400">
-                Negarte no tiene ninguna consecuencia laboral.
+                {t.consentNoConsequence}
               </p>
             </div>
           </div>
@@ -1393,7 +1407,7 @@ const ParticipantEvaluationPage = () => {
   // ---------------------------------------------------------------------------
   if (faceRequired && pendingQuestionnaireId) {
     const nombreCuestionario =
-      availableQuestionnaires.find(q => q.id === pendingQuestionnaireId)?.name || 'este cuestionario';
+      availableQuestionnaires.find(q => q.id === pendingQuestionnaireId)?.name || t.thisQuestionnaire;
     // Módulo prendido pero mal configurado (sin credenciales de AWS). Se falla
     // cerrado a propósito: dejar pasar sin verificar anularía en silencio el
     // control que la empresa contrató.
@@ -1403,10 +1417,9 @@ const ParticipantEvaluationPage = () => {
           <div className="max-w-md mx-auto px-4 py-10">
             <div className="rounded-2xl border border-amber-200 bg-amber-50 p-6 text-center">
               <ShieldAlert className="mx-auto mb-3 text-amber-500" size={44} />
-              <h2 className="text-lg font-semibold text-amber-900">Verificación no disponible</h2>
+              <h2 className="text-lg font-semibold text-amber-900">{t.faceUnavailableTitle}</h2>
               <p className="mt-2 text-sm text-amber-800">
-                No podemos verificar tu identidad en este momento. Contacta a tu evaluador
-                para que habilite el acceso.
+                {t.faceUnavailableBody}
               </p>
             </div>
           </div>
@@ -1434,17 +1447,17 @@ const ParticipantEvaluationPage = () => {
               className="mb-4 flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700"
             >
               <ChevronLeft className="w-4 h-4" />
-              Volver al menú
+              {t.backToMenu}
             </button>
 
             <div className="mb-6">
               <h1 className="text-2xl font-bold text-gray-900 mb-1">
-                {esEnrolamiento ? `Hola, ${participant.firstName}` : 'Verifica tu identidad'}
+                {esEnrolamiento ? t.hello(participant.firstName) : t.verifyIdentity}
               </h1>
               {/* Se nombra el cuestionario: la cara se pide en cada uno, y sin
                   decir para cuál el participante cree que es un error repetido. */}
               <p className="text-gray-500">
-                Para continuar con <span className="font-medium text-gray-700">{nombreCuestionario}</span>
+                {t.toContinueWith} <span className="font-medium text-gray-700">{nombreCuestionario}</span>
               </p>
             </div>
 
@@ -1452,14 +1465,14 @@ const ParticipantEvaluationPage = () => {
               <div className="mb-4 flex items-center gap-2 text-gray-700">
                 <ScanFace size={20} className="text-blue-600" />
                 <h2 className="text-base font-semibold">
-                  {esEnrolamiento ? 'Registra tu rostro' : 'Confirma que eres tú'}
+                  {esEnrolamiento ? t.registerFace : t.confirmItsYou}
                 </h2>
               </div>
 
               <p className="mb-5 text-sm text-gray-500">
                 {esEnrolamiento
-                  ? 'Mira a la cámara y toma una foto de tu rostro. La usaremos para confirmar que eres tú quien responde cada cuestionario de la batería. Busca buena luz y quítate gafas oscuras o gorra.'
-                  : 'Mira a la cámara y toma una foto. Te la pedimos al empezar cada cuestionario para confirmar que sigues siendo tú quien responde.'}
+                  ? t.faceEnrollHelp
+                  : t.faceVerifyHelp}
               </p>
 
               {/* Problemas de calidad de la foto: son accionables, se listan tal cual */}
@@ -1474,10 +1487,9 @@ const ParticipantEvaluationPage = () => {
               {/* Rostro que no coincide: no es un problema de foto, es de identidad */}
               {faceFailed && faceIssues.length === 0 && (
                 <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                  <p className="font-medium">Tu rostro no coincide con el registrado.</p>
+                  <p className="font-medium">{t.faceMismatchTitle}</p>
                   <p className="mt-1">
-                    Intenta de nuevo con mejor luz y de frente a la cámara. Si el problema
-                    continúa, contacta a tu evaluador para que reinicie tu registro.
+                    {t.faceMismatchBody}
                   </p>
                 </div>
               )}
@@ -1485,12 +1497,12 @@ const ParticipantEvaluationPage = () => {
               <FaceCapture
                 onCapture={submitFacePhoto}
                 busy={faceBusy}
-                label={faceFailed ? 'Intentar de nuevo' : 'Tomar foto'}
+                label={faceFailed ? t.tryAgain : t.takePhoto}
+                language={evaluation?.language}
               />
 
               <p className="mt-4 text-center text-xs text-gray-400">
-                Tu foto se usa únicamente para verificar tu identidad y no se comparte
-                con tus respuestas.
+                {t.facePrivacy}
               </p>
             </div>
           </div>
@@ -1591,6 +1603,7 @@ const ParticipantEvaluationPage = () => {
             {question.opciones.length <= 12 ? (
               <div className="space-y-2.5">
                 {question.opciones.map((opcion: string, index: number) => {
+                  const etiqueta = question.opciones_en?.[index] || opcion;
                   // Comparación por string: hay respuestas viejas guardadas como
                   // número (el <select> anterior las convertía) que si no, no se
                   // verían marcadas al volver a la pregunta.
@@ -1607,7 +1620,7 @@ const ParticipantEvaluationPage = () => {
                         {selected && <Check className="h-3.5 w-3.5 text-white" strokeWidth={3} />}
                       </span>
                       <span className={`text-[17px] ${selected ? 'font-medium text-blue-900' : 'text-gray-700'}`}>
-                        {opcion}
+                        {etiqueta}
                       </span>
                     </button>
                   );
@@ -1620,10 +1633,10 @@ const ParticipantEvaluationPage = () => {
                   onChange={(e) => handleResponseChange(question.numero, e.target.value, { raw: true })}
                   className={`${fieldClass} appearance-none pr-12`}
                 >
-                  <option value="">Selecciona una opción</option>
+                  <option value="">{t.selectOption}</option>
                   {question.opciones.map((opcion: string, index: number) => (
                     <option key={index} value={opcion}>
-                      {opcion}
+                      {question.opciones_en?.[index] || opcion}
                     </option>
                   ))}
                 </select>
@@ -1634,7 +1647,7 @@ const ParticipantEvaluationPage = () => {
             {needsYears && (
               <div>
                 <label htmlFor={`field_${question.numero}_years`} className="mb-2 block text-sm font-medium text-gray-600">
-                  ¿Cuántos años exactamente?
+                  {t.howManyYears}
                 </label>
                 <input
                   id={`field_${question.numero}_years`}
@@ -1646,7 +1659,7 @@ const ParticipantEvaluationPage = () => {
                   value={responses[`q_${question.numero}_years`] || ''}
                   onChange={(e) => handleResponseChange(`${question.numero}_years`, e.target.value)}
                   className={fieldClass}
-                  placeholder="Ej. 5"
+                  placeholder={t.yearsPlaceholder}
                 />
               </div>
             )}
@@ -1760,21 +1773,21 @@ const ParticipantEvaluationPage = () => {
     };
 
     const ctaLabel = isSubmitting
-      ? 'Enviando…'
+      ? t.sending
       : !isAnswered
-        ? (isDemographic ? 'Completa la respuesta' : 'Selecciona una opción')
+        ? (isDemographic ? t.completeAnswer : t.selectOption)
         : isLast
-          ? 'Finalizar cuestionario'
-          : 'Continuar';
+          ? t.finishQuestionnaire
+          : t.continue;
 
     const saveHint =
       saveState === 'saving'
-        ? 'Guardando…'
+        ? t.saving
         : saveState === 'error'
-          ? 'Sin conexión: guardado en este dispositivo'
+          ? t.savedOnDevice
           : saveState === 'saved'
-            ? 'Respuestas guardadas'
-            : 'Tus respuestas se guardan automáticamente';
+            ? t.saved
+            : t.autosave;
 
     return (
       <div
@@ -1786,7 +1799,7 @@ const ParticipantEvaluationPage = () => {
           <div className="mx-auto flex w-full max-w-2xl items-center gap-3 px-4 py-3 sm:px-8">
             <button
               onClick={() => setCurrentQuestionnaire(null)}
-              aria-label="Volver a la lista de cuestionarios"
+              aria-label={t.backToList}
               className="-ml-2 flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full text-gray-500 transition-colors active:bg-gray-100 sm:hover:bg-gray-100 sm:hover:text-gray-900"
             >
               <ArrowLeft className="h-5 w-5" />
@@ -1829,7 +1842,7 @@ const ParticipantEvaluationPage = () => {
               ) : (
                 <details className="group mb-7">
                   <summary className="inline-flex cursor-pointer list-none items-center gap-1 text-sm font-medium text-blue-600">
-                    Ver instrucciones
+                    {t.seeInstructions}
                     <ChevronDown className="h-4 w-4 transition-transform group-open:rotate-180" />
                   </summary>
                   <p className="mt-3 rounded-xl bg-blue-50 px-4 py-3 text-sm leading-relaxed text-blue-900">
@@ -1841,8 +1854,7 @@ const ParticipantEvaluationPage = () => {
 
             {isFirstQuestion && currentQuestionnaire.type === 'ficha-datos' && (
               <p className="mb-7 text-sm leading-relaxed text-gray-500">
-                Algunos datos ya vienen registrados por tu evaluador. Revísalos y corrige lo que no
-                sea correcto.
+                {t.fichaPrefilled}
               </p>
             )}
 
@@ -1864,7 +1876,7 @@ const ParticipantEvaluationPage = () => {
                 una opción" en las demás preguntas. */}
             {!isDemographic && isFirstQuestion && (
               <p className="mt-5 text-center text-sm text-gray-400">
-                Al elegir una opción avanzas automáticamente
+                {t.autoAdvance}
               </p>
             )}
           </div>
@@ -1877,7 +1889,7 @@ const ParticipantEvaluationPage = () => {
               <button
                 onClick={goToPrevPage}
                 disabled={!canNavigatePrev()}
-                aria-label="Pregunta anterior"
+                aria-label={t.previousQuestion}
                 className="flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-xl border-2 border-gray-200 text-gray-600 transition-colors active:bg-gray-50 disabled:border-gray-100 disabled:text-gray-300 sm:hover:enabled:border-gray-300"
               >
                 <ChevronLeft className="h-5 w-5" />
@@ -1951,10 +1963,10 @@ const ParticipantEvaluationPage = () => {
                 {/* Greeting */}
                 <div className="mb-8 mt-4">
                   <h1 className="text-2xl font-bold text-gray-900 mb-1">
-                    Hola, {participant.firstName}
+                    {t.hello(participant.firstName)}
                   </h1>
                   <p className="text-gray-500">
-                    Selecciona un cuestionario para continuar
+                    {t.selectQuestionnaire}
                   </p>
                   {BRAND.introVideo && (
                     <button
@@ -1962,7 +1974,7 @@ const ParticipantEvaluationPage = () => {
                       className="mt-3 inline-flex items-center gap-1.5 text-sm font-medium text-blue-600 hover:text-blue-800"
                     >
                       <PlayCircle className="h-4 w-4" />
-                      Ver video de instrucciones
+                      {t.watchIntroVideo}
                     </button>
                   )}
                 </div>
@@ -1974,10 +1986,10 @@ const ParticipantEvaluationPage = () => {
                     <div>
                       <div className="flex items-center justify-between mb-2">
                         <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">
-                          Cuestionarios obligatorios
+                          {t.requiredQuestionnaires}
                         </span>
                         <span className="text-xs font-semibold text-gray-700">
-                          {requiredDone} de {requiredTotal} · {requiredPct}%
+                          {t.doneOf(requiredDone, requiredTotal)} · {requiredPct}%
                         </span>
                       </div>
                       <div className="w-full bg-gray-200 rounded-full h-1.5 overflow-hidden">
@@ -1993,7 +2005,7 @@ const ParticipantEvaluationPage = () => {
                       <div key={q.id}>
                         <div className="flex items-center justify-between mb-2">
                           <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">
-                            {OPTIONAL_LABELS[q.id]} <span className="normal-case text-gray-400">(opcional)</span>
+                            {OPTIONAL_LABELS[q.id]} <span className="normal-case text-gray-400">{t.optional}</span>
                           </span>
                           <span className="text-xs font-semibold text-gray-700">
                             {q.completed ? 100 : 0}%
@@ -2053,10 +2065,10 @@ const ParticipantEvaluationPage = () => {
                             {isDone ? (
                               <>
                                 <CheckCircle2 className="w-3.5 h-3.5" strokeWidth={2.25} />
-                                Completado
+                                {t.completed}
                               </>
                             ) : (
-                              `${q.totalQuestions} preguntas`
+                              t.questionsCount(q.totalQuestions)
                             )}
                           </div>
                         </div>
@@ -2083,8 +2095,8 @@ const ParticipantEvaluationPage = () => {
                   <div className="mt-6 bg-green-50 border border-green-200 rounded-2xl p-4 text-center">
                     <p className="text-green-800 font-medium text-sm">
                       {integrationReturnUrl
-                        ? '¡Has completado todos los cuestionarios! Te estamos redirigiendo a tu portal de pruebas...'
-                        : '¡Has completado todos los cuestionarios! Ya puedes cerrar esta página.'}
+                        ? t.allDoneRedirect
+                        : t.allDone}
                     </p>
                   </div>
                 )}

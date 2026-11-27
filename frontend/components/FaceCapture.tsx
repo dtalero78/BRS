@@ -8,6 +8,8 @@ interface FaceCaptureProps {
   busy?: boolean;
   /** Texto del botón cuando no está procesando. */
   label?: string;
+  /** Idioma de la evaluación; los mensajes propios del componente lo siguen. */
+  language?: 'es' | 'en';
 }
 
 /**
@@ -18,7 +20,25 @@ interface FaceCaptureProps {
  * desde un celular con datos móviles, que es como responde la mayoría de
  * participantes.
  */
-export default function FaceCapture({ onCapture, busy, label = 'Tomar foto' }: FaceCaptureProps) {
+const MESSAGES = {
+  es: {
+    blocked: 'Bloqueaste el acceso a la cámara. Habilítalo en los permisos del navegador y vuelve a intentar.',
+    notFound: 'No encontramos una cámara en este dispositivo. Intenta desde tu celular.',
+    generic: 'No se pudo acceder a la cámara. Revisa los permisos del navegador.',
+    verifying: 'Verificando…',
+    takePhoto: 'Tomar foto',
+  },
+  en: {
+    blocked: 'You blocked camera access. Enable it in your browser permissions and try again.',
+    notFound: 'We could not find a camera on this device. Try from your phone.',
+    generic: 'Could not access the camera. Check your browser permissions.',
+    verifying: 'Verifying…',
+    takePhoto: 'Take photo',
+  },
+};
+
+export default function FaceCapture({ onCapture, busy, label, language }: FaceCaptureProps) {
+  const m = MESSAGES[language === 'en' ? 'en' : 'es'];
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const [ready, setReady] = useState(false);
@@ -49,11 +69,11 @@ export default function FaceCapture({ onCapture, busy, label = 'Tomar foto' }: F
         // dos problemas distintos y la instrucción para resolverlos también.
         const name = (err as { name?: string })?.name;
         if (name === 'NotAllowedError' || name === 'SecurityError') {
-          setError('Bloqueaste el acceso a la cámara. Habilítalo en los permisos del navegador y vuelve a intentar.');
+          setError(m.blocked);
         } else if (name === 'NotFoundError' || name === 'DevicesNotFoundError') {
-          setError('No encontramos una cámara en este dispositivo. Intenta desde tu celular.');
+          setError(m.notFound);
         } else {
-          setError('No se pudo acceder a la cámara. Revisa los permisos del navegador.');
+          setError(m.generic);
         }
       }
     })();
@@ -112,7 +132,7 @@ export default function FaceCapture({ onCapture, busy, label = 'Tomar foto' }: F
         className="mx-auto flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 py-3.5 text-base font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
       >
         {busy ? <Loader2 className="animate-spin" size={20} /> : <Camera size={20} />}
-        {busy ? 'Verificando…' : label}
+        {busy ? m.verifying : (label || m.takePhoto)}
       </button>
     </div>
   );

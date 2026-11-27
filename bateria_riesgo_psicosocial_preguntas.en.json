@@ -1,0 +1,1624 @@
+{
+  "idioma": "en",
+  "nota": "Traducción de la batería oficial. Las opciones de la ficha (opciones) se guardan en español; opciones_en es solo la etiqueta. Ver backend/utils/questionnaire-data.js",
+  "opciones_respuesta": {
+    "escala_principal": [
+      "Always",
+      "Almost always",
+      "Sometimes",
+      "Almost never",
+      "Never"
+    ],
+    "escala_estres": [
+      "Always",
+      "Almost always",
+      "Sometimes",
+      "Never"
+    ]
+  },
+  "cuestionarios": {
+    "ficha_datos_generales": {
+      "nombre": "General Information Form",
+      "descripcion": "The following are some questions about general information about you or your occupation. Please select only one answer for each question and mark it or write it in the box. Write clearly and legibly.",
+      "campos": [
+        {
+          "numero": 1,
+          "campo": "Full name",
+          "tipo": "texto_libre"
+        },
+        {
+          "numero": 2,
+          "campo": "Sex",
+          "tipo": "seleccion_unica",
+          "opciones": [
+            "Masculino",
+            "Femenino",
+            "No Binario"
+          ],
+          "opciones_en": [
+            "Male",
+            "Female",
+            "Non-binary"
+          ]
+        },
+        {
+          "numero": 3,
+          "campo": "Year of birth",
+          "tipo": "numerico"
+        },
+        {
+          "numero": 4,
+          "campo": "Highest level of education completed",
+          "tipo": "seleccion_unica",
+          "opciones": [
+            "Ninguno",
+            "Primaria incompleta",
+            "Primaria completa",
+            "Bachillerato incompleto",
+            "Bachillerato completo",
+            "Técnico / tecnológico incompleto",
+            "Técnico / tecnológico completo",
+            "Profesional incompleto",
+            "Profesional completo",
+            "Carrera militar / policía",
+            "Posgrado incompleto",
+            "Posgrado completo"
+          ],
+          "opciones_en": [
+            "None",
+            "Primary school, incomplete",
+            "Primary school, complete",
+            "High school, incomplete",
+            "High school, complete",
+            "Technical / technological degree, incomplete",
+            "Technical / technological degree, complete",
+            "University degree (undergraduate), incomplete",
+            "University degree (undergraduate), complete",
+            "Military / police career",
+            "Postgraduate, incomplete",
+            "Postgraduate, complete"
+          ]
+        },
+        {
+          "numero": 5,
+          "campo": "What is your occupation or profession?",
+          "tipo": "texto_libre"
+        },
+        {
+          "numero": 6,
+          "campo": "Current place of residence",
+          "subcampos": [
+            {
+              "campo": "City / municipality",
+              "tipo": "texto_libre"
+            },
+            {
+              "campo": "Department / state",
+              "tipo": "texto_libre"
+            }
+          ]
+        },
+        {
+          "numero": 7,
+          "campo": "Select and mark the socioeconomic stratum (estrato) of the public utilities of your home",
+          "tipo": "seleccion_unica",
+          "opciones": [
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6",
+            "No sé",
+            "Finca"
+          ],
+          "opciones_en": [
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6",
+            "I don't know",
+            "Farm (rural property)"
+          ]
+        },
+        {
+          "numero": 8,
+          "campo": "Type of housing",
+          "tipo": "seleccion_unica",
+          "opciones": [
+            "Propia",
+            "En arriendo",
+            "Familiar"
+          ],
+          "opciones_en": [
+            "Owned",
+            "Rented",
+            "Family-owned"
+          ]
+        },
+        {
+          "numero": 9,
+          "campo": "Number of people who depend on you financially (even if they live elsewhere)",
+          "tipo": "numerico",
+          "rango": "1-6 or more"
+        },
+        {
+          "numero": 10,
+          "campo": "Place where you currently work",
+          "subcampos": [
+            {
+              "campo": "City / municipality",
+              "tipo": "texto_libre"
+            },
+            {
+              "campo": "Department / state",
+              "tipo": "texto_libre"
+            }
+          ]
+        },
+        {
+          "numero": 11,
+          "campo": "How many years have you worked at this company?",
+          "opciones": [
+            "Si lleva menos de un año marque esta opción",
+            "Si lleva más de un año, anote cuántos años"
+          ],
+          "opciones_en": [
+            "If you have been here less than one year, mark this option",
+            "If you have been here more than one year, write how many years"
+          ]
+        },
+        {
+          "numero": 12,
+          "campo": "What is the title of the position you hold in the company?",
+          "tipo": "texto_libre"
+        },
+        {
+          "numero": 13,
+          "campo": "Select the type of position most similar to the one you hold",
+          "tipo": "seleccion_unica",
+          "opciones": [
+            "Jefatura - tiene personal a cargo",
+            "Profesional, analista, técnico, tecnólogo",
+            "Auxiliar, asistente administrativo, asistente técnico",
+            "Operario, operador, ayudante, servicios generales"
+          ],
+          "opciones_en": [
+            "Management - supervises staff",
+            "Professional, analyst, technician, technologist",
+            "Assistant, administrative assistant, technical assistant",
+            "Operative, operator, helper, general services"
+          ]
+        },
+        {
+          "numero": 14,
+          "campo": "How many years have you held your current position or job at this company?",
+          "opciones": [
+            "Si lleva menos de un año marque esta opción",
+            "Si lleva más de un año, anote cuántos años"
+          ],
+          "opciones_en": [
+            "If you have been here less than one year, mark this option",
+            "If you have been here more than one year, write how many years"
+          ]
+        },
+        {
+          "numero": 15,
+          "campo": "Write the name of the department, area or section of the company where you work",
+          "tipo": "texto_libre"
+        },
+        {
+          "numero": 16,
+          "campo": "Select the type of contract you currently have",
+          "tipo": "seleccion_unica",
+          "opciones": [
+            "Temporal de menos de 1 año",
+            "Temporal de 1 año o más",
+            "Término indefinido",
+            "Cooperado (cooperativa)",
+            "Prestación de servicios",
+            "No sé"
+          ],
+          "opciones_en": [
+            "Temporary, less than 1 year",
+            "Temporary, 1 year or more",
+            "Indefinite term",
+            "Cooperative member",
+            "Service contract (contractor)",
+            "I don't know"
+          ]
+        },
+        {
+          "numero": 17,
+          "campo": "Indicate how many daily working hours are usually set by the company for your position",
+          "tipo": "numerico",
+          "unidad": "working hours per day"
+        },
+        {
+          "numero": 18,
+          "campo": "Select and mark the type of salary you receive",
+          "tipo": "seleccion_unica",
+          "opciones": [
+            "Fijo (diario, semanal, quincenal o mensual)",
+            "Una parte fija y otra variable",
+            "Todo variable (a destajo, por producción, por comisión)"
+          ],
+          "opciones_en": [
+            "Fixed (daily, weekly, biweekly or monthly)",
+            "Part fixed and part variable",
+            "Fully variable (piecework, by production, by commission)"
+          ]
+        },
+        {
+          "numero": 19,
+          "campo": "Marital status",
+          "tipo": "seleccion_unica",
+          "opciones": [
+            "Soltero(a)",
+            "Casado(a)",
+            "Unión libre",
+            "Separado(a)",
+            "Divorciado(a)",
+            "Viudo(a)",
+            "Sacerdote/Monja"
+          ],
+          "opciones_en": [
+            "Single",
+            "Married",
+            "Common-law union",
+            "Separated",
+            "Divorced",
+            "Widowed",
+            "Priest / Nun"
+          ]
+        }
+      ]
+    },
+    "forma_a_intralaboral": {
+      "nombre": "Workplace Psychosocial Risk Factors Questionnaire - Form A",
+      "total_preguntas": 123,
+      "instrucciones": "This psychosocial factors questionnaire seeks to learn your opinion about some aspects of your work. We kindly ask you to answer the following questions with complete honesty. The answers you give in this questionnaire are neither good nor bad; what matters is that they reflect the way you think about your work.",
+      "opciones_respuesta": [
+        "Always",
+        "Almost always",
+        "Sometimes",
+        "Almost never",
+        "Never"
+      ],
+      "secciones": {
+        "condiciones_ambientales": {
+          "descripcion": "The following questions relate to the environmental conditions of the site(s) or place(s) where you usually do your work.",
+          "preguntas": [
+            {
+              "numero": 1,
+              "texto": "The noise in the place where I work is bothersome"
+            },
+            {
+              "numero": 2,
+              "texto": "It is very cold in the place where I work"
+            },
+            {
+              "numero": 3,
+              "texto": "It is very hot in the place where I work"
+            },
+            {
+              "numero": 4,
+              "texto": "The air in the place where I work is fresh and pleasant"
+            },
+            {
+              "numero": 5,
+              "texto": "The lighting in the place where I work is pleasant"
+            },
+            {
+              "numero": 6,
+              "texto": "The space where I work is comfortable"
+            },
+            {
+              "numero": 7,
+              "texto": "In my job I worry about being exposed to chemical substances that may affect my health"
+            },
+            {
+              "numero": 8,
+              "texto": "My job requires me to make a lot of physical effort"
+            },
+            {
+              "numero": 9,
+              "texto": "The equipment or tools I work with are comfortable"
+            },
+            {
+              "numero": 10,
+              "texto": "In my job I worry about being exposed to germs, animals or plants that may affect my health"
+            },
+            {
+              "numero": 11,
+              "texto": "I worry about having an accident at work"
+            },
+            {
+              "numero": 12,
+              "texto": "The place where I work is clean and tidy"
+            }
+          ]
+        },
+        "demandas_cuantitativas": {
+          "descripcion": "To answer the following questions, think about the amount of work you are in charge of.",
+          "preguntas": [
+            {
+              "numero": 13,
+              "texto": "Because of the amount of work I have, I must stay extra time"
+            },
+            {
+              "numero": 14,
+              "texto": "My working time is enough to keep my duties up to date"
+            },
+            {
+              "numero": 15,
+              "texto": "Because of the amount of work I have, I must work without stopping"
+            }
+          ]
+        },
+        "demandas_carga_mental": {
+          "descripcion": "The following questions relate to the mental effort your work requires of you.",
+          "preguntas": [
+            {
+              "numero": 16,
+              "texto": "My job requires me to make a lot of mental effort"
+            },
+            {
+              "numero": 17,
+              "texto": "My job requires me to be highly concentrated"
+            },
+            {
+              "numero": 18,
+              "texto": "My job requires me to memorize a lot of information"
+            },
+            {
+              "numero": 19,
+              "texto": "In my job I have to make difficult decisions very quickly"
+            },
+            {
+              "numero": 20,
+              "texto": "My job requires me to attend to many matters at the same time"
+            },
+            {
+              "numero": 21,
+              "texto": "My job requires me to pay attention to small details"
+            }
+          ]
+        },
+        "responsabilidades": {
+          "descripcion": "The following questions relate to the responsibilities and activities you must carry out in your work",
+          "preguntas": [
+            {
+              "numero": 22,
+              "texto": "In my job I am responsible for things of great value"
+            },
+            {
+              "numero": 23,
+              "texto": "In my job I am responsible for company money"
+            },
+            {
+              "numero": 24,
+              "texto": "As part of my duties I must be responsible for the safety of others"
+            },
+            {
+              "numero": 25,
+              "texto": "I answer to my boss for the results of my entire work area"
+            },
+            {
+              "numero": 26,
+              "texto": "My job requires me to look after the health of other people"
+            },
+            {
+              "numero": 27,
+              "texto": "At work I am given contradictory orders"
+            },
+            {
+              "numero": 28,
+              "texto": "In my job I am asked to do unnecessary things"
+            },
+            {
+              "numero": 29,
+              "texto": "In my job situations arise in which I must overlook rules or procedures"
+            },
+            {
+              "numero": 30,
+              "texto": "In my job I have to do things that could be done in a more practical way"
+            }
+          ]
+        },
+        "jornada_trabajo": {
+          "descripcion": "The following questions relate to your working hours.",
+          "preguntas": [
+            {
+              "numero": 31,
+              "texto": "I work night shifts"
+            },
+            {
+              "numero": 32,
+              "texto": "In my job it is possible to take breaks to rest"
+            },
+            {
+              "numero": 33,
+              "texto": "My job requires me to work on rest days, holidays or weekends"
+            },
+            {
+              "numero": 34,
+              "texto": "In my job I can take weekends or rest days each month"
+            },
+            {
+              "numero": 35,
+              "texto": "When I am at home I keep thinking about work"
+            },
+            {
+              "numero": 36,
+              "texto": "I argue with my family or friends because of my work"
+            },
+            {
+              "numero": 37,
+              "texto": "I must attend to work matters when I am at home"
+            },
+            {
+              "numero": 38,
+              "texto": "Because of my work, the time I spend with my family and friends is very little"
+            }
+          ]
+        },
+        "control_autonomia": {
+          "descripcion": "The following questions relate to the decisions and control your work allows you.",
+          "preguntas": [
+            {
+              "numero": 39,
+              "texto": "My job allows me to develop my skills"
+            },
+            {
+              "numero": 40,
+              "texto": "My job allows me to apply my knowledge"
+            },
+            {
+              "numero": 41,
+              "texto": "My job allows me to learn new things"
+            },
+            {
+              "numero": 42,
+              "texto": "My work is assigned to me taking my abilities into account"
+            },
+            {
+              "numero": 43,
+              "texto": "I can take breaks when I need them"
+            },
+            {
+              "numero": 44,
+              "texto": "I can decide how much work I do in a day"
+            },
+            {
+              "numero": 45,
+              "texto": "I can decide the speed at which I work"
+            },
+            {
+              "numero": 46,
+              "texto": "I can change the order of the activities in my job"
+            },
+            {
+              "numero": 47,
+              "texto": "I can stop my work for a moment to attend to a personal matter"
+            }
+          ]
+        },
+        "manejo_cambio": {
+          "descripcion": "The following questions relate to any type of change that occurs in your work.",
+          "preguntas": [
+            {
+              "numero": 48,
+              "texto": "The changes in my job have been beneficial"
+            },
+            {
+              "numero": 49,
+              "texto": "The changes that occur in my job are clearly explained to me"
+            },
+            {
+              "numero": 50,
+              "texto": "I can give suggestions about the changes that occur in my job"
+            },
+            {
+              "numero": 51,
+              "texto": "When changes occur in my job, my ideas and suggestions are taken into account"
+            },
+            {
+              "numero": 52,
+              "texto": "The changes that occur in my job make my work more difficult"
+            }
+          ]
+        },
+        "claridad_rol": {
+          "descripcion": "The following questions relate to the information the company has given you about your work.",
+          "preguntas": [
+            {
+              "numero": 53,
+              "texto": "I am clearly informed of what my duties are"
+            },
+            {
+              "numero": 54,
+              "texto": "I am informed of which decisions I can make in my job"
+            },
+            {
+              "numero": 55,
+              "texto": "The results I must achieve in my job are clearly explained to me"
+            },
+            {
+              "numero": 56,
+              "texto": "The effect of my work on the company is clearly explained to me"
+            },
+            {
+              "numero": 57,
+              "texto": "The objectives of my job are clearly explained to me"
+            },
+            {
+              "numero": 58,
+              "texto": "I am clearly informed of who can guide me in doing my work"
+            },
+            {
+              "numero": 59,
+              "texto": "I am clearly informed of whom I can turn to in order to resolve work matters"
+            }
+          ]
+        },
+        "capacitacion": {
+          "descripcion": "The following questions relate to the education and training the company provides you to do your work.",
+          "preguntas": [
+            {
+              "numero": 60,
+              "texto": "The company allows me to attend training related to my work"
+            },
+            {
+              "numero": 61,
+              "texto": "I receive useful training to do my work"
+            },
+            {
+              "numero": 62,
+              "texto": "I receive training that helps me do my work better"
+            }
+          ]
+        },
+        "liderazgo": {
+          "descripcion": "The following questions relate to the boss or bosses with whom you have the most contact.",
+          "preguntas": [
+            {
+              "numero": 63,
+              "texto": "My boss gives me clear instructions"
+            },
+            {
+              "numero": 64,
+              "texto": "My boss helps organize the work better"
+            },
+            {
+              "numero": 65,
+              "texto": "My boss takes my points of view and opinions into account"
+            },
+            {
+              "numero": 66,
+              "texto": "My boss encourages me to do my work better"
+            },
+            {
+              "numero": 67,
+              "texto": "My boss distributes tasks in a way that makes my work easier"
+            },
+            {
+              "numero": 68,
+              "texto": "My boss communicates work-related information to me on time"
+            },
+            {
+              "numero": 69,
+              "texto": "The guidance my boss gives me helps me do my work better"
+            },
+            {
+              "numero": 70,
+              "texto": "My boss helps me progress at work"
+            },
+            {
+              "numero": 71,
+              "texto": "My boss helps me feel good at work"
+            },
+            {
+              "numero": 72,
+              "texto": "My boss helps solve the problems that arise at work"
+            },
+            {
+              "numero": 73,
+              "texto": "I feel I can trust my boss"
+            },
+            {
+              "numero": 74,
+              "texto": "My boss listens to me when I have problems at work"
+            },
+            {
+              "numero": 75,
+              "texto": "My boss gives me support when I need it"
+            }
+          ]
+        },
+        "relaciones_sociales": {
+          "descripcion": "The following questions ask about your relationships with other people and the support among the people at your work.",
+          "preguntas": [
+            {
+              "numero": 76,
+              "texto": "I like the atmosphere in my work group"
+            },
+            {
+              "numero": 77,
+              "texto": "In my work group I am treated respectfully"
+            },
+            {
+              "numero": 78,
+              "texto": "I feel I can trust my co-workers"
+            },
+            {
+              "numero": 79,
+              "texto": "I feel comfortable with my co-workers"
+            },
+            {
+              "numero": 80,
+              "texto": "In my work group some people mistreat me"
+            },
+            {
+              "numero": 81,
+              "texto": "Among co-workers we solve problems respectfully"
+            },
+            {
+              "numero": 82,
+              "texto": "My work group is well integrated"
+            },
+            {
+              "numero": 83,
+              "texto": "My work group is very close-knit"
+            },
+            {
+              "numero": 84,
+              "texto": "The people at my work make me feel part of the group"
+            },
+            {
+              "numero": 85,
+              "texto": "When we have to do group work, my co-workers cooperate"
+            },
+            {
+              "numero": 86,
+              "texto": "It is easy to get the group to agree on how to do the work"
+            },
+            {
+              "numero": 87,
+              "texto": "My co-workers help me when I have difficulties"
+            },
+            {
+              "numero": 88,
+              "texto": "In my job we support one another"
+            },
+            {
+              "numero": 89,
+              "texto": "Some co-workers listen to me when I have problems"
+            }
+          ]
+        },
+        "retroalimentacion": {
+          "descripcion": "The following questions relate to the information you receive about your performance at work.",
+          "preguntas": [
+            {
+              "numero": 90,
+              "texto": "I am informed about what I do well in my job"
+            },
+            {
+              "numero": 91,
+              "texto": "I am informed about what I need to improve in my job"
+            },
+            {
+              "numero": 92,
+              "texto": "The information I receive about my performance at work is clear"
+            },
+            {
+              "numero": 93,
+              "texto": "The way my work is evaluated in the company helps me improve"
+            },
+            {
+              "numero": 94,
+              "texto": "I am informed in a timely manner about what I need to improve at work"
+            }
+          ]
+        },
+        "reconocimiento_recompensas": {
+          "descripcion": "The following questions relate to the satisfaction, recognition and security your work offers you.",
+          "preguntas": [
+            {
+              "numero": 95,
+              "texto": "The company trusts my work"
+            },
+            {
+              "numero": 96,
+              "texto": "The company pays my salary on time"
+            },
+            {
+              "numero": 97,
+              "texto": "The pay I receive is what the company offered me"
+            },
+            {
+              "numero": 98,
+              "texto": "The pay I receive is what I deserve for the work I do"
+            },
+            {
+              "numero": 99,
+              "texto": "In my job I have opportunities to progress"
+            },
+            {
+              "numero": 100,
+              "texto": "People who do their work well can progress in the company"
+            },
+            {
+              "numero": 101,
+              "texto": "The company cares about the well-being of its workers"
+            },
+            {
+              "numero": 102,
+              "texto": "My job in the company is stable"
+            },
+            {
+              "numero": 103,
+              "texto": "The work I do makes me feel good"
+            },
+            {
+              "numero": 104,
+              "texto": "I feel proud to work for this company"
+            },
+            {
+              "numero": 105,
+              "texto": "I speak well of the company to other people"
+            }
+          ]
+        },
+        "atencion_clientes": {
+          "descripcion": "The following questions relate to serving clients and users.",
+          "pregunta_filtro": "In my job I must provide service to clients or users: Yes / No",
+          "instruccion": "If your answer was YES, please answer the following questions. If your answer was NO, go to the questions on the next page.",
+          "preguntas": [
+            {
+              "numero": 106,
+              "texto": "I deal with very angry clients or users"
+            },
+            {
+              "numero": 107,
+              "texto": "I deal with very worried clients or users"
+            },
+            {
+              "numero": 108,
+              "texto": "I deal with very sad clients or users"
+            },
+            {
+              "numero": 109,
+              "texto": "My job requires me to attend to very sick people"
+            },
+            {
+              "numero": 110,
+              "texto": "My job requires me to attend to people in great need of help"
+            },
+            {
+              "numero": 111,
+              "texto": "I deal with clients or users who mistreat me"
+            },
+            {
+              "numero": 112,
+              "texto": "To do my work I must show feelings different from my own"
+            },
+            {
+              "numero": 113,
+              "texto": "My job requires me to deal with situations of violence"
+            },
+            {
+              "numero": 114,
+              "texto": "My job requires me to deal with very sad or painful situations"
+            }
+          ]
+        },
+        "liderazgo_colaboradores": {
+          "descripcion": "The following questions relate to the people you supervise or manage.",
+          "pregunta_filtro": "I am the boss of other people at work: Yes / No",
+          "instruccion": "If your answer was YES, please answer the following questions. If your answer was NO, go to the questions in the next section: GENERAL INFORMATION FORM.",
+          "preguntas": [
+            {
+              "numero": 115,
+              "texto": "Some of the people I supervise communicate work matters late"
+            },
+            {
+              "numero": 116,
+              "texto": "Some of the people I supervise behave disrespectfully"
+            },
+            {
+              "numero": 117,
+              "texto": "Some of the people I supervise make it difficult to organize the work"
+            },
+            {
+              "numero": 118,
+              "texto": "Some of the people I supervise remain silent when asked for their opinions"
+            },
+            {
+              "numero": 119,
+              "texto": "Some of the people I supervise make it difficult to achieve the work results"
+            },
+            {
+              "numero": 120,
+              "texto": "Some of the people I supervise express their disagreements disrespectfully"
+            },
+            {
+              "numero": 121,
+              "texto": "Some of the people I supervise cooperate little when needed"
+            },
+            {
+              "numero": 122,
+              "texto": "Some of the people I supervise worry me because of their performance"
+            },
+            {
+              "numero": 123,
+              "texto": "Some of the people I supervise ignore suggestions for improving their work"
+            }
+          ]
+        }
+      }
+    },
+    "forma_b_intralaboral": {
+      "nombre": "Workplace Psychosocial Risk Factors Questionnaire - Form B",
+      "total_preguntas": 97,
+      "instrucciones": "This psychosocial factors questionnaire seeks to learn your opinion about some aspects of your work. We kindly ask you to answer the following questions with complete honesty. The answers you give in this questionnaire are neither good nor bad; what matters is that they reflect the way you think about your work.",
+      "opciones_respuesta": [
+        "Always",
+        "Almost always",
+        "Sometimes",
+        "Almost never",
+        "Never"
+      ],
+      "observacion": "This form is applied to workers in assistant and operator positions",
+      "secciones": {
+        "condiciones_ambientales": {
+          "descripcion": "The following questions relate to the environmental conditions of the site(s) or place(s) where you usually do your work.",
+          "preguntas": [
+            {
+              "numero": 1,
+              "texto": "The noise in the place where I work is bothersome"
+            },
+            {
+              "numero": 2,
+              "texto": "It is very cold in the place where I work"
+            },
+            {
+              "numero": 3,
+              "texto": "It is very hot in the place where I work"
+            },
+            {
+              "numero": 4,
+              "texto": "The air in the place where I work is fresh and pleasant"
+            },
+            {
+              "numero": 5,
+              "texto": "The lighting in the place where I work is pleasant"
+            },
+            {
+              "numero": 6,
+              "texto": "The space where I work is comfortable"
+            },
+            {
+              "numero": 7,
+              "texto": "In my job I worry about being exposed to chemical substances that may affect my health"
+            },
+            {
+              "numero": 8,
+              "texto": "My job requires me to make a lot of physical effort"
+            },
+            {
+              "numero": 9,
+              "texto": "The equipment or tools I work with are comfortable"
+            },
+            {
+              "numero": 10,
+              "texto": "In my job I worry about being exposed to germs, animals or plants that may affect my health"
+            },
+            {
+              "numero": 11,
+              "texto": "I worry about having an accident at work"
+            },
+            {
+              "numero": 12,
+              "texto": "The place where I work is clean and tidy"
+            }
+          ]
+        },
+        "demandas_cuantitativas": {
+          "descripcion": "To answer the following questions, think about the amount of work you are in charge of.",
+          "preguntas": [
+            {
+              "numero": 13,
+              "texto": "Because of the amount of work I have, I must stay extra time"
+            },
+            {
+              "numero": 14,
+              "texto": "My working time is enough to keep my duties up to date"
+            },
+            {
+              "numero": 15,
+              "texto": "Because of the amount of work I have, I must work without stopping"
+            }
+          ]
+        },
+        "demandas_carga_mental": {
+          "descripcion": "The following questions relate to the mental effort your work requires of you.",
+          "preguntas": [
+            {
+              "numero": 16,
+              "texto": "My job requires me to make a lot of mental effort"
+            },
+            {
+              "numero": 17,
+              "texto": "My job requires me to be highly concentrated"
+            },
+            {
+              "numero": 18,
+              "texto": "My job requires me to memorize a lot of information"
+            },
+            {
+              "numero": 19,
+              "texto": "In my job I have to do mathematical calculations"
+            },
+            {
+              "numero": 20,
+              "texto": "My job requires me to pay attention to small details"
+            }
+          ]
+        },
+        "jornada_trabajo": {
+          "descripcion": "The following questions relate to your working hours.",
+          "preguntas": [
+            {
+              "numero": 21,
+              "texto": "I work night shifts"
+            },
+            {
+              "numero": 22,
+              "texto": "In my job it is possible to take breaks to rest"
+            },
+            {
+              "numero": 23,
+              "texto": "My job requires me to work on rest days, holidays or weekends"
+            },
+            {
+              "numero": 24,
+              "texto": "In my job I can take weekends or rest days each month"
+            },
+            {
+              "numero": 25,
+              "texto": "When I am at home I keep thinking about work"
+            },
+            {
+              "numero": 26,
+              "texto": "I argue with my family or friends because of my work"
+            },
+            {
+              "numero": 27,
+              "texto": "I must attend to work matters when I am at home"
+            },
+            {
+              "numero": 28,
+              "texto": "Because of my work, the time I spend with my family and friends is very little"
+            }
+          ]
+        },
+        "control_autonomia": {
+          "descripcion": "The following questions relate to the decisions and control your work allows you.",
+          "preguntas": [
+            {
+              "numero": 29,
+              "texto": "In my job I can do new things"
+            },
+            {
+              "numero": 30,
+              "texto": "My job allows me to develop my skills"
+            },
+            {
+              "numero": 31,
+              "texto": "My job allows me to apply my knowledge"
+            },
+            {
+              "numero": 32,
+              "texto": "My job allows me to learn new things"
+            },
+            {
+              "numero": 33,
+              "texto": "I can take breaks when I need them"
+            },
+            {
+              "numero": 34,
+              "texto": "I can decide how much work I do in a day"
+            },
+            {
+              "numero": 35,
+              "texto": "I can decide the speed at which I work"
+            },
+            {
+              "numero": 36,
+              "texto": "I can change the order of the activities in my job"
+            },
+            {
+              "numero": 37,
+              "texto": "I can stop my work for a moment to attend to a personal matter"
+            }
+          ]
+        },
+        "manejo_cambio": {
+          "descripcion": "The following questions relate to any type of change that occurs in your work.",
+          "preguntas": [
+            {
+              "numero": 38,
+              "texto": "The changes that occur in my job are clearly explained to me"
+            },
+            {
+              "numero": 39,
+              "texto": "I can give suggestions about the changes that occur in my job"
+            },
+            {
+              "numero": 40,
+              "texto": "When changes occur in my job, my ideas and suggestions are taken into account"
+            }
+          ]
+        },
+        "claridad_rol": {
+          "descripcion": "The following questions relate to the information the company has given you about your work.",
+          "preguntas": [
+            {
+              "numero": 41,
+              "texto": "I am clearly informed of what my duties are"
+            },
+            {
+              "numero": 42,
+              "texto": "I am informed of which decisions I can make in my job"
+            },
+            {
+              "numero": 43,
+              "texto": "The results I must achieve in my job are clearly explained to me"
+            },
+            {
+              "numero": 44,
+              "texto": "The objectives of my job are clearly explained to me"
+            },
+            {
+              "numero": 45,
+              "texto": "I am clearly informed of whom I can turn to in order to resolve work matters"
+            }
+          ]
+        },
+        "capacitacion": {
+          "descripcion": "The following questions relate to the education and training the company provides you to do your work.",
+          "preguntas": [
+            {
+              "numero": 46,
+              "texto": "The company allows me to attend training related to my work"
+            },
+            {
+              "numero": 47,
+              "texto": "I receive useful training to do my work"
+            },
+            {
+              "numero": 48,
+              "texto": "I receive training that helps me do my work better"
+            }
+          ]
+        },
+        "caracteristicas_liderazgo": {
+          "descripcion": "The following questions relate to the boss or bosses with whom you have the most contact.",
+          "preguntas": [
+            {
+              "numero": 49,
+              "texto": "My boss helps organize the work better"
+            },
+            {
+              "numero": 50,
+              "texto": "My boss takes my points of view and opinions into account"
+            },
+            {
+              "numero": 51,
+              "texto": "My boss encourages me to do my work better"
+            },
+            {
+              "numero": 52,
+              "texto": "My boss distributes tasks in a way that makes my work easier"
+            },
+            {
+              "numero": 53,
+              "texto": "My boss communicates work-related information to me on time"
+            },
+            {
+              "numero": 54,
+              "texto": "The guidance my boss gives me helps me do my work better"
+            },
+            {
+              "numero": 55,
+              "texto": "My boss helps me progress at work"
+            },
+            {
+              "numero": 56,
+              "texto": "My boss helps me feel good at work"
+            },
+            {
+              "numero": 57,
+              "texto": "My boss helps solve the problems that arise at work"
+            },
+            {
+              "numero": 58,
+              "texto": "My boss treats me with respect"
+            },
+            {
+              "numero": 59,
+              "texto": "I feel I can trust my boss"
+            },
+            {
+              "numero": 60,
+              "texto": "My boss listens to me when I have problems at work"
+            },
+            {
+              "numero": 61,
+              "texto": "My boss gives me support when I need it"
+            }
+          ]
+        },
+        "relaciones_sociales": {
+          "descripcion": "The following questions ask about your relationships with other people and the support among the people at your work.",
+          "preguntas": [
+            {
+              "numero": 62,
+              "texto": "I like the atmosphere in my work group"
+            },
+            {
+              "numero": 63,
+              "texto": "In my work group I am treated respectfully"
+            },
+            {
+              "numero": 64,
+              "texto": "I feel I can trust my co-workers"
+            },
+            {
+              "numero": 65,
+              "texto": "I feel comfortable with my co-workers"
+            },
+            {
+              "numero": 66,
+              "texto": "In my work group some people mistreat me"
+            },
+            {
+              "numero": 67,
+              "texto": "Among co-workers we solve problems respectfully"
+            },
+            {
+              "numero": 68,
+              "texto": "My work group is very close-knit"
+            },
+            {
+              "numero": 69,
+              "texto": "When we have to do group work, my co-workers cooperate"
+            },
+            {
+              "numero": 70,
+              "texto": "It is easy to get the group to agree on how to do the work"
+            },
+            {
+              "numero": 71,
+              "texto": "My co-workers help me when I have difficulties"
+            },
+            {
+              "numero": 72,
+              "texto": "In my job we support one another"
+            },
+            {
+              "numero": 73,
+              "texto": "Some co-workers listen to me when I have problems"
+            }
+          ]
+        },
+        "retroalimentacion_desempeno": {
+          "descripcion": "The following questions relate to the information you receive about your performance at work.",
+          "preguntas": [
+            {
+              "numero": 74,
+              "texto": "I am informed about what I do well in my job"
+            },
+            {
+              "numero": 75,
+              "texto": "I am informed about what I need to improve in my job"
+            },
+            {
+              "numero": 76,
+              "texto": "The information I receive about my performance at work is clear"
+            },
+            {
+              "numero": 77,
+              "texto": "The way my work is evaluated in the company helps me improve"
+            },
+            {
+              "numero": 78,
+              "texto": "I am informed in a timely manner about what I need to improve at work"
+            }
+          ]
+        },
+        "recompensas": {
+          "descripcion": "The following questions relate to the satisfaction, recognition and security your work offers you.",
+          "preguntas": [
+            {
+              "numero": 79,
+              "texto": "The company pays my salary on time"
+            },
+            {
+              "numero": 80,
+              "texto": "The pay I receive is what the company offered me"
+            },
+            {
+              "numero": 81,
+              "texto": "The pay I receive is what I deserve for the work I do"
+            },
+            {
+              "numero": 82,
+              "texto": "In my job I have opportunities to progress"
+            },
+            {
+              "numero": 83,
+              "texto": "People who do their work well can progress in the company"
+            },
+            {
+              "numero": 84,
+              "texto": "The company cares about the well-being of its workers"
+            },
+            {
+              "numero": 85,
+              "texto": "My job in the company is stable"
+            },
+            {
+              "numero": 86,
+              "texto": "The work I do makes me feel good"
+            },
+            {
+              "numero": 87,
+              "texto": "I feel proud to work for this company"
+            },
+            {
+              "numero": 88,
+              "texto": "I speak well of the company to other people"
+            }
+          ]
+        },
+        "atencion_clientes": {
+          "descripcion": "The following questions relate to serving clients and users. In my job I must provide service to clients or users: Yes/No. If your answer was YES, please answer the following questions. If your answer was NO, go to the questions in the next section: GENERAL INFORMATION FORM.",
+          "preguntas": [
+            {
+              "numero": 89,
+              "texto": "I deal with very angry clients or users"
+            },
+            {
+              "numero": 90,
+              "texto": "I deal with very worried clients or users"
+            },
+            {
+              "numero": 91,
+              "texto": "I deal with very sad clients or users"
+            },
+            {
+              "numero": 92,
+              "texto": "My job requires me to attend to very sick people"
+            },
+            {
+              "numero": 93,
+              "texto": "My job requires me to attend to people in great need of help"
+            },
+            {
+              "numero": 94,
+              "texto": "I deal with clients or users who mistreat me"
+            },
+            {
+              "numero": 95,
+              "texto": "My job requires me to deal with situations of violence"
+            },
+            {
+              "numero": 96,
+              "texto": "My job requires me to deal with very sad or painful situations"
+            },
+            {
+              "numero": 97,
+              "texto": "I can express sadness or anger in front of the people I serve"
+            }
+          ]
+        }
+      }
+    },
+    "extralaboral": {
+      "nombre": "Extra-occupational Psychosocial Factors Questionnaire",
+      "total_preguntas": 31,
+      "instrucciones": "This psychosocial factors questionnaire seeks your opinion on some aspects of your family and personal life. Please answer the following questions with complete honesty. There are no right or wrong answers to this questionnaire; what matters is that they reflect what you think about the conditions of your family and personal life.",
+      "tiempo_estimado": "10 minutes",
+      "opciones_respuesta": [
+        "Always",
+        "Almost always",
+        "Sometimes",
+        "Almost never",
+        "Never"
+      ],
+      "secciones": {
+        "condiciones_zona_vivienda": {
+          "descripcion": "The following questions are related to various conditions of the area where you live:",
+          "preguntas": [
+            {
+              "numero": 1,
+              "texto": "It is easy for me to get between my home and work"
+            },
+            {
+              "numero": 2,
+              "texto": "I have to take several means of transport to get to my workplace"
+            },
+            {
+              "numero": 3,
+              "texto": "I spend a lot of time traveling to and from work"
+            },
+            {
+              "numero": 4,
+              "texto": "I travel comfortably between my home and work"
+            },
+            {
+              "numero": 5,
+              "texto": "The area where I live is safe"
+            },
+            {
+              "numero": 6,
+              "texto": "There are thefts and a lot of crime in the area where I live"
+            },
+            {
+              "numero": 7,
+              "texto": "From where I live, it is easy for me to get to the medical center where I receive care"
+            },
+            {
+              "numero": 8,
+              "texto": "The roads near my home are in good condition"
+            },
+            {
+              "numero": 9,
+              "texto": "I can easily find transport near my home"
+            },
+            {
+              "numero": 10,
+              "texto": "The conditions of my home are good"
+            },
+            {
+              "numero": 11,
+              "texto": "My home has water and electricity services"
+            },
+            {
+              "numero": 12,
+              "texto": "The conditions of my home allow me to rest when I need to"
+            },
+            {
+              "numero": 13,
+              "texto": "The conditions of my home allow me to feel comfortable"
+            }
+          ]
+        },
+        "balance_vida_laboral_familiar": {
+          "descripcion": "The following questions are related to the balance between work and family life:",
+          "preguntas": [
+            {
+              "numero": 14,
+              "texto": "I have time for leisure activities"
+            },
+            {
+              "numero": 15,
+              "texto": "I have enough time to rest"
+            },
+            {
+              "numero": 16,
+              "texto": "My job allows me to be available to attend to personal and family commitments"
+            },
+            {
+              "numero": 17,
+              "texto": "I have time to spend with my family or friends"
+            },
+            {
+              "numero": 18,
+              "texto": "I have good communication with the people close to me"
+            },
+            {
+              "numero": 19,
+              "texto": "My relationships with my friends are good"
+            },
+            {
+              "numero": 20,
+              "texto": "I talk with people close to me about different topics"
+            },
+            {
+              "numero": 21,
+              "texto": "My friends are willing to listen to me when I have problems"
+            },
+            {
+              "numero": 22,
+              "texto": "I have my family's support when I have problems"
+            },
+            {
+              "numero": 23,
+              "texto": "I can talk with people close to me about the things that happen to me"
+            },
+            {
+              "numero": 24,
+              "texto": "My personal or family problems affect my work"
+            },
+            {
+              "numero": 25,
+              "texto": "My relationship with my close family is cordial"
+            },
+            {
+              "numero": 26,
+              "texto": "My personal or family problems drain the energy I need to work"
+            },
+            {
+              "numero": 27,
+              "texto": "We resolve problems with my family members in a friendly way"
+            }
+          ]
+        },
+        "situacion_economica": {
+          "descripcion": "Questions related to your financial situation:",
+          "preguntas": [
+            {
+              "numero": 28,
+              "texto": "My personal or family problems affect my relationships at work"
+            },
+            {
+              "numero": 29,
+              "texto": "The money we earn at home is enough to cover basic expenses"
+            },
+            {
+              "numero": 30,
+              "texto": "I have other financial commitments that greatly affect the family budget"
+            },
+            {
+              "numero": 31,
+              "texto": "In my home we have debts that are difficult to pay"
+            }
+          ]
+        }
+      }
+    },
+    "estres": {
+      "nombre": "Stress Assessment Questionnaire - Third Version",
+      "total_sintomas": 31,
+      "instrucciones": "Mark with an X the box that indicates how often you have experienced each of the following discomforts in the last three months.",
+      "opciones_respuesta": [
+        "Always",
+        "Almost always",
+        "Sometimes",
+        "Never"
+      ],
+      "malestares": [
+        {
+          "numero": 1,
+          "texto": "Neck and back pain or muscle tension"
+        },
+        {
+          "numero": 2,
+          "texto": "Gastrointestinal problems, peptic ulcer, heartburn, digestive or colon problems"
+        },
+        {
+          "numero": 3,
+          "texto": "Breathing problems"
+        },
+        {
+          "numero": 4,
+          "texto": "Headache"
+        },
+        {
+          "numero": 5,
+          "texto": "Sleep disorders such as daytime sleepiness or sleeplessness at night"
+        },
+        {
+          "numero": 6,
+          "texto": "Heart palpitations or heart problems"
+        },
+        {
+          "numero": 7,
+          "texto": "Major changes in appetite"
+        },
+        {
+          "numero": 8,
+          "texto": "Problems related to the function of the genital organs (impotence, frigidity)"
+        },
+        {
+          "numero": 9,
+          "texto": "Difficulty in family relationships"
+        },
+        {
+          "numero": 10,
+          "texto": "Difficulty staying still or difficulty starting activities"
+        },
+        {
+          "numero": 11,
+          "texto": "Difficulty in relationships with other people"
+        },
+        {
+          "numero": 12,
+          "texto": "Feeling of isolation and lack of interest"
+        },
+        {
+          "numero": 13,
+          "texto": "Feeling of work overload"
+        },
+        {
+          "numero": 14,
+          "texto": "Difficulty concentrating, frequent forgetfulness"
+        },
+        {
+          "numero": 15,
+          "texto": "Increase in the number of work accidents"
+        },
+        {
+          "numero": 16,
+          "texto": "Feeling of frustration, of not having done what you wanted in life"
+        },
+        {
+          "numero": 17,
+          "texto": "Tiredness, boredom or lack of motivation"
+        },
+        {
+          "numero": 18,
+          "texto": "Decreased work performance or low creativity"
+        },
+        {
+          "numero": 19,
+          "texto": "Wish not to go to work"
+        },
+        {
+          "numero": 20,
+          "texto": "Low commitment or little interest in what you do"
+        },
+        {
+          "numero": 21,
+          "texto": "Difficulty making decisions"
+        },
+        {
+          "numero": 22,
+          "texto": "Wish to change jobs"
+        },
+        {
+          "numero": 23,
+          "texto": "Feeling of loneliness and fear"
+        },
+        {
+          "numero": 24,
+          "texto": "Feeling of irritability, negative attitudes and thoughts"
+        },
+        {
+          "numero": 25,
+          "texto": "Feeling of anguish, worry or sadness"
+        },
+        {
+          "numero": 26,
+          "texto": "Use of drugs to relieve tension or nerves"
+        },
+        {
+          "numero": 27,
+          "texto": "Feeling that you are 'worthless' or 'good for nothing'"
+        },
+        {
+          "numero": 28,
+          "texto": "Consumption of alcoholic beverages, coffee or cigarettes"
+        },
+        {
+          "numero": 29,
+          "texto": "Feeling that you are losing your mind"
+        },
+        {
+          "numero": 30,
+          "texto": "Rigid behavior, obstinacy or stubbornness"
+        },
+        {
+          "numero": 31,
+          "texto": "Feeling of not being able to handle life's problems"
+        }
+      ]
+    }
+  }
+}

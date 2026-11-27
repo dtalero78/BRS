@@ -66,7 +66,8 @@ BRS/
 │   │   ├── 20260731000002_allow_coping_questionnaire_type.js  # deriva: coping faltaba en las CHECK
 │   │   ├── 20260902000001_add_include_coping_to_evaluations.js  # Brief COPE opcional por evaluación
 │   │   ├── 20260903000001_add_wompi_payments.js  # payments + payment_items + PE.paid_at (pago por prueba)
-│   │   └── 20261026000001_add_sofi_questionnaire.js  # 'sofi' en las CHECK + evaluations.include_sofi
+│   │   ├── 20261026000001_add_sofi_questionnaire.js  # 'sofi' en las CHECK + evaluations.include_sofi
+│   │   └── 20261127000001_add_language_to_evaluations.js  # evaluations.language ('es'|'en')
 │   ├── routes/
 │   │   ├── auth.js           # Login, register (self-service evaluador), refresh, logout
 │   │   ├── companies.js      # CRUD empresas (admin + evaluador con ownership)
@@ -220,8 +221,8 @@ Dimensiones con sufijo `_total` son totales de dominio.
 
 ### Evaluaciones (`/api/evaluations`)
 - `GET /` - Listar (filtrado por ownership para evaluadores)
-- `POST /` - Crear (requiere `companyId` en body, evaluador elige empresa; `includeCoping` opcional, default `true`)
-- `PUT /:id` (acepta `includeCoping`) | `POST /:id/assign`
+- `POST /` - Crear (requiere `companyId` en body, evaluador elige empresa; `includeCoping` opcional, default `true`; `language` `'es'|'en'`, default `'es'`)
+- `PUT /:id` (acepta `includeCoping`, `language`) | `POST /:id/assign`
 - `GET /:id/consent-text` | `PUT /:id/consent-text` - Texto del consentimiento informado por evaluación
 - `POST /:id/preview-excel` - Analiza el Excel y devuelve layout detectado + muestra de filas, sin persistir nada (multipart `file`)
 - `POST /:id/import-excel` - Crea participantes + respuestas + resultados desde Excel (multipart `file`, máx 10MB)
@@ -781,6 +782,35 @@ La asignación ítem → dimensión vive en dos sitios (el JSON y `DIMENSIONS` e
 
 > Pendiente: la importación por Excel y por foto todavía no reconocen el SOFI-SM; hoy solo se responde por el enlace del participante.
 
+## VERSIÓN EN INGLÉS PARA EL PARTICIPANTE (por evaluación)
+
+`evaluations.language` (`'es'` | `'en'`, default `'es'`, CHECK en la base) decide en qué idioma ve el participante su batería. Lo elige el evaluador en el modal de crear/editar evaluación; la lista muestra la insignia **"En inglés"**. Se decidió por evaluación y no con un botón del participante para que un mismo grupo no quede respondido en dos idiomas dentro de un mismo informe.
+
+**Alcance: solo lo que ve el participante.** Preguntas, opciones, instrucciones, consentimiento por defecto, menú y pantallas del cuestionario. Las pantallas del evaluador y los informes PDF siguen en español.
+
+**Solo la batería oficial.** Ficha, Forma A, Forma B, extralaboral y estrés. El Brief COPE y el SOFI-SM no tienen versión en inglés: en una evaluación `'en'` el backend fuerza `include_coping = false` e `include_sofi = false` al crear/editar, y todo lo que ya respetaba esas banderas (menú, guards de URL directa, completitud del PE, informes) sigue funcionando sin cambios. Volver a `'es'` **no** las re-enciende solas: el evaluador las marca otra vez si las quiere. `copingIncluded()`/`sofiIncluded()` en `participant-access.js` también devuelven `false` con `language = 'en'`, por si una fila se toca por SQL.
+
+### Invariante: el idioma cambia lo que se MUESTRA, nunca lo que se GUARDA
+- **Escalas**: se guardan como número por posición (Always=4 … Never=0), igual que en español. El inglés solo traduce las etiquetas en el mismo orden.
+- **Ficha**: `opciones` conserva el **literal oficial en español** (es lo que se guarda y lo que agrupan `groupEducation()` y compañía); la etiqueta en inglés viaja en `opciones_en`, misma longitud y orden. Quien marca "Female" guarda `Femenino`.
+- Por eso el motor de cálculo, los baremos, los informes y las agregaciones demográficas **no saben ni necesitan saber** en qué idioma se respondió.
+
+### Archivos
+- `bateria_riesgo_psicosocial_preguntas.en.json` — la batería oficial en inglés (misma estructura que el JSON en español, llaves en español). Si se edita una pregunta en español, hay que editarla también aquí.
+- `backend/utils/questionnaire-data.js` — `getQuestionnaireData(language)` (fusiona el inglés sobre el español, con caché) y `hubDescription()` para el menú.
+- `backend/tests/questionnaire-data.test.js` — falla si el inglés se desalinea: otro `numero`, otro largo de escala, una opción de ficha traducida en `opciones`, o un texto sin traducir.
+- `backend/utils/consent-template.js` — `buildEnglishConsentText()`: traducción fiel del borrador, cita las mismas leyes colombianas. El `consent_text_override` que escriba el evaluador se muestra tal cual, en el idioma en que lo escribió.
+- `backend/routes/participant-access.js` — `language` en `/validate/:token`; los dos endpoints de cuestionarios cargan en el idioma de la evaluación.
+- `frontend/config/participantStrings.ts` — textos de la pantalla del participante en ES/EN; `[token].tsx` usa `t = participantStrings(evaluation.language)` y pone `<html lang>`.
+- `frontend/components/FaceCapture.tsx` — prop `language` para sus mensajes de cámara.
+
+### Lo que sigue en español aunque la evaluación sea en inglés
+- La **puerta general `/acceso`** y el error de enlace inválido: todavía no se sabe de qué evaluación es la persona.
+- **Mensajes de error que arma el backend** (p. ej. los problemas de calidad de la selfie de Rekognition, "Token inválido o expirado").
+- El **video de socialización** (Shaddai) y el video de instrucciones: son videos grabados en español.
+
+> ⚠️ **La batería está validada en español para población colombiana.** La versión en inglés es una traducción sin validación psicométrica propia; el modal del evaluador lo advierte al elegir inglés.
+
 ## SOCIALIZACIÓN EN VIDEO (opt-in por instancia)
 
 Video que el participante ve **completo** al entrar por primera vez, **antes del consentimiento**. Pedido de Shaddai (2026-10-30): la empresa necesita el registro de que cada persona vio la socialización. Queda en `participant_evaluations.socialization_completed_at`.
@@ -1132,6 +1162,7 @@ git push origin main
 - [x] **Tabla de participantes con scroll fijo** — `h-[calc(100vh-260px)]` + sticky header
 - [x] **Integración server-to-server** — `POST /api/integration/participant` (auth `X-Api-Key`, idempotente por `externalRef`) + webhook `evaluation.completed` firmado con HMAC
 - [x] **Auto-redirect de retorno desactivado** — el participante ya no es redirigido a la app externa al terminar; se queda en la pantalla de éxito de BRS (webhook sigue notificando)
+- [x] **Versión en inglés para el participante** — `evaluations.language`; la batería oficial, el consentimiento y las pantallas del participante en inglés, guardando exactamente lo mismo que en español (COPE y SOFI-SM no se ofrecen en inglés)
 - [x] **Brief COPE opcional por evaluación** — `evaluations.include_coping` decide si la campaña aplica el COPE-28; si no, el participante no lo ve y su sección no sale en el informe
 - [x] **SOFI-SM (fatiga laboral) opcional por evaluación** — la "prueba SOFI" del contrato con Shaddai; `evaluations.include_sofi` (default apagado), escala 0-10, SSM-Index con la tabla de cortes de los autores
 - [x] **Socialización en video** — video obligatorio antes del consentimiento (opt-in por instancia, `SOCIALIZATION_VIDEO`; hoy Shaddai), con registro de quién lo vio completo validado contra el reloj del servidor
