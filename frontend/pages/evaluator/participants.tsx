@@ -62,6 +62,8 @@ interface Participant {
   workDaysPerWeek: number;
   formType: 'A' | 'B';
   phone?: string;
+  /** Idioma en que responde la batería. Ausente = español. */
+  language?: 'es' | 'en';
   evaluationId: string;
   evaluationName?: string;
   /** Liberada: pagada por prueba (Wompi) o evaluacion liberada por el admin. */
@@ -183,7 +185,8 @@ export default function EvaluatorParticipants() {
     workHoursPerDay: 8,
     workDaysPerWeek: 5,
     formType: 'A' as 'A' | 'B',
-    phone: ''
+    phone: '',
+    language: 'es' as 'es' | 'en'
   });
 
   useEffect(() => {
@@ -385,7 +388,8 @@ export default function EvaluatorParticipants() {
       workHoursPerDay: participant.workHoursPerDay,
       workDaysPerWeek: participant.workDaysPerWeek,
       formType: participant.formType,
-      phone: participant.phone || ''
+      phone: participant.phone || '',
+      language: participant.language === 'en' ? 'en' : 'es'
     });
     setShowModal(true);
   };
@@ -437,7 +441,8 @@ export default function EvaluatorParticipants() {
       workHoursPerDay: 8,
       workDaysPerWeek: 5,
       formType: 'A',
-      phone: ''
+      phone: '',
+      language: 'es'
     });
   };
 
@@ -1364,6 +1369,14 @@ export default function EvaluatorParticipants() {
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           {getFormTypeBadge(participant.formType)}
+                          {participant.language === 'en' && (
+                            <span
+                              className="ml-1.5 inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-sky-100 text-sky-800"
+                              title="Responde la batería en inglés"
+                            >
+                              EN
+                            </span>
+                          )}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div className="flex items-center">
@@ -1604,6 +1617,26 @@ export default function EvaluatorParticipants() {
                       <option value="A">Forma A (Jefes, Profesionales, Técnicos)</option>
                       <option value="B">Forma B (Auxiliares, Operarios)</option>
                     </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">
+                      Idioma en que responde
+                    </label>
+                    <select
+                      value={formData.language}
+                      onChange={(e) => setFormData({ ...formData, language: e.target.value === 'en' ? 'en' : 'es' })}
+                      className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                    >
+                      <option value="es">Español</option>
+                      <option value="en">Inglés (English)</option>
+                    </select>
+                    {formData.language === 'en' && (
+                      <p className="mt-1.5 text-xs text-gray-500">
+                        Ve en inglés la batería oficial y el consentimiento (sin Brief COPE ni SOFI-SM).
+                        Traducción sin validación psicométrica propia.
+                      </p>
+                    )}
                   </div>
 
                   <div>

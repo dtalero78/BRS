@@ -18,7 +18,8 @@ const {
 } = require('../utils/rekognition');
 const { buildDefaultConsentText } = require('../utils/consent-template');
 const { getSocializationVideo } = require('../config/socialization');
-const { getQuestionnaireData, hubDescription } = require('../utils/questionnaire-data');
+const { getQuestionnaireData, hubDescription, participantLanguage } = require('../utils/questionnaire-data');
+
 
 // ---------------------------------------------------------------------------
 // Puerta general: entrar con el número de documento
@@ -194,6 +195,7 @@ router.post('/lookup', lookupLimiter, async (req, res) => {
 /** Busca el PE por token con lo necesario para el consentimiento. */
 async function findPeForConsent(token) {
   return db('participant_evaluations')
+    .join('participants', 'participant_evaluations.participant_id', 'participants.id')
     .join('evaluations', 'participant_evaluations.evaluation_id', 'evaluations.id')
     .join('companies', 'evaluations.company_id', 'companies.id')
     .where('participant_evaluations.access_token', token)
@@ -205,6 +207,7 @@ async function findPeForConsent(token) {
       'evaluations.consent_text_override',
       'evaluations.include_sofi',
       'evaluations.language',
+      'participants.demographic_data',
       'companies.name as company_name'
     )
     .first();
@@ -213,14 +216,21 @@ async function findPeForConsent(token) {
 /**
  * Texto que se le muestra a ESTE participante: el del evaluador si lo definió,
  * si no el default de la plantilla.
+ *
+ * Quien responde en inglés recibe SIEMPRE el default en inglés: el texto
+ * propio del evaluador es uno solo por evaluación y está escrito en español,
+ * y un consentimiento que la persona no puede leer no es informado. El
+ * snapshot que se guarda al aceptar deja constancia de qué texto vio.
  */
 function consentTextFor(pe) {
+  const language = participantLanguage(pe);
   const override = (pe.consent_text_override || '').trim();
-  if (override) return override;
+  if (override && language !== 'en') return override;
   return buildDefaultConsentText({
     companyName: pe.company_name,
-    withFatigue: pe.include_sofi === true,
-    language: pe.language,
+    // En inglés no se ofrece el SOFI-SM: no se menciona.
+    withFatigue: language !== 'en' && pe.include_sofi === true,
+    language,
   });
 }
 
@@ -445,9 +455,10 @@ router.post('/:token/socialization/progress', socializationLimiter, async (req, 
  * ofreciendo el cuestionario, no hacerlo desaparecer en silencio.
  */
 function copingIncluded(row) {
-  // En inglés no existe el COPE. Las rutas de evaluaciones ya apagan la
-  // bandera al elegir 'en'; esto cubre una fila tocada por SQL directo.
-  if (row && row.language === 'en') return false;
+  // En inglés no existe el COPE: quien responde en inglés no lo ve, aunque el
+  // resto de su campaña sí. Como esto también decide la completitud del PE,
+  // tampoco se le exige (si no, quedaría atascado en in_progress).
+  if (row && participantLanguage(row) === 'en') return false;
   return !row || row.include_coping !== false;
 }
 
@@ -459,7 +470,7 @@ function copingIncluded(row) {
  * no contrató.
  */
 function sofiIncluded(row) {
-  return !!row && row.include_sofi === true && row.language !== 'en';
+  return !!row && row.include_sofi === true && participantLanguage(row) !== 'en';
 }
 
 // ---------------------------------------------------------------------------
@@ -788,7 +799,7 @@ router.get('/validate/:token', async (req, res) => {
         'evaluations.id as evaluation_id',
         'evaluations.name as evaluation_name',
         'evaluations.description as evaluation_description',
-        'evaluations.language as evaluation_language',
+        'evaluations.language as language',
         'participant_evaluations.status',
         'participant_evaluations.assigned_at',
         'participant_evaluations.completed_at'
@@ -827,7 +838,7 @@ router.get('/validate/:token', async (req, res) => {
         name: participantEvaluation.evaluation_name,
         description: participantEvaluation.evaluation_description,
         // Idioma de las pantallas y de los cuestionarios del participante.
-        language: participantEvaluation.evaluation_language === 'en' ? 'en' : 'es'
+        language: participantLanguage(participantEvaluation)
       },
       // Co-marca: el logo de la empresa se muestra junto al de la plataforma en
       // la pantalla del participante. `logoUrl` en null = solo la plataforma.
@@ -875,7 +886,7 @@ router.get('/:token/questionnaire/:type', async (req, res) => {
     // Load questionnaire data (en el idioma de la evaluación)
     let questionnairesData;
     try {
-      questionnairesData = getQuestionnaireData(participantEvaluation.language);
+      questionnairesData = getQuestionnaireData(participantLanguage(participantEvaluation));
     } catch (error) {
       return res.status(500).json({ error: 'No se pudieron cargar los datos de cuestionarios' });
     }
@@ -970,7 +981,7 @@ router.get('/:token/questionnaires', async (req, res) => {
         'evaluations.language'
       )
       .first();
-    const lang = participantEvaluation && participantEvaluation.language;
+    const lang = participantLanguage(participantEvaluation);
 
     if (!participantEvaluation) {
       return res.status(404).json({ error: 'Token inválido o expirado' });
@@ -1014,7 +1025,7 @@ router.get('/:token/questionnaires', async (req, res) => {
     // Load questionnaire data (en el idioma de la evaluación)
     let questionnairesData;
     try {
-      questionnairesData = getQuestionnaireData(participantEvaluation.language);
+      questionnairesData = getQuestionnaireData(participantLanguage(participantEvaluation));
     } catch (error) {
       return res.status(500).json({ error: 'No se pudieron cargar los datos de cuestionarios' });
     }

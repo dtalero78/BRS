@@ -74,7 +74,10 @@ const createParticipantSchema = Joi.object({
   workHoursPerDay: Joi.number().integer().min(1).max(24).required(),
   workDaysPerWeek: Joi.number().integer().min(1).max(7).required(),
   formType: Joi.string().valid('A', 'B').required(),
-  phone: Joi.string().allow('').optional()
+  phone: Joi.string().allow('').optional(),
+  // Idioma en que esta persona responde la batería (ver participantLanguage()
+  // en utils/questionnaire-data.js). Ausente = español.
+  language: Joi.string().valid('es', 'en').optional()
 });
 
 // Create participant
@@ -109,6 +112,26 @@ router.post('/', auth, authorize('admin', 'evaluator'), async (req, res) => {
     
     if (existingParticipant) {
       participant = existingParticipant;
+      // La persona ya existía (otra evaluación de la misma empresa): si el
+      // evaluador eligió un idioma ahora, ese manda.
+      if (participantData.language === 'en' || participantData.language === 'es') {
+        let demo = {};
+        try {
+          demo = typeof participant.demographic_data === 'string'
+            ? JSON.parse(participant.demographic_data)
+            : { ...(participant.demographic_data || {}) };
+        } catch (e) {
+          demo = {};
+        }
+        if (demo.language !== participantData.language) {
+          demo.language = participantData.language;
+          [participant] = await db('participants')
+            .where('id', participant.id)
+            .where('company_id', evaluation.company_id)
+            .update({ demographic_data: JSON.stringify(demo), updated_at: new Date() })
+            .returning('*');
+        }
+      }
     } else {
       // Create new participant
       const demographicData = {
@@ -129,7 +152,8 @@ router.post('/', auth, authorize('admin', 'evaluator'), async (req, res) => {
         workHoursPerDay: participantData.workHoursPerDay,
         workDaysPerWeek: participantData.workDaysPerWeek,
         formType: participantData.formType,
-        phone: participantData.phone || ''
+        phone: participantData.phone || '',
+        language: participantData.language === 'en' ? 'en' : 'es'
       };
 
       [participant] = await db('participants')
@@ -211,6 +235,7 @@ router.post('/', auth, authorize('admin', 'evaluator'), async (req, res) => {
       department: demographicData.department || participantData.department,
       position: demographicData.position || participantData.position,
       formType: demographicData.formType || participantData.formType,
+      language: demographicData.language === 'en' ? 'en' : 'es',
       evaluationId: evaluationId,
       status: 'assigned',
       completionPercentage: 0,
@@ -374,6 +399,7 @@ router.get('/', auth, async (req, res) => {
         workHoursPerDay: demographicData.workHoursPerDay || 8,
         workDaysPerWeek: demographicData.workDaysPerWeek || 5,
         formType: demographicData.formType || 'A',
+        language: demographicData.language === 'en' ? 'en' : 'es',
         phone: demographicData.phone || '',
         evaluationId: p.evaluation_id,
         evaluationName: p.evaluation_name,
@@ -536,6 +562,7 @@ router.get('/evaluation/:evaluationId', auth, async (req, res) => {
           department: demographicData.department || 'N/A',
           position: demographicData.position || 'N/A',
           formType: demographicData.formType || 'A',
+          language: demographicData.language === 'en' ? 'en' : 'es',
           status: p.status || 'assigned',
           completed_questionnaires: completedQuestionnaires,
           hasResults: hasResults,
@@ -842,6 +869,7 @@ router.get('/:id', auth, async (req, res) => {
       workHoursPerDay: demographicData.workHoursPerDay || 8,
       workDaysPerWeek: demographicData.workDaysPerWeek || 5,
       formType: demographicData.formType || 'A',
+      language: demographicData.language === 'en' ? 'en' : 'es',
       status: participant.evaluation_status || 'assigned',
       completionPercentage: 0,
       startedAt: participant.assigned_at,
@@ -894,7 +922,9 @@ router.put('/:id', auth, authorize('admin', 'evaluator'), async (req, res) => {
       // El modal de edición siempre manda el celular, pero sin esta entrada el
       // backend lo descartaba en silencio y respondía 200: la pantalla decía
       // "actualizado" y el número seguía igual (reportado por Shaddai, 2026-11-13).
-      'phone'
+      'phone',
+      // Idioma en que responde la batería ('es' | 'en'), se valida abajo.
+      'language'
     ];
 
     let hasChanges = false;
@@ -911,6 +941,9 @@ router.put('/:id', auth, authorize('admin', 'evaluator'), async (req, res) => {
 
     // Solo se valida lo que viene en ESTE request: lo ya guardado no debe
     // bloquear la edición de otros campos.
+    if (req.body.language !== undefined) {
+      demographicData.language = req.body.language === 'en' ? 'en' : 'es';
+    }
     if (req.body.phone !== undefined) {
       const rawPhone = req.body.phone;
       if (rawPhone !== null && typeof rawPhone !== 'string' && typeof rawPhone !== 'number') {
@@ -944,6 +977,7 @@ router.put('/:id', auth, authorize('admin', 'evaluator'), async (req, res) => {
       department: demographicData.department || 'N/A',
       position: demographicData.position || 'N/A',
       formType: demographicData.formType || 'A',
+      language: demographicData.language === 'en' ? 'en' : 'es',
       updatedAt: participant.updated_at
     });
 

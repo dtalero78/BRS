@@ -6,6 +6,7 @@ const Joi = require('joi');
 const { auth, authorize, getOwnedCompanyIds } = require('../middleware/auth');
 const db = require('../config/database');
 const calculateResults = require('../utils/calculate-results');
+const { participantLanguage } = require('../utils/questionnaire-data');
 const { extractAnswersFromSheet, extractAllQuestionnairesFromSheet, QUESTIONNAIRE_META, FICHA_FIELDS, FICHA_FIELD_NAMES } = require('../utils/answer-sheet-ocr');
 const { fusionarFicha } = require('../utils/ficha-merge');
 const { resolveFicha } = require('../utils/report-data-aggregator');
@@ -208,13 +209,18 @@ async function recalcularPorGrupoOcupacional(trx, peId, formType, excluir = []) 
 async function finalizePeStatus(trx, peId, formType, integrationMetaRaw) {
   // El Brief COPE es opcional por evaluación (evaluations.include_coping): si
   // esta campaña no lo aplica, no puede exigirse para dar la batería por
-  // terminada — el participante nunca lo ve.
+  // terminada — el participante nunca lo ve. Tampoco se exige a quien responde
+  // en inglés: no existe en ese idioma (misma regla que copingIncluded() en
+  // participant-access.js, vía participantLanguage()).
   const evalRow = await trx('participant_evaluations as pe')
     .join('evaluations as e', 'e.id', 'pe.evaluation_id')
+    .join('participants as p', 'p.id', 'pe.participant_id')
     .where('pe.id', peId)
-    .select('e.include_coping')
+    .select('e.include_coping', 'e.language', 'p.demographic_data')
     .first();
-  const aplicaCoping = evalRow ? evalRow.include_coping !== false : true;
+  const aplicaCoping = evalRow
+    ? evalRow.include_coping !== false && participantLanguage(evalRow) !== 'en'
+    : true;
 
   const allResponses = await trx('responses')
     .where('participant_evaluation_id', peId)

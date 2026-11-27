@@ -97,4 +97,30 @@ function hubDescription(language, id) {
   return (HUB_DESCRIPTIONS[lang] && HUB_DESCRIPTIONS[lang][id]) || HUB_DESCRIPTIONS.es[id];
 }
 
-module.exports = { getQuestionnaireData, hubDescription, normalizeLanguage, EN_QUESTIONNAIRES };
+/**
+ * Idioma en que responde ESTA persona: 'en' o 'es'.
+ *
+ * Se decide por participante (`participants.demographic_data.language`), no
+ * por campaña: en una misma evaluación pueden convivir unas pocas personas
+ * que responden en inglés con el resto en español. Igual que `formType`, vive
+ * en los datos de la persona y lo fija el evaluador.
+ *
+ * `evaluations.language = 'en'` sigue valiendo como "toda la campaña en
+ * inglés" (columna de la primera versión; hoy sin pantalla que la ponga).
+ *
+ * Recibe una fila con `demographic_data` (de `participants.*`) y, si la hay,
+ * `language` de evaluations. La usan participant-access.js (menú, guards,
+ * completitud) y finalizePeStatus() de photo-import.js: tienen que decidir lo
+ * mismo, o un PE en inglés queda atascado esperando un COPE que nunca verá.
+ */
+function participantLanguage(row) {
+  if (!row) return 'es';
+  if (row.language === 'en') return 'en';
+  let demo = row.demographic_data;
+  if (typeof demo === 'string') {
+    try { demo = JSON.parse(demo); } catch (e) { demo = null; }
+  }
+  return demo && demo.language === 'en' ? 'en' : 'es';
+}
+
+module.exports = { getQuestionnaireData, hubDescription, normalizeLanguage, participantLanguage, EN_QUESTIONNAIRES };

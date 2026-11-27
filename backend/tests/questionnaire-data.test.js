@@ -82,3 +82,26 @@ describe('versión en inglés de la batería', () => {
     expect(hubDescription(undefined, 'estres')).toBe('Síntomas de estrés ocupacional');
   });
 });
+
+// El idioma es por persona: unos pocos en inglés dentro de una campaña en
+// español. La misma regla decide el menú, los guards, la completitud del PE
+// (participant-access.js) y finalizePeStatus() de la importación por foto.
+const { participantLanguage } = require('../utils/questionnaire-data');
+
+describe('participantLanguage: idioma de cada persona', () => {
+  test('sin dato es español', () => {
+    expect(participantLanguage(null)).toBe('es');
+    expect(participantLanguage({})).toBe('es');
+    expect(participantLanguage({ demographic_data: { formType: 'A' } })).toBe('es');
+  });
+  test('la persona marcada en inglés responde en inglés aunque la campaña sea en español', () => {
+    expect(participantLanguage({ language: 'es', demographic_data: { language: 'en' } })).toBe('en');
+  });
+  test('demographic_data puede venir como texto JSON (o roto)', () => {
+    expect(participantLanguage({ demographic_data: '{"language":"en"}' })).toBe('en');
+    expect(participantLanguage({ demographic_data: '{roto' })).toBe('es');
+  });
+  test('una campaña completa en inglés (columna de la primera versión) sigue valiendo', () => {
+    expect(participantLanguage({ language: 'en', demographic_data: { language: 'es' } })).toBe('en');
+  });
+});
